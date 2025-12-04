@@ -1,6 +1,7 @@
+
+
 import React from 'react';
 import { Coordinates } from './services/osmService';
-import { User } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // Fix: Export ParsedJobsResult interface
 export interface ParsedJobsResult {
@@ -135,20 +136,10 @@ export interface ItineraryItem {
 }
 
 export interface AppContextType {
-    // Auth
-    user: User | null;
-    isAuthLoading: boolean;
-    signInWithGoogle: () => Promise<void>;
-    signOut: () => Promise<void>;
-
-    // State & DB
     appState: AppState;
     setAppState: React.Dispatch<React.SetStateAction<AppState>>;
-    isDbLoading: boolean;
-    // FIX: Add isLoadingReps and repsError to the context type to fix destructuring errors.
     isLoadingReps: boolean;
     repsError: string | null;
-
     isParsing: boolean;
     isAutoAssigning: boolean;
     isDistributing: boolean;
@@ -156,6 +147,7 @@ export interface AppContextType {
     isAiFixingAddresses: boolean;
     isTryingVariations: boolean;
     parsingError: string | null;
+    // FIX: Changed from `selectedRepIds` to `selectedRepId` to support single selection, matching the context implementation.
     selectedRepId: string | null;
     usingMockData: boolean;
     activeSheetName: string;
@@ -186,9 +178,11 @@ export interface AppContextType {
     handleRefreshRoute: () => void;
     settings: Settings;
     updateSettings: (updatedSettings: Partial<Settings>) => void;
+    loadReps: (date: Date) => Promise<void>;
+    // FIX: Changed from `handleSelectRepForRoute` to `handleShowRoute` to match the context implementation.
     handleShowRoute: (repId: string, optimize: boolean) => Promise<void>;
     handleShowUnassignedJobsOnMap: (jobs?: Job[]) => Promise<void>;
-    handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>;
+    handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>; // New function
     handleShowAllJobsOnMap: () => Promise<void>;
     handleShowZipOnMap: (zip: string, rep?: Rep) => Promise<void>;
     handleShowAllRepLocations: () => Promise<void>;
@@ -206,12 +200,15 @@ export interface AppContextType {
     handleToggleRepLock: (repId: string) => void;
     handleToggleRepExpansion: (repId: string) => void;
     handleToggleAllReps: (filteredReps: Rep[]) => void;
+    // FIX: Allow updating originalTimeframe to resolve error in NeedsRescheduleModal
     handleUpdateJob: (jobId: string, updatedDetails: Partial<Pick<Job, 'customerName' | 'address' | 'notes' | 'originalTimeframe'>>) => void;
-    handleUpdateRep: (repId: string, updates: Partial<Rep>) => void;
+    handleUpdateRep: (repId: string, updates: Partial<Rep>) => void; // New function
     handleRemoveJob: (jobId: string) => void;
     handleOptimizeRepRoute: (repId: string) => Promise<void>;
-    handleUnoptimizeRepRoute: (repId: string) => void;
+    handleUnoptimizeRepRoute: (repId: string) => void; // New function
     handleSwapSchedules: (repId1: string, repId2: string) => void;
+    handleSaveStateToFile: () => void;
+    handleLoadStateFromFile: (loadedState: any) => void;
     handleUndo: () => void;
     handleRedo: () => void;
     canUndo: boolean;
@@ -227,13 +224,17 @@ export interface AppContextType {
     hoveredJobId: string | null;
     setHoveredJobId: (id: string | null) => void;
     
+    // UI State for modals
     repSettingsModalRepId: string | null;
     setRepSettingsModalRepId: (id: string | null) => void;
 
+    // Roofr Job ID map
     roofrJobIdMap: Map<string, string>;
 
+    // Announcement message
     announcement: string;
 
+    // Map Filter State Pushing
     setFilteredAssignedJobs: (jobs: DisplayJob[]) => void;
     setFilteredUnassignedJobs: (jobs: Job[]) => void;
 }

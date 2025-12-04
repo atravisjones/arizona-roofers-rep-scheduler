@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
+import { DragHandleIcon, WarningIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -51,8 +51,10 @@ const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean
 
 
 const MainLayout: React.FC = () => {
-  const { user, signOut, ...context } = useAppContext();
+  const context = useAppContext();
+  // Removed 'details' from default order
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(['schedules', 'jobs', 'routes']);
+  // Adjusted widths for 3 columns
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>({ schedules: 35, jobs: 30, routes: 35 });
   const draggedItem = useRef<ColumnId | null>(null);
   const dragOverItem = useRef<ColumnId | null>(null);
@@ -64,6 +66,7 @@ const MainLayout: React.FC = () => {
   const [isNeedsDetailsOpen, setIsNeedsDetailsOpen] = useState(false);
   const [isNeedsRescheduleOpen, setIsNeedsRescheduleOpen] = useState(false);
   const [isAiPopupOpen, setIsAiPopupOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (context.isAiAssigning || context.aiThoughts.length > 0) {
@@ -152,6 +155,39 @@ const MainLayout: React.FC = () => {
     document.body.style.cursor = 'col-resize';
   }, [columnWidths]);
 
+  const handleLoadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const text = e.target?.result;
+            if (typeof text !== 'string') {
+                throw new Error("File content is not readable text.");
+            }
+            const loadedState = JSON.parse(text);
+            context.handleLoadStateFromFile(loadedState);
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Failed to read or parse file.";
+            context.log(`- ERROR (File Read): ${errorMessage}`);
+            alert(`Error reading file: ${errorMessage}`);
+        }
+    };
+    reader.onerror = () => {
+        context.log(`- ERROR (File Read): FileReader error.`);
+        alert("An error occurred while reading the file.");
+    };
+    reader.readAsText(file);
+
+    event.target.value = '';
+  };
+
+  // Logic to count jobs needing details for badge
   const needsDetailsCount = useMemo(() => {
       const countTags = (job: Job) => {
         const notes = (job.notes || '').toLowerCase();
@@ -174,6 +210,7 @@ const MainLayout: React.FC = () => {
     context.appState.reps.forEach(rep => {
         rep.schedule.forEach(slot => {
             slot.jobs.forEach(job => {
+                // For optimized jobs, `job.timeSlotLabel` has the new time. For manual, `slot.label` is the time.
                 const scheduledTimeLabel = job.timeSlotLabel || slot.label;
                 
                 if (job.originalTimeframe && scheduledTimeLabel) {
@@ -222,20 +259,26 @@ const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 text-gray-800 font-sans overflow-hidden">
       <header className="bg-white border-b border-gray-200 h-16 flex-shrink-0 px-6 flex items-center justify-between z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+        {/* Left Section: Branding & History */}
         <div className="flex items-center gap-6">
+             {/* Branding */}
              <div className="flex flex-col justify-center">
                 <h1 className="text-lg font-bold text-gray-900 tracking-tight leading-none">Rep Route Planner</h1>
                 <div className="flex items-center gap-1.5 mt-1">
                     <div className={`w-2 h-2 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
                     <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                        {context.usingMockData ? 'Aux Data: Mock' : 'Aux Data: Live'}
+                        {context.usingMockData ? 'Mock Data' : 'Live'}:
                     </span>
                     <span className="text-[10px] font-bold text-gray-700 truncate max-w-[200px]" title={context.activeSheetName}>
                         {context.activeSheetName || 'Loading...'}
                     </span>
                 </div>
              </div>
+
+             {/* Divider */}
              <div className="h-8 w-px bg-gray-100"></div>
+
+             {/* History Controls */}
              <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
                 <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-gray-500 hover:text-gray-800 disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
                     <UndoIcon className="h-4 w-4" />
@@ -245,6 +288,8 @@ const MainLayout: React.FC = () => {
                 </button>
             </div>
         </div>
+
+        {/* Center Section: Date Navigation & Announcement */}
         <div className="flex-1 flex justify-center items-center px-4 gap-4">
             <DayTabs />
             {context.announcement && (
@@ -254,7 +299,10 @@ const MainLayout: React.FC = () => {
                 </div>
             )}
         </div>
+
+        {/* Right Section: Reports & Tools */}
         <div className="flex items-center gap-4">
+            
             <button 
                 onClick={() => setIsNeedsRescheduleOpen(true)}
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
@@ -262,6 +310,7 @@ const MainLayout: React.FC = () => {
                         ? 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50 shadow-sm' 
                         : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
                 }`}
+                title="Review jobs with potential scheduling conflicts"
             >
                 <RescheduleIcon className={`h-3.5 w-3.5 ${jobsNeedingRescheduleCount > 0 ? 'text-blue-600' : 'text-gray-400'}`} />
                 <span>Needs Reschedule</span>
@@ -271,6 +320,7 @@ const MainLayout: React.FC = () => {
                     </span>
                 )}
             </button>
+            
             <button 
                 onClick={() => setIsNeedsDetailsOpen(true)} 
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
@@ -278,6 +328,7 @@ const MainLayout: React.FC = () => {
                         ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50 shadow-sm' 
                         : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
                 }`}
+                title="Review jobs missing essential details"
             >
                 <RepairIcon className={`h-3.5 w-3.5 ${needsDetailsCount > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
                 <span>Needs Details</span>
@@ -287,6 +338,8 @@ const MainLayout: React.FC = () => {
                     </span>
                 )}
             </button>
+
+            {/* Reports Navigation */}
              <div className="flex items-center bg-gray-100/50 p-1 rounded-lg border border-gray-200/50">
                 <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
                     <SummaryIcon className="h-3.5 w-3.5" />
@@ -308,19 +361,22 @@ const MainLayout: React.FC = () => {
                     <span>Training</span>
                 </button>
             </div>
+
+             {/* Data Controls */}
+            <div className="flex items-center gap-2">
+                <button onClick={context.handleSaveStateToFile} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Save State">
+                    <SaveIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                </button>
+                <button onClick={handleLoadClick} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Load State">
+                    <UploadIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                </button>
+            </div>
+
             <div className="h-8 w-px bg-gray-200"></div>
+            
             <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
-            <div className="h-8 w-px bg-gray-200"></div>
-            {user && (
-                <div className="flex items-center gap-3">
-                    <img src={user.photoURL || undefined} alt={user.displayName || 'User'} className="h-8 w-8 rounded-full" referrerPolicy="no-referrer" />
-                    <div className="leading-tight">
-                        <p className="text-sm font-semibold text-gray-800 truncate">{user.displayName}</p>
-                        <button onClick={signOut} className="text-xs text-red-500 hover:underline">Sign Out</button>
-                    </div>
-                </div>
-            )}
         </div>
+        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
       <div ref={containerRef} className="flex w-full flex-grow min-h-0 relative z-10 p-4 gap-4 overflow-hidden">
