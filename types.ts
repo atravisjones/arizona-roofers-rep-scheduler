@@ -1,6 +1,6 @@
 import React from 'react';
 import { Coordinates } from './services/osmService';
-import firebase from 'firebase/compat/app';
+import { User } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 // Fix: Export ParsedJobsResult interface
 export interface ParsedJobsResult {
@@ -135,13 +135,25 @@ export interface ItineraryItem {
 }
 
 export interface AppContextType {
+    // Auth
+    user: User | null;
+    isAuthLoading: boolean;
+    signInWithGoogle: () => Promise<void>;
+    signOut: () => Promise<void>;
+
+    // State & DB
     appState: AppState;
     setAppState: React.Dispatch<React.SetStateAction<AppState>>;
+    isDbLoading: boolean;
+    // FIX: Add isLoadingReps and repsError to the context type to fix destructuring errors.
     isLoadingReps: boolean;
     repsError: string | null;
+
     isParsing: boolean;
     isAutoAssigning: boolean;
     isDistributing: boolean;
+    isAiAssigning: boolean;
+    isAiFixingAddresses: boolean;
     isTryingVariations: boolean;
     parsingError: string | null;
     selectedRepId: string | null;
@@ -158,6 +170,7 @@ export interface AppContextType {
     setSortConfig: (config: SortConfig) => void;
     debugLogs: string[];
     log: (message: string) => void;
+    aiThoughts: string[];
     activeRoute: {
         repName: string;
         mappableJobs: DisplayJob[];
@@ -173,7 +186,6 @@ export interface AppContextType {
     handleRefreshRoute: () => void;
     settings: Settings;
     updateSettings: (updatedSettings: Partial<Settings>) => void;
-    loadInitialDataForUser: () => Promise<void>;
     handleShowRoute: (repId: string, optimize: boolean) => Promise<void>;
     handleShowUnassignedJobsOnMap: (jobs?: Job[]) => Promise<void>;
     handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>;
@@ -184,7 +196,10 @@ export interface AppContextType {
     handleAutoAssign: () => void;
     handleDistributeJobs: () => void;
     handleAutoAssignForRep: (repId: string) => void;
+    handleAiAssign: () => void;
+    handleAiFixAddresses: () => Promise<void>;
     handleTryAddressVariations: () => Promise<void>;
+    clearAiThoughts: () => void;
     handleUnassignJob: (jobId: string) => void;
     handleClearAllSchedules: () => void;
     handleJobDrop: (jobId: string, target: { repId: string; slotId: string } | 'unassigned', e?: React.DragEvent<HTMLDivElement>) => void;
@@ -212,17 +227,13 @@ export interface AppContextType {
     hoveredJobId: string | null;
     setHoveredJobId: (id: string | null) => void;
     
-    // UI State for modals
     repSettingsModalRepId: string | null;
     setRepSettingsModalRepId: (id: string | null) => void;
 
-    // Map Filter State Pushing
+    roofrJobIdMap: Map<string, string>;
+
+    announcement: string;
+
     setFilteredAssignedJobs: (jobs: DisplayJob[]) => void;
     setFilteredUnassignedJobs: (jobs: Job[]) => void;
-    
-    // Auth
-    user: firebase.User | null;
-    isAuthLoading: boolean;
-    signInWithGoogle: () => Promise<void>;
-    signOut: () => Promise<void>;
 }

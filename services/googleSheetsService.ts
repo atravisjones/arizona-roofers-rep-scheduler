@@ -1,145 +1,163 @@
-import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE } from '../constants';
 import { Rep } from '../types';
-import { MOCK_REPS_DATA } from './mockData';
+import { GOOGLE_API_KEY, SPREADSHEET_ID, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE } from '../constants';
+import { ALL_KNOWN_CITIES } from './geography';
 
-// Helper to format a date as MM-DD for sheet name lookup
-const getSheetNameFromDate = (date: Date): string => {
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return `${SHEET_TITLE_PREFIX} ${month}-${day}`;
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const normalizeAddressForMatching = (address: string): string | null => {
+    if (!address) return null;
+    
+    let addr = address.toLowerCase().trim();
+    addr = addr.replace(/(,\s*(az|arizona))?\s+\d{5}(?:-\d{4})?$/, '');
+    addr = addr.replace(/,\s*(az|arizona)$/, '');
+    addr = addr.trim().replace(/,$/, '').trim();
+
+    const cityList = [...ALL_KNOWN_CITIES].sort((a,b) => b.length - a.length);
+    for (const city of cityList) {
+        const regex = new RegExp(`,\\s*${city.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}$`, 'i');
+        if (regex.test(addr)) {
+            addr = addr.replace(regex, '').trim();
+            break;
+        }
+    }
+    
+    let streetPart = addr;
+    const streetNumberMatch = streetPart.match(/^(\d+)/);
+    if (!streetNumberMatch) return null; 
+
+    streetPart = streetPart
+        .replace(/\b(n\.?|north)\b/g, 'north')
+        .replace(/\b(s\.?|south)\b/g, 'south')
+        .replace(/\b(e\.?|east)\b/g, 'east')
+        .replace(/\b(w\.?|west)\b/g, 'west')
+        .replace(/\b(st\.?|street)\b/g, 'street')
+        .replace(/\b(rd\.?|road)\b/g, 'road')
+        .replace(/\b(dr\.?|drive)\b/g, 'drive')
+        .replace(/\b(ave?\.?|avenue)\b/g, 'avenue')
+        .replace(/\b(blvd\.?|boulevard)\b/g, 'boulevard')
+        .replace(/\b(ln\.?|lane)\b/g, 'lane')
+        .replace(/\b(ct\.?|court)\b/g, 'court')
+        .replace(/\b(pl\.?|place)\b/g, 'place')
+        .replace(/\b(trl\.?|trail)\b/g, 'trail')
+        .replace(/\b(cir\.?|circle)\b/g, 'circle')
+        .replace(/\b(wy\.?|way)\b/g, 'way');
+        
+    streetPart = streetPart.replace(/[^a-z0-9\s]/g, '');
+    streetPart = streetPart.replace(/\s+/g, ' ').trim();
+
+    return streetPart;
 };
 
-// Generic fetch utility for Google Sheets API
-const fetchSheetValues = async (spreadsheetId: string, range: string): Promise<any[][] | null> => {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${GOOGLE_API_KEY}`;
+async function fetchWithRetry(url: string, retries = 3, initialDelay = 1000): Promise<Response> {
+    let currentDelay = initialDelay;
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetch(url);
+            if (response.ok || (response.status < 500 && response.status !== 429)) {
+                return response;
+            }
+            if (i < retries) {
+                console.warn(`Google Sheets API attempt ${i + 1} failed (Status ${response.status}). Retrying in ${currentDelay}ms...`);
+                await sleep(currentDelay);
+                currentDelay *= 2;
+                continue;
+            }
+            return response;
+        } catch (error) {
+            if (i < retries) {
+                console.warn(`Google Sheets API network attempt ${i + 1} failed. Retrying in ${currentDelay}ms...`, error);
+                await sleep(currentDelay);
+                currentDelay *= 2;
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw new Error("Fetch failed unexpectedly.");
+}
+
+export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
+    const addressToIdMap = new Map<string, string>();
     try {
-        const response = await fetch(url);
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${ROOFR_JOBS_SPREADSHEET_ID}/values/'${encodeURIComponent(ROOFR_JOBS_SHEET_TITLE)}'!${ROOFR_JOBS_DATA_RANGE}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+        const response = await fetchWithRetry(url);
         if (!response.ok) {
-            console.error(`Google Sheets API error: ${response.status} ${response.statusText}`);
-            const errorBody = await response.json();
-            console.error("Error details:", errorBody);
-            return null;
+            console.warn(`Failed to fetch Roofr job IDs: ${response.statusText}`);
+            return addressToIdMap;
         }
         const data = await response.json();
-        return data.values || [];
+        const values = data.values;
+
+        if (!values || values.length === 0) {
+            console.warn('Roofr job ID sheet appears to be empty.');
+            return addressToIdMap;
+        }
+
+        values.forEach((row: any[]) => {
+            const [jobId, address] = row;
+            if (jobId && address) {
+                const normalizedAddress = normalizeAddressForMatching(String(address));
+                if (normalizedAddress) {
+                    if (!addressToIdMap.has(normalizedAddress)) {
+                        addressToIdMap.set(normalizedAddress, String(jobId));
+                    }
+                }
+            }
+        });
     } catch (error) {
-        console.error("Failed to fetch from Google Sheets API:", error);
-        return null;
+        console.error("Error fetching Roofr job IDs:", error);
     }
-};
+    return addressToIdMap;
+}
 
-/**
- * Fetches rep data, skills, and sales ranks from various sheets and combines them.
- * This is the main data loading function for the application.
- */
-export const fetchSheetData = async (date: Date): Promise<{ reps: Omit<Rep, 'schedule' | 'isMock'>[], sheetName: string }> => {
-    const sheetName = getSheetNameFromDate(date);
-    const range = `${sheetName}!${DATA_RANGE}`;
+export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string }> {
+  console.warn("fetchSheetData is deprecated and should not be called. Data is now loaded from Firebase.");
+  return { reps: [], sheetName: 'deprecated' };
+}
 
-    try {
-        const [dailyData, skillsData, salesRankData] = await Promise.all([
-            fetchSheetValues(SPREADSHEET_ID, range),
-            fetchSheetValues(SPREADSHEET_ID, `${SKILLS_SHEET_TITLE}!${SKILLS_DATA_RANGE}`),
-            fetchSheetValues(SPREADSHEET_ID, `${SKILLS_SHEET_TITLE}!${SALES_ORDER_DATA_RANGE}`)
-        ]);
-
-        if (!dailyData || !skillsData || !salesRankData) {
-            throw new Error("Failed to fetch one or more required sheets.");
-        }
-
-        const activeRepNames = new Set(
-            dailyData.slice(1) // Skip header row
-                .map(row => row[0]) // First column has rep names
-                .filter(name => typeof name === 'string' && name.trim())
-                .map(name => name.trim())
-        );
-
-        if (activeRepNames.size === 0) {
-             return { reps: [], sheetName };
-        }
-
-        const salesRanks = new Map<string, number>();
-        salesRankData.forEach((row, index) => {
-            const name = row[0];
-            if (typeof name === 'string' && name.trim()) {
-                salesRanks.set(name.trim().toLowerCase(), index + 1);
-            }
-        });
-
-        const reps: Omit<Rep, 'schedule' | 'isMock'>[] = [];
-        skillsData.forEach(row => {
-            const name = row[0];
-            if (typeof name === 'string' && name.trim() && activeRepNames.has(name.trim())) {
-                const rep: Omit<Rep, 'schedule' | 'isMock'> = {
-                    id: `rep-g-${name.replace(/\s+/g, '-')}`,
-                    name: name.trim(),
-                    availability: row[1] || 'N/A',
-                    skills: {
-                        'Tile': parseInt(row[2], 10) || 0,
-                        'Shingle': parseInt(row[3], 10) || 0,
-                        'Flat': parseInt(row[4], 10) || 0,
-                        'Metal': parseInt(row[5], 10) || 0,
-                        'Insurance': parseInt(row[6], 10) || 0,
-                        'Commercial': parseInt(row[7], 10) || 0,
-                    },
-                    salesRank: salesRanks.get(name.trim().toLowerCase()),
-                    // Placeholder for future data like region, zips
-                };
-                reps.push(rep);
-            }
-        });
-
-        return { reps, sheetName };
-
-    } catch (error) {
-        console.error("Error in fetchSheetData, using fallback mock data:", error);
-        if (USE_MOCK_DATA_ON_FAILURE) {
-            return { reps: MOCK_REPS_DATA.map(r => ({ ...r, isMock: true })) as any, sheetName };
-        }
-        throw error;
+export async function fetchSheetCell(cell: string, sheetName:string): Promise<string> {
+  if (!sheetName) {
+    throw new Error('Sheet name must be provided to fetch a cell.');
+  }
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(sheetName)}'!${encodeURIComponent(cell)}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+  
+  try {
+    const response = await fetchWithRetry(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch cell ${cell} (Status: ${response.status})`);
     }
-};
-
-/**
- * Fetches a map of Roofr job addresses to their corresponding URLs.
- */
-export const fetchRoofrJobIds = async (): Promise<Map<string, string>> => {
-    const values = await fetchSheetValues(ROOFR_JOBS_SPREADSHEET_ID, `${ROOFR_JOBS_SHEET_TITLE}!${ROOFR_JOBS_DATA_RANGE}`);
-    const idMap = new Map<string, string>();
-
-    if (values) {
-        values.forEach(row => {
-            const address = row[0];
-            const url = row[1];
-            if (typeof address === 'string' && address.trim() && typeof url === 'string' && url.trim()) {
-                idMap.set(address.trim().toLowerCase(), url.trim());
-            }
-        });
+    const data = await response.json();
+    const value = data.values?.[0]?.[0];
+    
+    if (value === undefined || value === null || value === "") {
+      return '(empty)';
     }
-    return idMap;
-};
+    return String(value);
+  } catch (err) {
+    console.error(`Error fetching cell data for ${cell} from ${sheetName}:`, err);
+    throw new Error(`Could not retrieve data for cell ${cell}.`);
+  }
+}
 
-/**
- * Fetches the announcement message from a specific cell.
- */
-export const fetchAnnouncementMessage = async (): Promise<string | null> => {
-    const range = `${SKILLS_SHEET_TITLE}!A1`; // Assuming announcement is in cell A1 of the skills sheet
-    const values = await fetchSheetValues(SPREADSHEET_ID, range);
-    if (values && values[0] && values[0][0]) {
-        return values[0][0];
-    }
-    return null;
-};
+export async function fetchAnnouncementMessage(): Promise<string> {
+  const cell = 'A2';
+  const sheetName = ROOFR_JOBS_SHEET_TITLE;
+  const spreadsheetId = ROOFR_JOBS_SPREADSHEET_ID;
 
-/**
- * Fetches the value of a single cell from a given sheet.
- */
-export const fetchSheetCell = async (cellRef: string, sheetName: string): Promise<string | null> => {
-    if (!sheetName) return 'No active sheet';
-    const range = `${sheetName}!${cellRef}`;
-    const values = await fetchSheetValues(SPREADSHEET_ID, range);
-    if (values && values[0] && values[0][0]) {
-        return values[0][0];
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(sheetName)}'!${encodeURIComponent(cell)}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+  
+  try {
+    const response = await fetchWithRetry(url);
+    if (!response.ok) {
+      console.warn(`Failed to fetch announcement cell ${cell} (Status: ${response.status})`);
+      return '';
     }
-    return `(empty)`;
-};
+    const data = await response.json();
+    const value = data.values?.[0]?.[0];
+    
+    return value ? String(value) : '';
+  } catch (err) {
+    console.error(`Error fetching announcement data from ${sheetName}:`, err);
+    return '';
+  }
+}

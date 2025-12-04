@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, WarningIcon, SummaryIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -9,7 +9,9 @@ import DebugLog from './DebugLog';
 import DailySummaryModal from './DailySummary';
 import RepSummaryModal from './RepSummary';
 import AvailabilitySummaryModal from './AvailabilitySummary';
+import AiAssistantPopup from './AiAssistantPopup';
 import RepSettingsModal from './RepSettingsModal';
+import TrainingDataModal from './TrainingDataModal';
 import NeedsDetailsModal from './NeedsDetailsModal';
 import NeedsRescheduleModal from './NeedsRescheduleModal';
 import { TAG_KEYWORDS } from '../constants';
@@ -49,10 +51,8 @@ const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean
 
 
 const MainLayout: React.FC = () => {
-  const context = useAppContext();
-  // Removed 'details' from default order
+  const { user, signOut, ...context } = useAppContext();
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(['schedules', 'jobs', 'routes']);
-  // Adjusted widths for 3 columns
   const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>({ schedules: 35, jobs: 30, routes: 35 });
   const draggedItem = useRef<ColumnId | null>(null);
   const dragOverItem = useRef<ColumnId | null>(null);
@@ -60,9 +60,17 @@ const MainLayout: React.FC = () => {
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
   const [isRepSummaryOpen, setIsRepSummaryOpen] = useState(false);
   const [isAvailabilitySummaryOpen, setIsAvailabilitySummaryOpen] = useState(false);
+  const [isTrainingDataOpen, setIsTrainingDataOpen] = useState(false);
   const [isNeedsDetailsOpen, setIsNeedsDetailsOpen] = useState(false);
   const [isNeedsRescheduleOpen, setIsNeedsRescheduleOpen] = useState(false);
+  const [isAiPopupOpen, setIsAiPopupOpen] = useState(false);
 
+  useEffect(() => {
+    if (context.isAiAssigning || context.aiThoughts.length > 0) {
+        setIsAiPopupOpen(true);
+    }
+  }, [context.isAiAssigning, context.aiThoughts.length]);
+  
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -81,6 +89,14 @@ const MainLayout: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
 }, [context]);
+
+
+  const handleCloseAiPopup = () => {
+      setIsAiPopupOpen(false);
+      if (!context.isAiAssigning) {
+          context.clearAiThoughts();
+      }
+  };
 
   const handleDragStart = (id: ColumnId) => { draggedItem.current = id; };
   const handleDragEnter = (id: ColumnId) => { dragOverItem.current = id; };
@@ -210,15 +226,16 @@ const MainLayout: React.FC = () => {
              <div className="flex flex-col justify-center">
                 <h1 className="text-lg font-bold text-gray-900 tracking-tight leading-none">Rep Route Planner</h1>
                 <div className="flex items-center gap-1.5 mt-1">
-                    <div className={'w-2 h-2 rounded-full bg-green-500 animate-pulse'}></div>
+                    <div className={`w-2 h-2 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
                     <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                        Live Data
+                        {context.usingMockData ? 'Aux Data: Mock' : 'Aux Data: Live'}
+                    </span>
+                    <span className="text-[10px] font-bold text-gray-700 truncate max-w-[200px]" title={context.activeSheetName}>
+                        {context.activeSheetName || 'Loading...'}
                     </span>
                 </div>
              </div>
-
              <div className="h-8 w-px bg-gray-100"></div>
-
              <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
                 <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-gray-500 hover:text-gray-800 disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
                     <UndoIcon className="h-4 w-4" />
@@ -228,13 +245,16 @@ const MainLayout: React.FC = () => {
                 </button>
             </div>
         </div>
-
         <div className="flex-1 flex justify-center items-center px-4 gap-4">
             <DayTabs />
+            {context.announcement && (
+                <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold p-2 rounded-md flex items-center gap-2 animate-fade-in">
+                    <MegaphoneIcon className="h-4 w-4 text-indigo-600" />
+                    <span>{context.announcement}</span>
+                </div>
+            )}
         </div>
-
         <div className="flex items-center gap-4">
-            
             <button 
                 onClick={() => setIsNeedsRescheduleOpen(true)}
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
@@ -242,7 +262,6 @@ const MainLayout: React.FC = () => {
                         ? 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50 shadow-sm' 
                         : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
                 }`}
-                title="Review jobs with potential scheduling conflicts"
             >
                 <RescheduleIcon className={`h-3.5 w-3.5 ${jobsNeedingRescheduleCount > 0 ? 'text-blue-600' : 'text-gray-400'}`} />
                 <span>Needs Reschedule</span>
@@ -252,7 +271,6 @@ const MainLayout: React.FC = () => {
                     </span>
                 )}
             </button>
-            
             <button 
                 onClick={() => setIsNeedsDetailsOpen(true)} 
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
@@ -260,7 +278,6 @@ const MainLayout: React.FC = () => {
                         ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50 shadow-sm' 
                         : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
                 }`}
-                title="Review jobs missing essential details"
             >
                 <RepairIcon className={`h-3.5 w-3.5 ${needsDetailsCount > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
                 <span>Needs Details</span>
@@ -270,7 +287,6 @@ const MainLayout: React.FC = () => {
                     </span>
                 )}
             </button>
-
              <div className="flex items-center bg-gray-100/50 p-1 rounded-lg border border-gray-200/50">
                 <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
                     <SummaryIcon className="h-3.5 w-3.5" />
@@ -286,20 +302,24 @@ const MainLayout: React.FC = () => {
                     <TagIcon className="h-3.5 w-3.5" />
                     <span>Slots</span>
                 </button>
-            </div>
-
-            <div className="h-8 w-px bg-gray-200"></div>
-            
-            <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
-
-            <div className="h-8 w-px bg-gray-200"></div>
-
-            <div className="flex items-center gap-2">
-                <img src={context.user?.photoURL || ''} alt={context.user?.displayName || 'User'} className="h-8 w-8 rounded-full" />
-                <button onClick={context.signOut} className="text-xs font-semibold text-gray-500 hover:text-red-600 transition">
-                    Sign Out
+                <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                 <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:shadow-sm rounded-md transition-all" title="View Training Data">
+                    <BrainIcon className="h-3.5 w-3.5" />
+                    <span>Training</span>
                 </button>
             </div>
+            <div className="h-8 w-px bg-gray-200"></div>
+            <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
+            <div className="h-8 w-px bg-gray-200"></div>
+            {user && (
+                <div className="flex items-center gap-3">
+                    <img src={user.photoURL || undefined} alt={user.displayName || 'User'} className="h-8 w-8 rounded-full" referrerPolicy="no-referrer" />
+                    <div className="leading-tight">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{user.displayName}</p>
+                        <button onClick={signOut} className="text-xs text-red-500 hover:underline">Sign Out</button>
+                    </div>
+                </div>
+            )}
         </div>
       </header>
 
@@ -326,8 +346,17 @@ const MainLayout: React.FC = () => {
         <DailySummaryModal isOpen={isDailySummaryOpen} onClose={() => setIsDailySummaryOpen(false)} />
         <RepSummaryModal isOpen={isRepSummaryOpen} onClose={() => setIsRepSummaryOpen(false)} />
         <AvailabilitySummaryModal isOpen={isAvailabilitySummaryOpen} onClose={() => setIsAvailabilitySummaryOpen(false)} />
+        <TrainingDataModal isOpen={isTrainingDataOpen} onClose={() => setIsTrainingDataOpen(false)} />
         <NeedsDetailsModal isOpen={isNeedsDetailsOpen} onClose={() => setIsNeedsDetailsOpen(false)} />
         <NeedsRescheduleModal isOpen={isNeedsRescheduleOpen} onClose={() => setIsNeedsRescheduleOpen(false)} />
+        
+        <AiAssistantPopup 
+            isOpen={isAiPopupOpen}
+            onClose={handleCloseAiPopup}
+            thoughts={context.aiThoughts}
+            isThinking={context.isAiAssigning}
+            title="AI Assignment Assistant"
+        />
         
         <RepSettingsModal
             isOpen={!!context.repSettingsModalRepId}

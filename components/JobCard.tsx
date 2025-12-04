@@ -1,9 +1,11 @@
+
+
 import React, { useMemo, useState, useEffect } from 'react';
 import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
-import { normalizeAddressForMatching } from '../services/parsingService';
+import { normalizeAddressForMatching } from '../services/googleSheetsService';
 
 const TAG_COLORS: Record<string, string> = {
     'Tile': 'bg-orange-100 text-orange-800 border-orange-200',
@@ -34,7 +36,7 @@ interface JobCardProps {
 export const JobCard: React.FC<JobCardProps> = ({ 
     job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, isCompact = false, isDraggable = true
 }) => {
-    const { setHoveredJobId } = useAppContext();
+    const { setHoveredJobId, roofrJobIdMap } = useAppContext();
     const [isEditing, setIsEditing] = useState(false);
     const [customerName, setCustomerName] = useState(job.customerName);
     const [address, setAddress] = useState(job.address);
@@ -157,10 +159,16 @@ export const JobCard: React.FC<JobCardProps> = ({
   }, [job.address, job.city, job.zipCode]);
 
   const roofrUrl = useMemo(() => {
-    // This functionality is removed as it depended on a bulk-loaded Google Sheet.
-    // It can be re-implemented if Roofr IDs are stored with job data in Firestore.
+    if (!job.address || !roofrJobIdMap || roofrJobIdMap.size === 0) return null;
+    const normalizedAddress = normalizeAddressForMatching(job.address);
+    if (normalizedAddress) {
+        const jobId = roofrJobIdMap.get(normalizedAddress);
+        if (jobId) {
+            return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
+        }
+    }
     return null;
-  }, [job.address]);
+  }, [job.address, roofrJobIdMap]);
 
 
   let mismatchTitle = '';

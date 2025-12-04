@@ -4,32 +4,28 @@ import MainLayout from './components/MainLayout';
 import Login from './components/Login';
 import { LoadingIcon } from './components/icons';
 
-const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isAuthLoading } = useAppContext();
+const AppContent: React.FC = () => {
+    const { user, isAuthLoading, isDbLoading } = useAppContext();
 
-  if (isAuthLoading) {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-100">
-        <LoadingIcon className="h-10 w-10 text-indigo-600" />
-        <p className="mt-4 text-gray-600 font-semibold">Authenticating...</p>
-      </div>
-    );
-  }
+    if (isAuthLoading || (user && isDbLoading)) {
+        return (
+            <div className="h-screen w-screen bg-gray-100 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-4">
+                    <LoadingIcon className="h-12 w-12 text-indigo-600" />
+                    <p className="text-gray-600 font-semibold">{isAuthLoading ? "Authenticating..." : "Loading schedules..."}</p>
+                </div>
+            </div>
+        );
+    }
 
-  if (!user) {
-    return <Login />;
-  }
-
-  return <>{children}</>;
-}
+    return user ? <MainLayout /> : <Login />;
+};
 
 
 const App: React.FC = () => {
   return (
     <AppProvider>
-      <AuthGuard>
-        <MainLayout />
-      </AuthGuard>
+      <AppContent />
     </AppProvider>
   );
 };

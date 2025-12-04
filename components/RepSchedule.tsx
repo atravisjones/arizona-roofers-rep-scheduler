@@ -4,7 +4,7 @@ import { ChevronDownIcon, ChevronUpIcon, PinIcon, ClipboardIcon, LockIcon, Unloc
 import { JobCard } from './JobCard';
 import { TAG_KEYWORDS } from '../constants';
 import { useAppContext } from '../context/AppContext';
-import { mapTimeframeToSlotId } from '../services/parsingService';
+import { mapTimeframeToSlotId } from '../services/geminiService';
 
 interface RepScheduleProps {
   rep: Rep;
@@ -311,7 +311,7 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
 
 
 const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false }) => {
-  const { appState, isAutoAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate } = useAppContext();
+  const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate } = useAppContext();
   const [isSwapMenuOpen, setIsSwapMenuOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -320,7 +320,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
   const [copySuccess, setCopySuccess] = useState(false);
 
   const hasUnassignedJobs = appState.unassignedJobs.length > 0;
-  const isAssignmentRunning = isAutoAssigning || isParsing;
+  const isAssignmentRunning = isAutoAssigning || isAiAssigning || isParsing;
   
   const unavailableSlotIdsForToday = useMemo(() => new Set(rep.unavailableSlots?.[selectedDay] || []), [rep.unavailableSlots, selectedDay]);
   

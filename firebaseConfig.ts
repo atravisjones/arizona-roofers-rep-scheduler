@@ -1,26 +1,14 @@
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/auth';
-import 'firebase/compat/firestore';
-
-// TODO: Replace this with your own Firebase project's configuration.
-// You can find this in the Firebase console:
-// Project Settings > General > Your apps > Web app > Firebase SDK snippet > Config
-const firebaseConfig = {
+// TODO: Replace with your project's customized Firebase configuration object.
+// This is a placeholder and will not work.
+// 1. Go to your Firebase project's settings: https://console.firebase.google.com/
+// 2. Under the "General" tab, find your web app under "Your apps".
+// 3. In the "Firebase SDK snippet" section, choose the "Config" option.
+// 4. Copy the entire object and paste it here, replacing the placeholder.
+export const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
+  projectId: "roofing-scheduler", // This was provided by you
   storageBucket: "YOUR_STORAGE_BUCKET",
   messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
   appId: "YOUR_APP_ID"
 };
-
-// Initialize Firebase
-if (!firebase.apps.length) {
-  firebase.initializeApp(firebaseConfig);
-}
-
-export const auth = firebase.auth();
-export const firestore = firebase.firestore();
-export const googleProvider = new firebase.auth.GoogleAuthProvider();
-
-export default firebase;

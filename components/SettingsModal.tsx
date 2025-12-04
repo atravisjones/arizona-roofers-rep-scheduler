@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Settings } from '../types';
@@ -149,14 +150,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                     <section>
                          <div className="flex items-center gap-2 mb-4">
                             <div className="h-6 w-1 bg-purple-500 rounded-full"></div>
-                            <h3 className="text-lg font-bold text-gray-900">Auto-Assignment Logic</h3>
+                            <h3 className="text-lg font-bold text-gray-900">AI & Auto-Assignment Logic</h3>
                         </div>
 
                         <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-100 mb-6">
                             <div className="p-4 flex items-center justify-between">
                                 <div>
                                     <label htmlFor="allowAssignOutsideAvailability" className="block text-sm font-semibold text-gray-900">Override Rep Availability</label>
-                                    <p className="text-xs text-gray-500 mt-0.5">Allow auto-assign to schedule jobs to unavailable slots (with penalty).</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">Allow AI to assign jobs to unavailable slots (with penalty).</p>
                                 </div>
                                 <input
                                     type="checkbox" id="allowAssignOutsideAvailability"

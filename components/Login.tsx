@@ -1,41 +1,28 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
-
-const GoogleIcon = () => (
-    <svg className="w-5 h-5" viewBox="0 0 48 48">
-        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
-        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
-        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
-        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
-        <path fill="none" d="M0 0h48v48H0z"></path>
-    </svg>
-);
-
+import { RoofIcon } from './icons';
 
 const Login: React.FC = () => {
     const { signInWithGoogle } = useAppContext();
 
     return (
-        <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-100 p-4">
-            <div className="w-full max-w-md bg-white rounded-xl shadow-2xl p-8 text-center border border-gray-200">
-                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-                    Rep Route Planner
-                </h1>
-                <p className="mt-2 text-sm text-gray-600">
-                    Sign in to access your saved schedules and jobs.
-                </p>
-                <div className="mt-8">
-                    <button
-                        onClick={signInWithGoogle}
-                        className="w-full inline-flex justify-center items-center gap-3 py-3 px-4 bg-white border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                    >
-                        <GoogleIcon />
-                        Sign in with Google
-                    </button>
-                </div>
-                <p className="mt-6 text-xs text-gray-400">
-                    Your schedule data will be securely stored and associated with your Google account.
-                </p>
+        <div className="h-screen w-screen bg-gray-100 flex items-center justify-center">
+            <div className="text-center bg-white p-12 rounded-lg shadow-xl animate-fade-in">
+                <RoofIcon className="h-12 w-12 text-indigo-600 mx-auto mb-4" />
+                <h1 className="text-2xl font-bold text-gray-800 mb-2">Rep Route Planner</h1>
+                <p className="text-gray-500 mb-8">Sign in with your Google account to continue.</p>
+                <button
+                    onClick={signInWithGoogle}
+                    className="flex items-center justify-center gap-3 w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg transition-transform transform hover:scale-105"
+                >
+                    <svg className="w-6 h-6" viewBox="0 0 48 48">
+                        <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8c-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C12.955 4 4 12.955 4 24s8.955 20 20 20s20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z" />
+                        <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4C16.318 4 9.656 8.337 6.306 14.691z" />
+                        <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z" />
+                        <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C42.012 35.816 44 30.138 44 24c0-1.341-.138-2.65-.389-3.917z" />
+                    </svg>
+                    Sign in with Google
+                </button>
             </div>
         </div>
     );
