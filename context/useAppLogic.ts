@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown } from '../types';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage } from '../services/googleSheetsService';
-import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
+import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi } from '../services/geminiService';
 import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES } from '../services/geography';
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 
@@ -219,7 +219,8 @@ export const useAppLogic = () => {
 
   const handleRedo = useCallback(() => {
     if (canRedo) {
-        setHistoryIndex(prev => prev - 1);
+        // FIX: handleRedo should increment the history index, not decrement it.
+        setHistoryIndex(prev => prev + 1);
         log('ACTION: Redo');
         setActiveRoute(null);
     }

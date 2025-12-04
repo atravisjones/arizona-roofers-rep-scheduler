@@ -1,7 +1,6 @@
-
-
 import React from 'react';
 import { Coordinates } from './services/osmService';
+import firebase from 'firebase/compat/app';
 
 // Fix: Export ParsedJobsResult interface
 export interface ParsedJobsResult {
@@ -143,11 +142,8 @@ export interface AppContextType {
     isParsing: boolean;
     isAutoAssigning: boolean;
     isDistributing: boolean;
-    isAiAssigning: boolean;
-    isAiFixingAddresses: boolean;
     isTryingVariations: boolean;
     parsingError: string | null;
-    // FIX: Changed from `selectedRepIds` to `selectedRepId` to support single selection, matching the context implementation.
     selectedRepId: string | null;
     usingMockData: boolean;
     activeSheetName: string;
@@ -162,7 +158,6 @@ export interface AppContextType {
     setSortConfig: (config: SortConfig) => void;
     debugLogs: string[];
     log: (message: string) => void;
-    aiThoughts: string[];
     activeRoute: {
         repName: string;
         mappableJobs: DisplayJob[];
@@ -178,11 +173,10 @@ export interface AppContextType {
     handleRefreshRoute: () => void;
     settings: Settings;
     updateSettings: (updatedSettings: Partial<Settings>) => void;
-    loadReps: (date: Date) => Promise<void>;
-    // FIX: Changed from `handleSelectRepForRoute` to `handleShowRoute` to match the context implementation.
+    loadInitialDataForUser: () => Promise<void>;
     handleShowRoute: (repId: string, optimize: boolean) => Promise<void>;
     handleShowUnassignedJobsOnMap: (jobs?: Job[]) => Promise<void>;
-    handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>; // New function
+    handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>;
     handleShowAllJobsOnMap: () => Promise<void>;
     handleShowZipOnMap: (zip: string, rep?: Rep) => Promise<void>;
     handleShowAllRepLocations: () => Promise<void>;
@@ -190,25 +184,19 @@ export interface AppContextType {
     handleAutoAssign: () => void;
     handleDistributeJobs: () => void;
     handleAutoAssignForRep: (repId: string) => void;
-    handleAiAssign: () => void;
-    handleAiFixAddresses: () => Promise<void>;
     handleTryAddressVariations: () => Promise<void>;
-    clearAiThoughts: () => void;
     handleUnassignJob: (jobId: string) => void;
     handleClearAllSchedules: () => void;
     handleJobDrop: (jobId: string, target: { repId: string; slotId: string } | 'unassigned', e?: React.DragEvent<HTMLDivElement>) => void;
     handleToggleRepLock: (repId: string) => void;
     handleToggleRepExpansion: (repId: string) => void;
     handleToggleAllReps: (filteredReps: Rep[]) => void;
-    // FIX: Allow updating originalTimeframe to resolve error in NeedsRescheduleModal
     handleUpdateJob: (jobId: string, updatedDetails: Partial<Pick<Job, 'customerName' | 'address' | 'notes' | 'originalTimeframe'>>) => void;
-    handleUpdateRep: (repId: string, updates: Partial<Rep>) => void; // New function
+    handleUpdateRep: (repId: string, updates: Partial<Rep>) => void;
     handleRemoveJob: (jobId: string) => void;
     handleOptimizeRepRoute: (repId: string) => Promise<void>;
-    handleUnoptimizeRepRoute: (repId: string) => void; // New function
+    handleUnoptimizeRepRoute: (repId: string) => void;
     handleSwapSchedules: (repId1: string, repId2: string) => void;
-    handleSaveStateToFile: () => void;
-    handleLoadStateFromFile: (loadedState: any) => void;
     handleUndo: () => void;
     handleRedo: () => void;
     canUndo: boolean;
@@ -228,13 +216,13 @@ export interface AppContextType {
     repSettingsModalRepId: string | null;
     setRepSettingsModalRepId: (id: string | null) => void;
 
-    // Roofr Job ID map
-    roofrJobIdMap: Map<string, string>;
-
-    // Announcement message
-    announcement: string;
-
     // Map Filter State Pushing
     setFilteredAssignedJobs: (jobs: DisplayJob[]) => void;
     setFilteredUnassignedJobs: (jobs: Job[]) => void;
+    
+    // Auth
+    user: firebase.User | null;
+    isAuthLoading: boolean;
+    signInWithGoogle: () => Promise<void>;
+    signOut: () => Promise<void>;
 }

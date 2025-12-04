@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, WarningIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
+import { DragHandleIcon, WarningIcon, SummaryIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -9,9 +9,7 @@ import DebugLog from './DebugLog';
 import DailySummaryModal from './DailySummary';
 import RepSummaryModal from './RepSummary';
 import AvailabilitySummaryModal from './AvailabilitySummary';
-import AiAssistantPopup from './AiAssistantPopup';
 import RepSettingsModal from './RepSettingsModal';
-import TrainingDataModal from './TrainingDataModal';
 import NeedsDetailsModal from './NeedsDetailsModal';
 import NeedsRescheduleModal from './NeedsRescheduleModal';
 import { TAG_KEYWORDS } from '../constants';
@@ -62,18 +60,9 @@ const MainLayout: React.FC = () => {
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
   const [isRepSummaryOpen, setIsRepSummaryOpen] = useState(false);
   const [isAvailabilitySummaryOpen, setIsAvailabilitySummaryOpen] = useState(false);
-  const [isTrainingDataOpen, setIsTrainingDataOpen] = useState(false);
   const [isNeedsDetailsOpen, setIsNeedsDetailsOpen] = useState(false);
   const [isNeedsRescheduleOpen, setIsNeedsRescheduleOpen] = useState(false);
-  const [isAiPopupOpen, setIsAiPopupOpen] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (context.isAiAssigning || context.aiThoughts.length > 0) {
-        setIsAiPopupOpen(true);
-    }
-  }, [context.isAiAssigning, context.aiThoughts.length]);
-  
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -92,14 +81,6 @@ const MainLayout: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
 }, [context]);
-
-
-  const handleCloseAiPopup = () => {
-      setIsAiPopupOpen(false);
-      if (!context.isAiAssigning) {
-          context.clearAiThoughts();
-      }
-  };
 
   const handleDragStart = (id: ColumnId) => { draggedItem.current = id; };
   const handleDragEnter = (id: ColumnId) => { dragOverItem.current = id; };
@@ -155,39 +136,6 @@ const MainLayout: React.FC = () => {
     document.body.style.cursor = 'col-resize';
   }, [columnWidths]);
 
-  const handleLoadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const text = e.target?.result;
-            if (typeof text !== 'string') {
-                throw new Error("File content is not readable text.");
-            }
-            const loadedState = JSON.parse(text);
-            context.handleLoadStateFromFile(loadedState);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Failed to read or parse file.";
-            context.log(`- ERROR (File Read): ${errorMessage}`);
-            alert(`Error reading file: ${errorMessage}`);
-        }
-    };
-    reader.onerror = () => {
-        context.log(`- ERROR (File Read): FileReader error.`);
-        alert("An error occurred while reading the file.");
-    };
-    reader.readAsText(file);
-
-    event.target.value = '';
-  };
-
-  // Logic to count jobs needing details for badge
   const needsDetailsCount = useMemo(() => {
       const countTags = (job: Job) => {
         const notes = (job.notes || '').toLowerCase();
@@ -210,7 +158,6 @@ const MainLayout: React.FC = () => {
     context.appState.reps.forEach(rep => {
         rep.schedule.forEach(slot => {
             slot.jobs.forEach(job => {
-                // For optimized jobs, `job.timeSlotLabel` has the new time. For manual, `slot.label` is the time.
                 const scheduledTimeLabel = job.timeSlotLabel || slot.label;
                 
                 if (job.originalTimeframe && scheduledTimeLabel) {
@@ -259,26 +206,19 @@ const MainLayout: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-gray-50 text-gray-800 font-sans overflow-hidden">
       <header className="bg-white border-b border-gray-200 h-16 flex-shrink-0 px-6 flex items-center justify-between z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-        {/* Left Section: Branding & History */}
         <div className="flex items-center gap-6">
-             {/* Branding */}
              <div className="flex flex-col justify-center">
                 <h1 className="text-lg font-bold text-gray-900 tracking-tight leading-none">Rep Route Planner</h1>
                 <div className="flex items-center gap-1.5 mt-1">
-                    <div className={`w-2 h-2 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
+                    <div className={'w-2 h-2 rounded-full bg-green-500 animate-pulse'}></div>
                     <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
-                        {context.usingMockData ? 'Mock Data' : 'Live'}:
-                    </span>
-                    <span className="text-[10px] font-bold text-gray-700 truncate max-w-[200px]" title={context.activeSheetName}>
-                        {context.activeSheetName || 'Loading...'}
+                        Live Data
                     </span>
                 </div>
              </div>
 
-             {/* Divider */}
              <div className="h-8 w-px bg-gray-100"></div>
 
-             {/* History Controls */}
              <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
                 <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-gray-500 hover:text-gray-800 disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
                     <UndoIcon className="h-4 w-4" />
@@ -289,18 +229,10 @@ const MainLayout: React.FC = () => {
             </div>
         </div>
 
-        {/* Center Section: Date Navigation & Announcement */}
         <div className="flex-1 flex justify-center items-center px-4 gap-4">
             <DayTabs />
-            {context.announcement && (
-                <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold p-2 rounded-md flex items-center gap-2 animate-fade-in">
-                    <MegaphoneIcon className="h-4 w-4 text-indigo-600" />
-                    <span>{context.announcement}</span>
-                </div>
-            )}
         </div>
 
-        {/* Right Section: Reports & Tools */}
         <div className="flex items-center gap-4">
             
             <button 
@@ -339,7 +271,6 @@ const MainLayout: React.FC = () => {
                 )}
             </button>
 
-            {/* Reports Navigation */}
              <div className="flex items-center bg-gray-100/50 p-1 rounded-lg border border-gray-200/50">
                 <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
                     <SummaryIcon className="h-3.5 w-3.5" />
@@ -355,28 +286,21 @@ const MainLayout: React.FC = () => {
                     <TagIcon className="h-3.5 w-3.5" />
                     <span>Slots</span>
                 </button>
-                <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                 <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:shadow-sm rounded-md transition-all" title="View Training Data">
-                    <BrainIcon className="h-3.5 w-3.5" />
-                    <span>Training</span>
-                </button>
-            </div>
-
-             {/* Data Controls */}
-            <div className="flex items-center gap-2">
-                <button onClick={context.handleSaveStateToFile} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Save State">
-                    <SaveIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
-                </button>
-                <button onClick={handleLoadClick} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Load State">
-                    <UploadIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
-                </button>
             </div>
 
             <div className="h-8 w-px bg-gray-200"></div>
             
             <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
+
+            <div className="h-8 w-px bg-gray-200"></div>
+
+            <div className="flex items-center gap-2">
+                <img src={context.user?.photoURL || ''} alt={context.user?.displayName || 'User'} className="h-8 w-8 rounded-full" />
+                <button onClick={context.signOut} className="text-xs font-semibold text-gray-500 hover:text-red-600 transition">
+                    Sign Out
+                </button>
+            </div>
         </div>
-        <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
       <div ref={containerRef} className="flex w-full flex-grow min-h-0 relative z-10 p-4 gap-4 overflow-hidden">
@@ -402,17 +326,8 @@ const MainLayout: React.FC = () => {
         <DailySummaryModal isOpen={isDailySummaryOpen} onClose={() => setIsDailySummaryOpen(false)} />
         <RepSummaryModal isOpen={isRepSummaryOpen} onClose={() => setIsRepSummaryOpen(false)} />
         <AvailabilitySummaryModal isOpen={isAvailabilitySummaryOpen} onClose={() => setIsAvailabilitySummaryOpen(false)} />
-        <TrainingDataModal isOpen={isTrainingDataOpen} onClose={() => setIsTrainingDataOpen(false)} />
         <NeedsDetailsModal isOpen={isNeedsDetailsOpen} onClose={() => setIsNeedsDetailsOpen(false)} />
         <NeedsRescheduleModal isOpen={isNeedsRescheduleOpen} onClose={() => setIsNeedsRescheduleOpen(false)} />
-        
-        <AiAssistantPopup 
-            isOpen={isAiPopupOpen}
-            onClose={handleCloseAiPopup}
-            thoughts={context.aiThoughts}
-            isThinking={context.isAiAssigning}
-            title="AI Assignment Assistant"
-        />
         
         <RepSettingsModal
             isOpen={!!context.repSettingsModalRepId}
