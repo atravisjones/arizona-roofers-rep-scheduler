@@ -14,8 +14,9 @@ const getJobDisplayDetails = (job: Job) => {
 
     const jobType = foundTags.length > 0 ? foundTags.join('/') : 'Inspection';
     
-    const isGoldJob = job.notes.includes('#');
-    const priorityReasonMatch = job.notes.match(/#\s*\(([^)]+)\)/);
+    const priorityMatch = job.notes.match(/#+/);
+    const priorityLevel = priorityMatch ? priorityMatch[0].length : 0;
+    const priorityReasonMatch = job.notes.match(/#+\s*\(([^)]+)\)/);
     const priorityReason = priorityReasonMatch ? `(${priorityReasonMatch[1]})` : '';
 
     const ageMatch = job.notes.match(/\b(\d+\s*yrs)\b/i);
@@ -44,7 +45,7 @@ const getJobDisplayDetails = (job: Job) => {
         .replace(/^[-,.\s]+|[-,.\s]+$/g, '') // trim lingering separators
         .trim();
 
-    return { jobType, cleanNotes, rescheduleInfo, isGoldJob, priorityReason, roofAge, sqft, stories };
+    return { jobType, cleanNotes, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories };
 };
 
 interface RepSummaryModalProps {
@@ -88,7 +89,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
 
     return (
         <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-bg-primary rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="popup-surface w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <header className="p-4 border-b border-border-primary flex justify-between items-center flex-shrink-0">
                     <h2 className="text-lg font-bold text-text-primary">Summary by Representative</h2>
                     <div className="flex items-center space-x-4">
@@ -141,7 +142,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                     </div>
                                     <ul className="space-y-1">
                                         {allJobsForRep.map(job => {
-                                            const { jobType, rescheduleInfo, isGoldJob, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
+                                            const { jobType, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
                                             const fullAddress = [job.address, job.customerName, `AZ ${job.zipCode || ''}`].filter(Boolean).join(', ');
                                             const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
                                             // Priority: Original Timeframe, then Slot Label
@@ -149,7 +150,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                             return (
                                                 <li key={job.id}>
                                                     <span className="text-text-tertiary">{timeDisplay}:</span> {fullAddress} (<strong className="text-text-primary font-bold">{tags}</strong>)
-                                                    {isGoldJob && <span className="text-tag-amber-text font-bold ml-2"># {priorityReason}</span>}
+                                                    {priorityLevel > 0 && <span className="text-tag-amber-text font-bold ml-2">{'#'.repeat(priorityLevel)} {priorityReason}</span>}
                                                     {rescheduleInfo && <span className="text-tag-blue-text italic ml-2">(Rescheduled from {rescheduleInfo})</span>}
                                                 </li>
                                             );

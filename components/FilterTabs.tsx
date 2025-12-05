@@ -47,9 +47,9 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
         roofTypes: Set<string>;
         stories: Set<string>;
         sizes: Set<string>;
-        priority: boolean;
+        priorityLevels: Set<number>;
         ages: Set<string>;
-    }>({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priority: false, ages: new Set() });
+    }>({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() });
 
     // Memoize available cities, tags, and time slots
     const availableCities = useMemo(() => {
@@ -71,11 +71,12 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
         return cities;
     }, [unassignedJobs]);
 
-    const availableTags = useMemo(() => {
+    const { availableTags, availablePriorityLevels } = useMemo(() => {
         const roofTypes = new Set<string>();
         const stories = new Set<string>();
         const sizeBuckets = new Set<string>();
         const ageBuckets = new Set<string>();
+        const priorityLevels = new Set<number>();
 
         const sizeToBucket = (sqft: number) => {
             if (sqft < 1500) return '< 1500 sqft';
@@ -103,15 +104,20 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
             if (sqftMatch) sizeBuckets.add(sizeToBucket(parseInt(sqftMatch[1], 10)));
             const ageMatch = job.notes.match(/\b(\d+)\s*yrs\b/i);
             if (ageMatch) ageBuckets.add(ageToBucket(parseInt(ageMatch[1], 10)));
+            const priorityMatch = job.notes.match(/#+/);
+            if (priorityMatch) priorityLevels.add(priorityMatch[0].length);
         });
 
         return {
-            roofTypes: Array.from(roofTypes).sort(),
-            stories: Array.from(stories).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)),
-            sizes: ['< 1500 sqft', '1500-2500 sqft', '> 2500 sqft'].filter(bucket => sizeBuckets.has(bucket)),
-            ages: ['0-5 yrs', '6-10 yrs', '11-15 yrs', '16-20 yrs', '> 20 yrs'].filter(
-                bucket => ageBuckets.has(bucket)
-            ),
+            availableTags: {
+                roofTypes: Array.from(roofTypes).sort(),
+                stories: Array.from(stories).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)),
+                sizes: ['< 1500 sqft', '1500-2500 sqft', '> 2500 sqft'].filter(bucket => sizeBuckets.has(bucket)),
+                ages: ['0-5 yrs', '6-10 yrs', '11-15 yrs', '16-20 yrs', '> 20 yrs'].filter(
+                    bucket => ageBuckets.has(bucket)
+                ),
+            },
+            availablePriorityLevels: Array.from(priorityLevels).sort(),
         };
     }, [unassignedJobs]);
     
@@ -150,10 +156,14 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                 return cityFilters.has(jobCity);
             });
         } else if (activeTab === 'tags') {
-            const { roofTypes, stories, sizes, priority, ages } = tagFilters;
+            const { roofTypes, stories, sizes, priorityLevels, ages } = tagFilters;
 
-            if (priority) {
-                filtered = filtered.filter(job => job.notes.includes('#'));
+            if (priorityLevels.size > 0) {
+                filtered = filtered.filter(job => {
+                    const priorityMatch = job.notes.match(/#+/);
+                    const level = priorityMatch ? priorityMatch[0].length : 0;
+                    return priorityLevels.has(level);
+                });
             }
 
             if (roofTypes.size > 0) {
@@ -204,7 +214,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
     const handleClearFilters = () => {
         setCityFilters(new Set());
         setTimeFilters(new Set());
-        setTagFilters({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priority: false, ages: new Set() });
+        setTagFilters({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() });
     };
 
     const hasActiveFilters = cityFilters.size > 0 || timeFilters.size > 0 || Object.values(tagFilters).some(f => (f instanceof Set && f.size > 0) || (typeof f === 'boolean' && f));
@@ -252,13 +262,23 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
             case 'tags':
                 return (
                      <div className="space-y-1.5">
-                        <div className="flex items-start gap-2">
-                             <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Status</span>
-                            <button onClick={() => setTagFilters(f => ({ ...f, priority: !f.priority }))} className={`${tagFilters.priority ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : chipInactiveClass} ${chipBaseClass}`}>
-                                <StarIcon className={`h-3 w-3 ${tagFilters.priority ? 'text-tag-amber-text' : 'text-text-quaternary'}`} /> 
-                                Priority Job (#)
-                            </button>
-                        </div>
+                        {availablePriorityLevels.length > 0 && (
+                            <div className="flex items-start gap-2">
+                                <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Status</span>
+                                <div className="flex flex-wrap gap-1">
+                                    {availablePriorityLevels.map(level => (
+                                        <button 
+                                            key={level} 
+                                            onClick={() => setTagFilters(f => { const n = new Set(f.priorityLevels); n.has(level) ? n.delete(level) : n.add(level); return { ...f, priorityLevels: n }; })} 
+                                            className={`${tagFilters.priorityLevels.has(level) ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : chipInactiveClass} ${chipBaseClass}`}
+                                        >
+                                            <StarIcon className={`h-3 w-3 ${tagFilters.priorityLevels.has(level) ? 'text-tag-amber-text' : 'text-text-quaternary'}`} /> 
+                                            {'#'.repeat(level)}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {availableTags.roofTypes.length > 0 && (
                             <div className="flex items-start gap-2">

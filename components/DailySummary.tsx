@@ -15,8 +15,9 @@ const getJobDisplayDetails = (job: Job | DisplayJob) => {
 
     const jobType = foundTags.length > 0 ? foundTags.join('/') : 'Inspection';
     
-    const isGoldJob = job.notes.includes('#');
-    const priorityReasonMatch = job.notes.match(/#\s*\(([^)]+)\)/);
+    const priorityMatch = job.notes.match(/#+/);
+    const priorityLevel = priorityMatch ? priorityMatch[0].length : 0;
+    const priorityReasonMatch = job.notes.match(/#+\s*\(([^)]+)\)/);
     const priorityReason = priorityReasonMatch ? `(${priorityReasonMatch[1]})` : '';
 
     const ageMatch = job.notes.match(/\b(\d+\s*yrs)\b/i);
@@ -46,7 +47,7 @@ const getJobDisplayDetails = (job: Job | DisplayJob) => {
         .replace(/^[-,.\s]+|[-,.\s]+$/g, '') // trim lingering separators
         .trim();
 
-    return { jobType, cleanNotes, rescheduleInfo, isGoldJob, priorityReason, roofAge, sqft, stories };
+    return { jobType, cleanNotes, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories };
 };
 
 // Helper to shorten time label for the table
@@ -295,7 +296,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                             </h3>
                                             <ul className="list-disc list-inside space-y-1 font-mono text-sm text-text-primary">
                                                 {jobsInSlot.map(job => {
-                                                    const { jobType, rescheduleInfo, isGoldJob, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
+                                                    const { jobType, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
                                                     const locationDisplay = [job.city ? job.city.toUpperCase() : '', job.zipCode ? `AZ ${job.zipCode}` : null].filter(Boolean).join(', ');
                                                     const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
                                                     
@@ -303,7 +304,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                                         <li key={job.id}>
                                                             <span className="uppercase">{locationDisplay}</span>
                                                             {' '}(<strong className="text-text-primary font-bold">{tags}</strong>)
-                                                            {isGoldJob && <span className="text-tag-amber-text font-bold ml-1"># {priorityReason}</span>}
+                                                            {priorityLevel > 0 && <span className="text-tag-amber-text font-bold ml-1">{'#'.repeat(priorityLevel)} {priorityReason}</span>}
                                                             {rescheduleInfo && <span className="text-tag-blue-text italic ml-1">(Rescheduled from {rescheduleInfo})</span>}
                                                             {' '}→ {job.assignedRepName}
                                                         </li>
