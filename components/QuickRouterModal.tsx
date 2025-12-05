@@ -61,23 +61,23 @@ const QuickRouterModal: React.FC<QuickRouterModalProps> = ({ isOpen, onClose }) 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
-        <header className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-2xl font-bold text-gray-800">Quick Router</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-3xl leading-none">&times;</button>
+    <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="popup-surface w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden">
+        <header className="p-4 border-b border-border-primary flex justify-between items-center">
+          <h2 className="text-2xl font-bold text-text-primary">Quick Router</h2>
+          <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary text-3xl leading-none">&times;</button>
         </header>
 
         <div className="flex-grow p-4 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto">
           <div className="flex flex-col space-y-4">
             <div>
-              <label htmlFor="address-paste" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="address-paste" className="block text-sm font-medium text-text-secondary mb-1">
                 Paste Schedule or Addresses
               </label>
               <textarea
                 id="address-paste"
                 rows={10}
-                className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition"
+                className="w-full p-2 border border-primary rounded-md shadow-sm focus:ring-2 focus:ring-brand-primary focus:outline-none transition bg-secondary text-primary placeholder:text-secondary hover:bg-tertiary"
                 placeholder="Paste any text with addresses here..."
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
@@ -86,19 +86,19 @@ const QuickRouterModal: React.FC<QuickRouterModalProps> = ({ isOpen, onClose }) 
             <div className="flex space-x-2">
                 <button
                 onClick={handleParse}
-                className="flex-grow bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition"
+                className="flex-grow bg-brand-primary text-brand-text-on-primary py-2 px-4 rounded-md hover:bg-brand-secondary transition"
                 >
                 Generate Route Preview
                 </button>
-                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex-grow text-center bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition">
+                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex-grow text-center bg-brand-blue text-brand-text-on-primary py-2 px-4 rounded-md hover:bg-brand-blue-dark transition">
                       Open in Google Maps
                 </a>
             </div>
             
             {addresses.length > 0 && (
-              <div className="p-3 bg-gray-50 rounded-lg border flex-grow overflow-y-auto">
-                <h3 className="font-semibold mb-2">{addresses.length} unique addresses found:</h3>
-                <ul className="list-disc list-inside text-sm space-y-1 text-gray-700">
+              <div className="p-3 bg-secondary rounded-lg border border-border-primary flex-grow overflow-y-auto">
+                <h3 className="font-semibold mb-2 text-text-primary">{addresses.length} unique addresses found:</h3>
+                <ul className="list-disc list-inside text-sm space-y-1 text-text-secondary">
                   {addresses.map((addr, i) => <li key={i}>{addr}</li>)}
                 </ul>
               </div>
@@ -106,11 +106,11 @@ const QuickRouterModal: React.FC<QuickRouterModalProps> = ({ isOpen, onClose }) 
             
           </div>
 
-          <div className="bg-gray-100 rounded-lg flex flex-col items-center justify-center p-1">
+          <div className="bg-tertiary rounded-lg flex flex-col items-center justify-center p-1">
              {jobsForMap.length > 0 ? (
                 <LeafletMap jobs={jobsForMap} key={addresses.join('-')} mapType="route" />
              ) : (
-                <div className="text-center text-gray-500">
+                <div className="text-center text-text-tertiary">
                     <p>Address preview will appear here.</p>
                 </div>
              )}

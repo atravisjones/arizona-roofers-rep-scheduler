@@ -1,5 +1,3 @@
-
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
@@ -7,16 +5,16 @@ import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIc
 import { useAppContext } from '../context/AppContext';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
 
-const TAG_COLORS: Record<string, string> = {
-    'Tile': 'bg-orange-100 text-orange-800 border-orange-200',
-    'Shingle': 'bg-amber-100 text-amber-800 border-amber-200',
-    'Flat': 'bg-cyan-100 text-cyan-800 border-cyan-200',
-    'Metal': 'bg-slate-200 text-slate-800 border-slate-300',
-    'Insurance': 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    'Commercial': 'bg-purple-100 text-purple-800 border-purple-200',
-    'stories': 'bg-teal-100 text-teal-800 border-teal-200',
-    'sqft': 'bg-sky-100 text-sky-800 border-sky-200',
-    'yrs': 'bg-stone-100 text-stone-800 border-stone-200',
+const TAG_CLASSES: Record<string, string> = {
+    'Tile': 'bg-tag-orange-bg text-tag-orange-text border-tag-orange-border',
+    'Shingle': 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border',
+    'Flat': 'bg-tag-cyan-bg text-tag-cyan-text border-tag-cyan-border',
+    'Metal': 'bg-tag-slate-bg text-tag-slate-text border-tag-slate-border',
+    'Insurance': 'bg-tag-emerald-bg text-tag-emerald-text border-tag-emerald-border',
+    'Commercial': 'bg-tag-purple-bg text-tag-purple-text border-tag-purple-border',
+    'stories': 'bg-tag-teal-bg text-tag-teal-text border-tag-teal-border',
+    'sqft': 'bg-tag-sky-bg text-tag-sky-text border-tag-sky-border',
+    'yrs': 'bg-tag-stone-bg text-tag-stone-text border-tag-stone-border',
 };
 
 interface JobCardProps { 
@@ -83,21 +81,17 @@ export const JobCard: React.FC<JobCardProps> = ({
         if (!job.notes) return [];
         const notesLower = job.notes.toLowerCase();
         
-        // Roof age tag (e.g. "16yrs") - Priority 1
         const ageMatch = job.notes.match(/\b(\d+)\s*yrs\b/i);
-        const ageTag = ageMatch ? [{ type: 'yrs', value: `${ageMatch[1]}yrs`, color: TAG_COLORS['yrs'] }] : [];
+        const ageTag = ageMatch ? [{ type: 'yrs', value: `${ageMatch[1]}yrs`, classes: TAG_CLASSES['yrs'] }] : [];
 
-        // Roof type tags - Priority 2
         const roofTags = TAG_KEYWORDS.filter(keyword => new RegExp(`\\b${keyword.toLowerCase()}\\b`).test(notesLower))
-            .map(tag => ({ type: 'roof', value: tag, color: TAG_COLORS[tag] }));
+            .map(tag => ({ type: 'roof', value: tag, classes: TAG_CLASSES[tag] }));
 
-        // Square footage tag (e.g., "1802sq" or "1802 sq") - Priority 3
         const sqftMatch = job.notes.match(/\b(\d+)\s*sq\.?\b/i);
-        const sqftTag = sqftMatch ? [{ type: 'sqft', value: `${sqftMatch[1]} sqft`, color: TAG_COLORS['sqft'] }] : [];
+        const sqftTag = sqftMatch ? [{ type: 'sqft', value: `${sqftMatch[1]} sqft`, classes: TAG_CLASSES['sqft'] }] : [];
 
-        // Stories tag (e.g., "1S", "2S") - Priority 4
         const storiesMatch = job.notes.match(/\b(\d)S\b/i);
-        const storiesTag = storiesMatch ? [{ type: 'stories', value: `${storiesMatch[1]} Story`, color: TAG_COLORS['stories'] }] : [];
+        const storiesTag = storiesMatch ? [{ type: 'stories', value: `${storiesMatch[1]} Story`, classes: TAG_CLASSES['stories'] }] : [];
         
         return [...ageTag, ...roofTags, ...sqftTag, ...storiesTag];
     }, [job.notes]);
@@ -127,7 +121,7 @@ export const JobCard: React.FC<JobCardProps> = ({
     let stateClasses = '';
 
     if (isEditing) {
-        stateClasses = "ring-2 ring-indigo-500 bg-indigo-50/50 p-2";
+        stateClasses = "ring-2 ring-brand-primary bg-brand-bg-light/50 p-2";
     } else if (isDraggable) {
         stateClasses = "cursor-grab active:cursor-grabbing";
     } else {
@@ -136,16 +130,15 @@ export const JobCard: React.FC<JobCardProps> = ({
 
     let colorClasses = '';
     if (isEliteMatch && !isEditing) {
-        // Elite Match Style: Gold/Amber Glow
-        colorClasses = "bg-gradient-to-br from-white to-amber-50 border-amber-400 shadow-md ring-1 ring-amber-200/50"; 
+        colorClasses = "bg-gradient-to-br from-primary to-tag-amber-bg border-tag-amber-border shadow-md ring-1 ring-tag-amber-border/50"; 
     } else if (isPriority && !isEditing) {
-        colorClasses = "bg-amber-100 border-amber-300 hover:shadow-md"; // Gold/Yellow background for priority
+        colorClasses = "bg-tag-amber-bg border-tag-amber-border hover:shadow-md";
     } else if (isActuallyMismatched && !isEditing) {
-        colorClasses = "bg-red-50 border-red-300 hover:shadow-md";
+        colorClasses = "bg-tag-red-bg border-tag-red-border hover:shadow-md";
     } else if (isReschedule && !isEditing) {
-        colorClasses = "bg-blue-50 border-blue-200 hover:shadow-md";
+        colorClasses = "bg-tag-blue-bg border-tag-blue-border hover:shadow-md";
     } else if (!isEditing) {
-        colorClasses = "bg-white border-gray-200 hover:shadow-md";
+        colorClasses = "bg-primary border-border-primary hover:shadow-md";
     }
     
     return `${base} ${stateClasses} ${colorClasses}`;
@@ -201,7 +194,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
       <button 
         type="button" 
         onClick={onClick} 
-        className="flex items-center space-x-1 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 text-gray-600 px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5"
+        className="flex items-center space-x-1 bg-primary border border-border-secondary hover:bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5"
         title={title}
       >
           <Icon className="h-3 w-3" />
@@ -215,7 +208,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         target="_blank" 
         rel="noopener noreferrer" 
         onClick={(e) => e.stopPropagation()} 
-        className="flex items-center space-x-1 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 text-gray-600 px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 decoration-0"
+        className="flex items-center space-x-1 bg-primary border border-border-secondary hover:bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 decoration-0"
         title="Open in Google Maps"
       >
           <MapPinIcon className="h-3 w-3" />
@@ -229,7 +222,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         target="_blank" 
         rel="noopener noreferrer" 
         onClick={(e) => e.stopPropagation()} 
-        className="flex items-center space-x-1 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 text-gray-600 px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 decoration-0"
+        className="flex items-center space-x-1 bg-primary border border-border-secondary hover:bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 decoration-0"
         title="Open in Roofr"
       >
           <ExternalLinkIcon className="h-3 w-3" />
@@ -243,30 +236,30 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         <div className={cardClasses} onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col space-y-2">
             <div>
-                <label className="text-xs font-bold text-gray-600">City / Cust.</label>
-                <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-1 border bg-white border-gray-300 rounded-md text-sm" autoFocus />
+                <label className="text-xs font-bold text-text-tertiary">City / Cust.</label>
+                <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-1 border bg-secondary border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" autoFocus />
             </div>
             <div>
-                <label className="text-xs font-bold text-gray-600">Address</label>
-                <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full p-1 border bg-white border-gray-300 rounded-md text-sm" rows={2} />
+                <label className="text-xs font-bold text-text-tertiary">Address</label>
+                <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full p-1 border bg-secondary border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" rows={2} />
             </div>
             <div>
-                <label className="text-xs font-bold text-gray-600">Notes</label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full p-1 border bg-white border-gray-300 rounded-md text-sm" rows={3} />
+                <label className="text-xs font-bold text-text-tertiary">Notes</label>
+                <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full p-1 border bg-secondary border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" rows={3} />
             </div>
-            <div className="mt-1 pt-1 border-t border-gray-200/50 flex items-center justify-between">
+            <div className="mt-1 pt-1 border-t border-border-primary/50 flex items-center justify-between">
                 {onRemove && (
-                    <button type="button" onClick={handleRemove} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-red-600 bg-white hover:bg-red-50 transition" title="Remove Job Permanently">
+                    <button type="button" onClick={handleRemove} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-tag-red-text bg-primary hover:bg-tag-red-bg transition" title="Remove Job Permanently">
                     <TrashIcon className="h-3 w-3" />
                     <span>Del</span>
                     </button>
                 )}
                 <div className="flex items-center space-x-1">
-                    <button onClick={handleCancel} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-gray-600 bg-white hover:bg-gray-100 transition" title="Cancel">
+                    <button onClick={handleCancel} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-text-tertiary bg-primary hover:bg-tertiary transition" title="Cancel">
                     <XIcon className="h-3 w-3" />
                     <span>Cancel</span>
                     </button>
-                    <button onClick={handleSave} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-white bg-green-600 hover:bg-green-700 transition" title="Save Changes">
+                    <button onClick={handleSave} className="flex items-center space-x-0.5 px-2 py-1 text-[10px] border rounded-md text-brand-text-on-primary bg-tag-green-bg text-tag-green-text hover:bg-tag-green-bg/80 transition" title="Save Changes">
                     <SaveIcon className="h-3 w-3" />
                     <span>Save</span>
                     </button>
@@ -299,21 +292,21 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         {/* Header: City & Status */}
         <div className={`px-2 pt-1.5 pb-1 flex justify-between items-start ${isCompact ? 'flex-col gap-1' : ''}`}>
             <div className="min-w-0 flex-1 mr-2">
-                <h3 className="font-extrabold text-xs uppercase tracking-tight text-gray-800 truncate leading-tight">
+                <h3 className="font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-tight">
                     {job.city || 'Unknown City'}
                 </h3>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
-                {isPriority && <StarIcon className="h-3.5 w-3.5 text-amber-600 drop-shadow-sm" />}
+                {isPriority && <StarIcon className="h-3.5 w-3.5 text-tag-amber-text drop-shadow-sm" />}
                 
                 {showOriginalTime && (
-                    <span className="text-[9px] text-gray-400 font-mono mr-0.5 hidden sm:inline-block bg-gray-50 px-1 rounded border border-gray-100" title={`Original Request: ${job.originalTimeframe}`}>
+                    <span className="text-[9px] text-text-quaternary font-mono mr-0.5 hidden sm:inline-block bg-tertiary px-1 rounded border border-border-primary" title={`Original Request: ${job.originalTimeframe}`}>
                         Req:{formattedOriginalTime}
                     </span>
                 )}
 
                 <span className={`text-[10px] font-bold px-1.5 rounded-full border ${
-                    displayTimeLabel !== 'Anytime' ? 'bg-white/80 border-gray-200 text-gray-700 shadow-sm' : 'bg-gray-100 text-gray-500 border-transparent'
+                    displayTimeLabel !== 'Anytime' ? 'bg-primary/80 border-border-primary text-secondary shadow-sm' : 'bg-tertiary text-text-tertiary border-transparent'
                 }`}>
                     {/* Use full label if it's a specific generated slot (contains hyphen), else short */}
                     {displayTimeLabel.includes('-') && displayTimeLabel.length < 20 ? displayTimeLabel : shortTimeLabel}
@@ -327,7 +320,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             {allTags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                     {allTags.map((tag, idx) => (
-                        <span key={`${tag.value}-${idx}`} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${tag.color}`}>
+                        <span key={`${tag.value}-${idx}`} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${tag.classes}`}>
                             {tag.value}
                         </span>
                     ))}
@@ -340,17 +333,16 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     <span 
                         className={`mr-auto text-[9px] font-bold px-1.5 py-0.5 rounded border cursor-help flex items-center gap-0.5
                             ${isEliteMatch 
-                                ? 'text-amber-700 bg-amber-50 border-amber-300 shadow-sm ring-1 ring-amber-100' 
-                                : 'text-gray-500 bg-gray-100 border-gray-200'
+                                ? 'text-tag-amber-text bg-tag-amber-bg border-tag-amber-border shadow-sm ring-1 ring-tag-amber-border/30' 
+                                : 'text-text-tertiary bg-tertiary border-border-primary'
                             }`} 
                         title={getScoreTooltip(displayJob)}
                     >
-                        {isEliteMatch && <TrophyIcon className="h-2.5 w-2.5 text-amber-600" />}
+                        {isEliteMatch && <TrophyIcon className="h-2.5 w-2.5 text-tag-amber-text" />}
                         {assignmentScore}
                     </span>
                 )}
                 
-                {/* Only show simplified actions if compact, but allow click-to-edit */}
                 {!isCompact ? (
                     <>
                         {roofrUrl && <RoofrLink />}
@@ -371,9 +363,8 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         )}
                     </>
                 ) : (
-                    // Compact Mode Actions (Maps only usually, since card click edits)
                     <div className="w-full flex justify-between items-center">
-                         <span className="text-[9px] text-indigo-500 font-semibold italic">Click card to edit</span>
+                         <span className="text-[9px] text-brand-text-light font-semibold italic">Click card to edit</span>
                          <div className="flex items-center gap-1">
                             {roofrUrl && <RoofrLink />}
                             <MapsLink />
@@ -385,7 +376,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
 
         {/* Footer: Address */}
         <div className="px-2 pb-1.5 pt-1 mt-0.5 border-t border-black/5">
-            <p className="text-[10px] text-gray-600 truncate font-medium leading-tight" title={job.address}>
+            <p className="text-[10px] text-text-tertiary truncate font-medium leading-tight" title={job.address}>
                 {job.address}
             </p>
         </div>

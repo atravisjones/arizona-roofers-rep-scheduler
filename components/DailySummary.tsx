@@ -210,36 +210,36 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <header className="p-4 border-b flex justify-between items-center flex-shrink-0 bg-gray-50 rounded-t-xl">
-                    <h2 className="text-lg font-bold text-gray-800">Daily Job Summary</h2>
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+            <div className="popup-surface w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                <header className="p-4 border-b border-border-primary flex justify-between items-center flex-shrink-0 bg-bg-secondary">
+                    <h2 className="text-lg font-bold text-text-primary">Daily Job Summary</h2>
                     <div className="flex items-center space-x-4">
                         <button 
                             onClick={handleSelectAll}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${selectSuccess ? 'bg-green-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${selectSuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-brand-primary hover:bg-brand-secondary text-brand-text-on-primary'}`}
                             disabled={jobs.length === 0}
                         >
                             <ClipboardIcon />
                             <span>{selectSuccess ? 'Selected!' : 'Select All'}</span>
                         </button>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-3xl leading-none">&times;</button>
+                        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary text-3xl leading-none">&times;</button>
                     </div>
                 </header>
-                <div className="flex-grow bg-white text-gray-800 p-8 overflow-y-auto font-sans">
+                <div className="flex-grow bg-bg-primary text-text-primary p-8 overflow-y-auto font-sans">
                     <div ref={summaryRef} className="space-y-8">
                         
                         {/* 1. Email Subject & Header */}
                         <div className="mb-6">
-                            <div className="bg-gray-100 p-3 rounded-md mb-4 border border-gray-200">
-                                <p className="font-mono text-sm text-gray-700 select-all">
-                                    <span className="font-bold text-gray-900">Email Subject:</span> {subjectLine}
+                            <div className="bg-bg-tertiary p-3 rounded-md mb-4 border border-border-primary">
+                                <p className="font-mono text-sm text-text-secondary select-all">
+                                    <span className="font-bold text-text-primary">Email Subject:</span> {subjectLine}
                                 </p>
                             </div>
 
                             <div className="text-center">
-                                <h1 className="text-xl font-bold text-green-800 mb-4 uppercase">{subjectLine}</h1>
-                                <div className="text-left inline-block">
+                                <h1 className="text-xl font-bold text-tag-green-text mb-4 uppercase">{subjectLine}</h1>
+                                <div className="text-left inline-block text-text-primary">
                                     <p>Total Appointments: {stats.total}</p>
                                     <p>Valley: {stats.valley}</p>
                                     <p>Outer Cities: {stats.outer}</p>
@@ -249,34 +249,39 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                             </div>
                         </div>
                         
-                        <hr className="border-gray-300" />
+                        <hr className="border-border-secondary" />
 
                         {/* 2. Overview Table */}
                         <div>
-                            <h2 className="text-xl font-bold mb-3">2. Overview Table</h2>
-                            <table className="min-w-full border-collapse border border-black text-sm text-black">
+                            <h2 className="text-xl font-bold mb-3 text-text-primary">2. Overview Table</h2>
+                            <table className="min-w-full border-collapse border border-border-tertiary text-sm text-text-primary">
                                 <thead>
-                                    <tr className="bg-white">
-                                        <th className="border border-black px-2 py-1 text-left font-bold text-black w-40">Rep</th>
-                                        <th className="border border-black px-2 py-1 text-left font-bold text-black w-16">Total</th>
-                                        <th className="border border-black px-2 py-1 text-left font-bold text-black">Cities</th>
-                                        <th className="border border-black px-2 py-1 text-left font-bold text-black w-64">Time Blocks (Original)</th>
+                                    <tr className="bg-bg-secondary">
+                                        <th className="border border-border-tertiary px-2 py-1 text-left font-bold w-40">Rep</th>
+                                        <th className="border border-border-tertiary px-2 py-1 text-left font-bold w-16">Total</th>
+                                        <th className="border border-border-tertiary px-2 py-1 text-left font-bold">Cities</th>
+                                        <th className="border border-border-tertiary px-2 py-1 text-left font-bold w-64">Time Blocks (Original)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {overviewData.map((row, idx) => (
-                                        <tr key={row.name} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-100'}>
-                                            <td className="border border-black px-2 py-1 font-bold text-black">{row.name}</td>
-                                            <td className="border border-black px-2 py-1 text-black">{row.count}</td>
-                                            <td className="border border-black px-2 py-1 text-black">{row.cities}</td>
-                                            <td className="border border-black px-2 py-1 text-black">{row.timeBlocks}</td>
+                                        <tr key={row.name} className={idx % 2 === 0 ? 'bg-bg-primary' : 'bg-bg-secondary'}>
+                                            <td className="border border-border-tertiary px-2 py-1 font-bold">{row.name}</td>
+                                            <td className="border border-border-tertiary px-2 py-1">{row.count}</td>
+                                            <td className="border border-border-tertiary px-2 py-1">{row.cities}</td>
+                                            <td className="border border-border-tertiary px-2 py-1">{row.timeBlocks}</td>
                                         </tr>
                                     ))}
+                                    {overviewData.length === 0 && (
+                                        <tr>
+                                            <td colSpan={4} className="border border-border-tertiary px-2 py-4 text-center text-text-tertiary italic">No assigned jobs.</td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
 
-                        <hr className="border-gray-300" />
+                        <hr className="border-border-secondary" />
 
                         {/* 3. Detailed Schedule */}
                         <div>
@@ -285,10 +290,10 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                     const jobsInSlot = jobsByTimeSlot[timeSlot];
                                     return (
                                         <div key={timeSlot} className="mb-6">
-                                            <h3 className="text-lg font-mono font-bold text-gray-900 mb-2">
+                                            <h3 className="text-lg font-mono font-bold text-text-primary mb-2">
                                                 {timeSlot} ({jobsInSlot.length})
                                             </h3>
-                                            <ul className="list-disc list-inside space-y-1 font-mono text-sm">
+                                            <ul className="list-disc list-inside space-y-1 font-mono text-sm text-text-primary">
                                                 {jobsInSlot.map(job => {
                                                     const { jobType, rescheduleInfo, isGoldJob, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
                                                     const locationDisplay = [job.city ? job.city.toUpperCase() : '', job.zipCode ? `AZ ${job.zipCode}` : null].filter(Boolean).join(', ');
@@ -297,9 +302,9 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                                     return (
                                                         <li key={job.id}>
                                                             <span className="uppercase">{locationDisplay}</span>
-                                                            {' '}(<strong className="text-gray-900 font-bold">{tags}</strong>)
-                                                            {isGoldJob && <span className="text-yellow-600 font-bold ml-1"># {priorityReason}</span>}
-                                                            {rescheduleInfo && <span className="text-blue-600 italic ml-1">(Rescheduled from {rescheduleInfo})</span>}
+                                                            {' '}(<strong className="text-text-primary font-bold">{tags}</strong>)
+                                                            {isGoldJob && <span className="text-tag-amber-text font-bold ml-1"># {priorityReason}</span>}
+                                                            {rescheduleInfo && <span className="text-tag-blue-text italic ml-1">(Rescheduled from {rescheduleInfo})</span>}
                                                             {' '}→ {job.assignedRepName}
                                                         </li>
                                                     );
@@ -309,7 +314,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                     );
                                 })
                             ) : (
-                                <p className="text-gray-500 italic">No assigned jobs.</p>
+                                <p className="text-text-tertiary italic">No assigned jobs.</p>
                             )}
                         </div>
                     </div>

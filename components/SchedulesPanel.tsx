@@ -36,24 +36,24 @@ const TabButton: React.FC<{
         onClick={() => onClick(tabId)}
         className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 ${
             activeTab === tabId 
-            ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200' 
-            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+            ? 'bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary' 
+            : 'text-text-tertiary hover:text-secondary hover:bg-quaternary/50'
         }`}
     >
         {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { 
-            className: `h-3.5 w-3.5 ${activeTab === tabId ? 'text-indigo-500' : 'text-gray-400'}` 
+            className: `h-3.5 w-3.5 ${activeTab === tabId ? 'text-brand-primary' : 'text-text-tertiary'}` 
         })}
         <span>{label}</span>
     </button>
 );
 
 const chipBaseClass = "px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all duration-200 flex items-center gap-1 select-none cursor-pointer hover:shadow-sm";
-const chipActiveClass = "bg-indigo-600 text-white border-indigo-600 shadow-sm ring-1 ring-indigo-200";
-const chipInactiveClass = "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600";
+const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm ring-1 ring-brand-primary/20";
+const chipInactiveClass = "bg-primary text-secondary border-border-primary hover:border-brand-primary/50 hover:bg-brand-bg-light hover:text-brand-primary";
 
 // Optimized Rep Styles (Teal)
-const chipOptimizedActiveClass = "bg-teal-600 text-white border-teal-600 shadow-sm ring-1 ring-teal-200";
-const chipOptimizedInactiveClass = "bg-teal-50 text-teal-700 border-teal-200 hover:border-teal-300 hover:bg-teal-100 hover:text-teal-800";
+const chipOptimizedActiveClass = "bg-tag-teal-bg text-tag-teal-text border-tag-teal-border shadow-sm ring-1 ring-tag-teal-border";
+const chipOptimizedInactiveClass = "bg-tag-teal-bg/50 text-tag-teal-text border-tag-teal-border/50 hover:border-tag-teal-border hover:bg-tag-teal-bg hover:text-tag-teal-text";
 
 interface SchedulesPanelProps {
     onDragStart: () => void;
@@ -151,8 +151,8 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                   {jobCount > 0 && (
                                       <span className={`ml-1.5 flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full ${
                                           isMatch 
-                                            ? (isOptimized ? 'bg-teal-500 text-white' : 'bg-indigo-500 text-white') 
-                                            : (isOptimized ? 'bg-teal-100 text-teal-800' : 'bg-indigo-100 text-indigo-700')
+                                            ? (isOptimized ? 'bg-tag-teal-text text-primary' : 'bg-brand-secondary text-brand-text-on-primary') 
+                                            : (isOptimized ? 'bg-tag-teal-bg text-tag-teal-text' : 'bg-brand-bg-light text-brand-text-light')
                                       }`}>
                                           {jobCount}
                                       </span>
@@ -183,21 +183,21 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
               );
           case 'tags':
           case 'skills': // Reusing UI for simplicity or expand later
-              return <div className="text-xs text-gray-400 italic p-2 text-center">Filter by tags/skills coming soon. Use search for now.</div>;
+              return <div className="text-xs text-text-quaternary italic p-2 text-center">Filter by tags/skills coming soon. Use search for now.</div>;
       }
   };
 
   return (
     <>
-      <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
-        <h2 className="text-base font-bold text-gray-800 flex items-center gap-2">
+      <div className="flex justify-between items-center mb-3 border-b border-border-primary pb-2">
+        <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
             1. Schedules
-            <div className="flex items-center px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-100 text-xs font-medium" title="Assigned Jobs">
+            <div className="flex items-center px-2 py-0.5 bg-tag-amber-bg text-tag-amber-text rounded-full border border-tag-amber-border text-xs font-medium" title="Assigned Jobs">
                 {assignedJobsCount} Assigned
             </div>
             {visibleReps.length > 0 && (
-                <div className="flex items-center px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full border border-gray-200 text-xs font-medium" title="Average Score">
-                    <TrophyIcon className="h-3 w-3 mr-1 text-amber-500" />
+                <div className="flex items-center px-2 py-0.5 bg-tertiary text-secondary rounded-full border border-border-primary text-xs font-medium" title="Average Score">
+                    <TrophyIcon className="h-3 w-3 mr-1 text-tag-amber-text" />
                     <span className="font-bold">Avg: {Math.round(visibleReps.reduce((acc, rep) => {
                         const jobs = rep.schedule.flatMap(s => s.jobs).filter(j => typeof j.assignmentScore === 'number');
                         if (jobs.length === 0) return acc;
@@ -213,19 +213,20 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                 <input 
                     type="text" 
                     className={`
-                        pl-8 pr-7 py-1.5 text-xs border border-gray-300 bg-white rounded-md 
-                        focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all w-32 focus:w-48
-                        ${repSearchTerm ? 'w-48 border-indigo-300 ring-1 ring-indigo-50' : ''}
+                        pl-8 pr-7 py-1.5 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary 
+                        rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary 
+                        transition-all w-32 focus:w-48
+                        ${repSearchTerm ? 'w-48' : ''}
                     `}
                     placeholder="Search reps..." 
                     value={repSearchTerm} 
                     onChange={e => setRepSearchTerm(e.target.value)} 
                 />
-                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400 group-focus-within:text-indigo-500 transition-colors">
+                <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-text-quaternary group-focus-within:text-brand-primary transition-colors">
                     <SearchIcon className="h-3.5 w-3.5" />
                 </div>
                 {repSearchTerm && (
-                    <button onClick={() => setRepSearchTerm('')} className="absolute inset-y-0 right-0 pr-2 flex items-center text-gray-400 hover:text-gray-600 cursor-pointer">
+                    <button onClick={() => setRepSearchTerm('')} className="absolute inset-y-0 right-0 pr-2 flex items-center text-text-quaternary hover:text-secondary cursor-pointer">
                         <XIcon className="h-3 w-3" />
                     </button>
                 )}
@@ -235,7 +236,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                 draggable
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
-                className="p-1.5 cursor-grab text-gray-300 hover:text-gray-500 hover:bg-gray-100 rounded-md transition-colors active:cursor-grabbing"
+                className="p-1.5 cursor-grab text-border-tertiary hover:text-secondary hover:bg-tertiary rounded-md transition-colors active:cursor-grabbing"
                 title="Drag to reorder column"
             >
                 <DragHandleIcon className="h-4 w-4" />
@@ -244,7 +245,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
       </div>
 
       {/* Filters Section */}
-      <div className="bg-gray-50 rounded-lg p-1.5 mb-3 border border-gray-200">
+      <div className="bg-secondary rounded-lg p-1.5 mb-3 border border-border-primary">
           <div className="flex gap-1 mb-2 select-none">
                 <TabButton activeTab={activeTab} onClick={setActiveTab} tabId="rep" label="By Region" icon={<UserIcon />} />
                 <TabButton activeTab={activeTab} onClick={setActiveTab} tabId="city" label="By City" icon={<MapPinIcon />} />
@@ -253,26 +254,26 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
           </div>
           
           <div className="flex items-center justify-between px-1 mb-1">
-                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                 <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
                      {activeTab === 'city' ? 'Filter by City (Alt+Click for Multi)' : activeTab === 'rep' ? 'Filter by Rep (Click to Select)' : 'Filter Options'}
                  </span>
                  {(cityFilters.size > 0 || repSearchTerm) && (
-                    <button onClick={() => { setCityFilters(new Set()); setRepSearchTerm(''); }} className="text-[10px] font-bold text-red-600 hover:text-red-700 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-red-50">
+                    <button onClick={() => { setCityFilters(new Set()); setRepSearchTerm(''); }} className="text-[10px] font-bold text-tag-red-text hover:text-tag-red-text/80 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-tag-red-bg">
                         <XIcon className="h-3 w-3" /> Clear Filters 
                     </button>
                  )}
             </div>
 
-          <div className="max-h-[100px] overflow-y-auto p-2 bg-white rounded border border-gray-200 custom-scrollbar">
+          <div className="max-h-[100px] overflow-y-auto p-2 bg-primary rounded border border-border-primary custom-scrollbar">
               {renderFilterTabContent()}
           </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-3 items-center justify-between bg-white p-1 rounded border border-gray-100">
+      <div className="flex flex-wrap gap-2 mb-3 items-center justify-between bg-primary p-1 rounded border border-border-primary">
         <div className="flex items-center space-x-1">
             <button 
                 onClick={() => handleToggleAllReps(visibleReps)} 
-                className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-indigo-600 transition"
+                className="p-1.5 rounded hover:bg-tertiary text-text-tertiary hover:text-brand-primary transition"
                 title={expandedRepIds.size === visibleReps.length ? "Collapse All" : "Expand All"}
             >
                 {expandedRepIds.size === visibleReps.length ? <CollapseAllIcon className="h-4 w-4" /> : <ExpandAllIcon className="h-4 w-4" />}
@@ -281,24 +282,24 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
             <button 
                 onClick={handleClearAllSchedules} 
                 disabled={assignedJobsCount === 0}
-                className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-600 transition disabled:opacity-30"
+                className="p-1.5 rounded hover:bg-tag-red-bg text-text-quaternary hover:text-tag-red-text transition disabled:opacity-30"
                 title="Unassign All Jobs"
             >
                 <UnassignAllIcon className="h-4 w-4" />
             </button>
             
-            <div className="h-4 w-px bg-gray-200 mx-1"></div>
+            <div className="h-4 w-px bg-border-primary mx-1"></div>
 
             <button 
                 onClick={() => setLockFilter(prev => prev === 'locked' ? 'all' : 'locked')}
-                className={`p-1.5 rounded transition ${lockFilter === 'locked' ? 'bg-amber-100 text-amber-700' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                className={`p-1.5 rounded transition ${lockFilter === 'locked' ? 'bg-tag-amber-bg text-tag-amber-text' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
                 title="Show Locked Only"
             >
                 <LockIcon className="h-3.5 w-3.5" />
             </button>
              <button 
                 onClick={() => setLockFilter(prev => prev === 'unlocked' ? 'all' : 'unlocked')}
-                className={`p-1.5 rounded transition ${lockFilter === 'unlocked' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                className={`p-1.5 rounded transition ${lockFilter === 'unlocked' ? 'bg-brand-bg-light text-brand-text-light' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
                 title="Show Unlocked Only"
             >
                 <UnlockIcon className="h-3.5 w-3.5" />
@@ -306,10 +307,10 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
         </div>
 
         <div className="flex items-center space-x-2">
-            <label htmlFor="sort-select" className="text-xs font-semibold text-gray-500">Sort:</label>
+            <label htmlFor="sort-select" className="text-xs font-semibold text-text-tertiary">Sort:</label>
             <select
                 id="sort-select"
-                className="text-xs border border-gray-300 rounded p-1 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50"
+                className="text-xs border border-primary rounded p-1 focus:ring-2 focus:ring-brand-primary focus:outline-none bg-secondary text-primary hover:bg-tertiary"
                 value={sortConfig.key === 'Tile' || sortConfig.key === 'Shingle' || sortConfig.key === 'Flat' ? `skill-${sortConfig.key}` : sortConfig.key}
                 onChange={handleSortChange}
             >
@@ -333,12 +334,12 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
 
       <div className="flex-grow overflow-y-auto min-h-0 space-y-2 pr-1 custom-scrollbar">
         {isLoadingReps ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-500">
-            <LoadingIcon className="text-indigo-500 h-8 w-8 mb-2" />
+          <div className="flex flex-col items-center justify-center h-32 text-text-tertiary">
+            <LoadingIcon className="text-brand-primary h-8 w-8 mb-2" />
             <p className="text-sm font-medium">Loading Reps...</p>
           </div>
         ) : repsError ? (
-          <div className="flex flex-col items-center justify-center h-32 text-red-500 bg-red-50 rounded-lg p-4 border border-red-100">
+          <div className="flex flex-col items-center justify-center h-32 text-tag-red-text bg-tag-red-bg rounded-lg p-4 border border-tag-red-border">
             <ErrorIcon className="h-8 w-8 mb-2" />
             <p className="text-sm text-center">{repsError}</p>
           </div>
@@ -368,7 +369,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
             />
           ))
         ) : (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-400">
+          <div className="flex flex-col items-center justify-center h-32 text-text-quaternary">
             <p className="text-sm italic">No reps match your filter.</p>
           </div>
         )}

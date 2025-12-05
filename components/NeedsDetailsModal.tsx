@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
@@ -59,16 +58,16 @@ const NeedsDetailsModal: React.FC<NeedsDetailsModalProps> = ({ isOpen, onClose }
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-                <header className="px-6 py-4 border-b flex justify-between items-center bg-amber-50 rounded-t-xl">
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]" onClick={onClose}>
+            <div className="bg-bg-primary rounded-xl shadow-2xl w-full max-w-3xl h-[85vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+                <header className="px-6 py-4 border-b border-border-primary flex justify-between items-center bg-tag-amber-bg rounded-t-xl">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-amber-100 text-amber-700 rounded-lg border border-amber-200 shadow-sm">
+                        <div className="p-2 bg-tag-amber-bg text-tag-amber-text rounded-lg border border-tag-amber-border shadow-sm">
                             <RepairIcon className="h-6 w-6" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-gray-900">Jobs Needing Details</h2>
-                            <p className="text-xs text-gray-600">
+                            <h2 className="text-xl font-bold text-text-primary">Jobs Needing Details</h2>
+                            <p className="text-xs text-text-secondary">
                                 Found {jobsNeedingDetails.length} jobs with missing information (Age, Size, Type).
                             </p>
                         </div>
@@ -76,26 +75,26 @@ const NeedsDetailsModal: React.FC<NeedsDetailsModalProps> = ({ isOpen, onClose }
                     <div className="flex items-center space-x-4">
                          <button
                             onClick={handleSelectAll}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-green-600 text-white' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-primary text-brand-primary border border-border-primary hover:bg-brand-bg-light'}`}
                         >
                             <ClipboardIcon />
                             <span>{selectSuccess ? 'Selected!' : 'Select All'}</span>
                         </button>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-200 transition">
+                        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary p-1 rounded-full hover:bg-bg-tertiary transition">
                             <XIcon className="h-6 w-6" />
                         </button>
                     </div>
                 </header>
 
-                <div className="bg-white p-4 border-b border-gray-100">
-                    <p className="text-sm text-gray-600 leading-relaxed">
+                <div className="bg-bg-primary p-4 border-b border-border-primary">
+                    <p className="text-sm text-text-secondary leading-relaxed">
                         These jobs have <b>1 or fewer</b> data tags. Updating them with details like 
                         <i> "20yrs", "2500sqft", "Tile"</i> will improve the AI Auto-Assign score. 
                         Click a card to edit.
                     </p>
                 </div>
 
-                <div ref={contentRef} className="flex-grow overflow-y-auto bg-gray-50 p-4 custom-scrollbar">
+                <div ref={contentRef} className="flex-grow overflow-y-auto bg-bg-secondary p-4 custom-scrollbar">
                     {jobsNeedingDetails.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {jobsNeedingDetails.map(job => (
@@ -112,18 +111,18 @@ const NeedsDetailsModal: React.FC<NeedsDetailsModalProps> = ({ isOpen, onClose }
                             ))}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center pb-10">
-                            <div className="p-4 bg-green-50 rounded-full mb-3">
-                                <RepairIcon className="h-12 w-12 text-green-400" />
+                        <div className="flex flex-col items-center justify-center h-full text-text-quaternary text-center pb-10">
+                            <div className="p-4 bg-tag-green-bg rounded-full mb-3">
+                                <RepairIcon className="h-12 w-12 text-tag-green-text" />
                             </div>
-                            <p className="text-lg font-semibold text-gray-700">All Clear!</p>
+                            <p className="text-lg font-semibold text-text-primary">All Clear!</p>
                             <p className="text-sm mt-1">No sparse jobs found in the unassigned list.</p>
                         </div>
                     )}
                 </div>
                 
-                <footer className="px-6 py-3 bg-gray-50 border-t flex justify-end rounded-b-xl">
-                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition shadow-sm">
+                <footer className="px-6 py-3 bg-bg-secondary border-t border-border-primary flex justify-end rounded-b-xl">
+                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-text-secondary bg-bg-primary border border-border-secondary rounded-lg hover:bg-bg-tertiary transition shadow-sm">
                         Close
                     </button>
                 </footer>

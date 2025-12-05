@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Job } from '../types';
 import { TAG_KEYWORDS } from '../constants';
@@ -23,20 +22,20 @@ const TabButton: React.FC<{
         onClick={() => onClick(tabId)}
         className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 ${
             activeTab === tabId 
-            ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200' 
-            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+            ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary' 
+            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
         }`}
     >
         {React.cloneElement(icon as React.ReactElement<{ className?: string }>, { 
-            className: `h-3.5 w-3.5 ${activeTab === tabId ? 'text-indigo-500' : 'text-gray-400'}` 
+            className: `h-3.5 w-3.5 ${activeTab === tabId ? 'text-brand-primary' : 'text-text-quaternary'}` 
         })}
         <span>{label}</span>
     </button>
 );
 
 const chipBaseClass = "px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all duration-200 flex items-center gap-1 select-none cursor-pointer hover:shadow-sm";
-const chipActiveClass = "bg-indigo-600 text-white border-indigo-600 shadow-sm ring-1 ring-indigo-200";
-const chipInactiveClass = "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600";
+const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm ring-1 ring-brand-primary/20";
+const chipInactiveClass = "bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50 hover:bg-brand-bg-light hover:text-brand-primary";
 
 const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange }) => {
     const [activeTab, setActiveTab] = useState<ActiveTab>('city');
@@ -254,16 +253,16 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                 return (
                      <div className="space-y-1.5">
                         <div className="flex items-start gap-2">
-                             <span className="w-12 pt-0.5 text-[9px] font-bold text-gray-400 uppercase text-right flex-shrink-0">Status</span>
-                            <button onClick={() => setTagFilters(f => ({ ...f, priority: !f.priority }))} className={`${tagFilters.priority ? 'bg-yellow-100 text-yellow-800 border-yellow-300 ring-1 ring-yellow-400/50' : chipInactiveClass} ${chipBaseClass}`}>
-                                <StarIcon className={`h-3 w-3 ${tagFilters.priority ? 'text-yellow-600' : 'text-gray-400'}`} /> 
+                             <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Status</span>
+                            <button onClick={() => setTagFilters(f => ({ ...f, priority: !f.priority }))} className={`${tagFilters.priority ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : chipInactiveClass} ${chipBaseClass}`}>
+                                <StarIcon className={`h-3 w-3 ${tagFilters.priority ? 'text-tag-amber-text' : 'text-text-quaternary'}`} /> 
                                 Priority Job (#)
                             </button>
                         </div>
 
                         {availableTags.roofTypes.length > 0 && (
                             <div className="flex items-start gap-2">
-                                <span className="w-12 pt-0.5 text-[9px] font-bold text-gray-400 uppercase text-right flex-shrink-0">Roof</span>
+                                <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Roof</span>
                                 <div className="flex flex-wrap gap-1">
                                     {availableTags.roofTypes.map(tag => (
                                         <button key={tag} onClick={() => setTagFilters(f => { const n = new Set(f.roofTypes); n.has(tag) ? n.delete(tag) : n.add(tag); return { ...f, roofTypes: n }; })} className={`${tagFilters.roofTypes.has(tag) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>{tag}</button>
@@ -273,7 +272,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                         )}
                         {availableTags.stories.length > 0 && (
                             <div className="flex items-start gap-2">
-                                <span className="w-12 pt-0.5 text-[9px] font-bold text-gray-400 uppercase text-right flex-shrink-0">Height</span>
+                                <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Height</span>
                                 <div className="flex flex-wrap gap-1">
                                     {availableTags.stories.map(tag => (
                                         <button key={tag} onClick={() => setTagFilters(f => { const n = new Set(f.stories); n.has(tag) ? n.delete(tag) : n.add(tag); return { ...f, stories: n }; })} className={`${tagFilters.stories.has(tag) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>{tag} Story</button>
@@ -283,7 +282,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                         )}
                         {availableTags.ages.length > 0 && (
                              <div className="flex items-start gap-2">
-                                <span className="w-12 pt-0.5 text-[9px] font-bold text-gray-400 uppercase text-right flex-shrink-0">Age</span>
+                                <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Age</span>
                                 <div className="flex flex-wrap gap-1">
                                     {availableTags.ages.map(tag => (
                                         <button key={tag} onClick={() => setTagFilters(f => { const n = new Set(f.ages); n.has(tag) ? n.delete(tag) : n.add(tag); return { ...f, ages: n }; })} className={`${tagFilters.ages.has(tag) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>{tag}</button>
@@ -293,7 +292,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                         )}
                          {availableTags.sizes.length > 0 && (
                             <div className="flex items-start gap-2">
-                                <span className="w-12 pt-0.5 text-[9px] font-bold text-gray-400 uppercase text-right flex-shrink-0">Size</span>
+                                <span className="w-12 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Size</span>
                                 <div className="flex flex-wrap gap-1">
                                     {availableTags.sizes.map(tag => (
                                         <button key={tag} onClick={() => setTagFilters(f => { const n = new Set(f.sizes); n.has(tag) ? n.delete(tag) : n.add(tag); return { ...f, sizes: n }; })} className={`${tagFilters.sizes.has(tag) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>{tag}</button>
@@ -308,22 +307,22 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
 
     return (
         <div className="mb-2">
-            <div className="flex p-1 bg-gray-100 rounded-lg mb-3 gap-1 select-none">
+            <div className="flex p-1 bg-bg-tertiary rounded-lg mb-3 gap-1 select-none">
                 <TabButton activeTab={activeTab} onClick={setActiveTab} tabId="city" label="By City" icon={<MapPinIcon />} />
                 <TabButton activeTab={activeTab} onClick={setActiveTab} tabId="time" label="By Time" icon={<ClockIcon />} />
                 <TabButton activeTab={activeTab} onClick={setActiveTab} tabId="tags" label="By Tags" icon={<TagIcon />} />
             </div>
             <div className="flex items-center justify-between px-1 mb-1">
-                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                 <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
                      {activeTab === 'city' ? 'Filter by City (Alt+Click for Multi)' : activeTab === 'time' ? 'Filter by Time Slot (Alt+Click for Multi)' : 'Filter by Attributes'}
                  </span>
                  {hasActiveFilters && (
-                    <button onClick={handleClearFilters} className="text-[10px] font-bold text-red-600 hover:text-red-700 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-red-50">
+                    <button onClick={handleClearFilters} className="text-[10px] font-bold text-tag-red-text hover:text-tag-red-text/80 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-tag-red-bg">
                         <XIcon className="h-3 w-3" /> Clear Filters 
                     </button>
                  )}
             </div>
-            <div className="max-h-[140px] overflow-y-auto p-2 bg-white rounded-lg border border-gray-200 shadow-sm custom-scrollbar">
+            <div className="max-h-[140px] overflow-y-auto p-2 bg-bg-primary rounded-lg border border-border-primary shadow-sm custom-scrollbar">
                 {renderTabContent()}
             </div>
         </div>

@@ -1,4 +1,3 @@
-
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { TIME_SLOTS } from '../constants';
@@ -198,27 +197,27 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                 <header className="p-4 border-b flex justify-between items-center flex-shrink-0 bg-gray-50 rounded-t-xl">
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+            <div className="popup-surface w-full max-w-5xl h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                 <header className="p-4 border-b border-border-primary flex justify-between items-center flex-shrink-0 bg-bg-secondary">
                     <div>
-                        <h2 className="text-xl font-bold text-gray-800">Slot Availability</h2>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <h2 className="text-xl font-bold text-text-primary">Slot Availability</h2>
+                        <p className="text-xs text-text-tertiary mt-1">
                             Check which reps are open for specific times and where they are located.
                         </p>
                     </div>
                     <div className="flex items-center space-x-3">
-                        <div className="flex bg-gray-200 rounded-lg p-1">
+                        <div className="flex bg-bg-tertiary rounded-lg p-1">
                             <button
                                 onClick={() => setViewMode('by-time')}
-                                className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'by-time' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'by-time' ? 'bg-bg-primary text-brand-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'}`}
                             >
                                 <ClockIcon className="h-3.5 w-3.5" />
                                 <span>By Time Slot</span>
                             </button>
                             <button
                                 onClick={() => setViewMode('by-city')}
-                                className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'by-city' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`flex items-center space-x-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'by-city' ? 'bg-bg-primary text-brand-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'}`}
                             >
                                 <MapPinIcon className="h-3.5 w-3.5" />
                                 <span>By City</span>
@@ -226,17 +225,17 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                         </div>
                         <button 
                             onClick={handleSelectAll}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-green-600 text-white' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-primary text-brand-primary border border-border-primary hover:bg-brand-bg-light'}`}
                         >
                             <ClipboardIcon className="h-4 w-4" />
                             <span>{selectSuccess ? 'Selected!' : 'Select All'}</span>
                         </button>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1 hover:bg-gray-200 rounded-full transition">
+                        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary p-1 hover:bg-bg-tertiary rounded-full transition">
                             <XIcon className="h-6 w-6" />
                         </button>
                     </div>
                 </header>
-                <div className="flex-grow bg-gray-100 p-6 overflow-y-auto custom-scrollbar">
+                <div className="flex-grow bg-bg-tertiary p-6 overflow-y-auto custom-scrollbar">
                     <div ref={summaryRef} className="space-y-6 max-w-5xl mx-auto">
                         
                         {viewMode === 'by-time' && (
@@ -245,36 +244,36 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     const availableReps = repsByTimeSlot[slot.label];
                                     if (!availableReps || availableReps.length === 0) {
                                         return (
-                                            <div key={slot.id} className="bg-white border border-gray-200 rounded-lg p-4 opacity-60">
-                                                <h3 className="text-lg font-bold text-gray-400 mb-2">{slot.label}</h3>
-                                                <p className="text-sm text-gray-400 italic">No representatives available.</p>
+                                            <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg p-4 opacity-60">
+                                                <h3 className="text-lg font-bold text-text-quaternary mb-2">{slot.label}</h3>
+                                                <p className="text-sm text-text-quaternary italic">No representatives available.</p>
                                             </div>
                                         );
                                     }
 
                                     return (
-                                        <div key={slot.id} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-                                            <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100 flex justify-between items-center">
-                                                <h3 className="text-lg font-bold text-indigo-900">{slot.label}</h3>
-                                                <span className="text-xs font-semibold bg-white text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-200">
+                                        <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg shadow-sm overflow-hidden">
+                                            <div className="bg-brand-bg-light px-4 py-3 border-b border-brand-primary/20 flex justify-between items-center">
+                                                <h3 className="text-lg font-bold text-brand-text-light">{slot.label}</h3>
+                                                <span className="text-xs font-semibold bg-bg-primary text-brand-primary px-2 py-0.5 rounded-full border border-brand-primary/20">
                                                     {availableReps.length} Available
                                                 </span>
                                             </div>
-                                            <div className="p-0 divide-y divide-gray-100 max-h-80 overflow-y-auto custom-scrollbar">
+                                            <div className="p-0 divide-y divide-border-primary max-h-80 overflow-y-auto custom-scrollbar">
                                                 {availableReps.map((rep, idx) => (
-                                                    <div key={idx} className="px-4 py-2.5 hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                                                        <span className="font-bold text-gray-800 text-sm">{rep.name}</span>
+                                                    <div key={idx} className="px-4 py-2.5 hover:bg-bg-secondary transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                                        <span className="font-bold text-text-primary text-sm">{rep.name}</span>
                                                         
                                                         {rep.isFree ? (
-                                                            <span className="text-xs font-medium text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100 inline-flex items-center">
-                                                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span>
+                                                            <span className="text-xs font-medium text-tag-green-text bg-tag-green-bg px-2 py-0.5 rounded-full border border-tag-green-border inline-flex items-center">
+                                                                <span className="w-1.5 h-1.5 bg-tag-green-text rounded-full mr-1.5"></span>
                                                                 Free in {REGION_NAMES[rep.region] || rep.region}
                                                             </span>
                                                         ) : (
-                                                            <div className="flex items-center text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full max-w-full sm:max-w-[60%]">
-                                                                <MapPinIcon className="h-3 w-3 mr-1 text-gray-400 flex-shrink-0" />
+                                                            <div className="flex items-center text-xs text-text-tertiary bg-bg-tertiary px-2 py-0.5 rounded-full max-w-full sm:max-w-[60%]">
+                                                                <MapPinIcon className="h-3 w-3 mr-1 text-text-quaternary flex-shrink-0" />
                                                                 <span className="truncate" title={rep.activeCities.join(', ')}>
-                                                                    Active in: <span className="font-semibold text-gray-700">{rep.activeCities.join(', ')}</span>
+                                                                    Active in: <span className="font-semibold text-text-secondary">{rep.activeCities.join(', ')}</span>
                                                                 </span>
                                                             </div>
                                                         )}
@@ -298,9 +297,9 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     if (!hasData) return null;
 
                                     return (
-                                        <div key={section.title} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                                            <div className="bg-gray-50 px-6 py-3 border-b border-gray-200">
-                                                <h3 className="text-lg font-bold text-indigo-900">{section.title}</h3>
+                                        <div key={section.title} className="bg-bg-primary rounded-lg shadow-sm border border-border-primary overflow-hidden">
+                                            <div className="bg-bg-secondary px-6 py-3 border-b border-border-primary">
+                                                <h3 className="text-lg font-bold text-brand-text-light">{section.title}</h3>
                                             </div>
                                             <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                                 {section.cities.map(city => {
@@ -308,16 +307,16 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                                     if (!slots || Object.keys(slots).length === 0) return null;
 
                                                     return (
-                                                        <div key={city} className="border rounded-md p-3 hover:shadow-md transition-shadow bg-white">
-                                                            <h4 className="font-bold text-gray-800 border-b pb-1 mb-2">{city}</h4>
+                                                        <div key={city} className="border rounded-md p-3 hover:shadow-md transition-shadow bg-bg-primary">
+                                                            <h4 className="font-bold text-text-primary border-b pb-1 mb-2">{city}</h4>
                                                             <div className="space-y-2">
                                                                 {TIME_SLOTS.map(slot => {
                                                                     const reps = slots[slot.label];
                                                                     if (!reps || reps.length === 0) return null;
                                                                     return (
                                                                         <div key={slot.id} className="text-sm">
-                                                                            <span className="font-semibold text-indigo-600 block text-xs">{slot.label}</span>
-                                                                            <span className="text-gray-600 leading-tight block">{reps.join(', ')}</span>
+                                                                            <span className="font-semibold text-brand-primary block text-xs">{slot.label}</span>
+                                                                            <span className="text-text-secondary leading-tight block">{reps.join(', ')}</span>
                                                                         </div>
                                                                     );
                                                                 })}
@@ -330,9 +329,9 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     );
                                 })}
                                 {Object.keys(cityAvailability).length === 0 && (
-                                     <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                                     <div className="flex flex-col items-center justify-center h-64 text-text-tertiary">
                                          <p className="text-lg font-semibold">No open slots found.</p>
-                                         <p className="text-sm max-w-md text-center mt-2 text-gray-400">
+                                         <p className="text-sm max-w-md text-center mt-2 text-text-quaternary">
                                              All representatives are either fully booked or unavailable for today.
                                          </p>
                                      </div>

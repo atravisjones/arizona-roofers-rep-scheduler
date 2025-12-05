@@ -52,7 +52,7 @@ const doRangesOverlap = (r1: {start: number, end: number} | null, r2: {start: nu
 
 
 const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) => {
-    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations } = useAppContext();
+    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings } = useAppContext();
     const [copySuccess, setCopySuccess] = useState(false);
     
     // State for time slot filtering (Single selection now)
@@ -141,25 +141,20 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
     const mapType = (routeData?.repName === 'Unassigned Jobs' || routeData?.repName === 'Job Map' || routeData?.repName === 'All Rep Locations' || routeData?.repName?.startsWith('Zip:')) ? 'unassigned' : 'route';
 
     return (
-        <div className="w-full h-full flex flex-col bg-gray-50 rounded-lg overflow-hidden">
-            <header className="p-3 border-b border-gray-200 bg-white flex-shrink-0">
+        <div className="w-full h-full flex flex-col bg-bg-secondary rounded-lg overflow-hidden">
+            <header className="p-3 border-b border-border-primary bg-bg-primary flex-shrink-0">
                 <div>
-                    <h4 className="font-bold text-base text-gray-800">{title}</h4>
-                    <p className="text-sm text-gray-600">{subtitle}</p>
+                    <h4 className="font-bold text-base text-text-primary">{title}</h4>
+                    <p className="text-sm text-text-secondary">{subtitle}</p>
                 </div>
-            </header>
-
-            <div className="flex-grow relative bg-gray-200">
-                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} />
-
-                {/* New Map Overlay Controls */}
+                
                 {(totalJobs > 0 && !isLoading) && (
-                    <div className="absolute top-3 right-3 z-[1000] bg-white/90 backdrop-blur-sm p-2 rounded-lg shadow-lg flex flex-col gap-2 w-auto border border-gray-200">
+                    <div className="mt-3 bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
                         <div className="flex items-center gap-2">
                              <button
                                 onClick={handleShowAllJobsOnMap}
                                 disabled={isLoading}
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
                                 title="Show all assigned and unassigned jobs on the map"
                             >
                                 <MapPinIcon />
@@ -168,7 +163,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             <button
                                 onClick={handleRefreshRoute}
                                 disabled={isLoading}
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
                                 title="Refresh map view to update rep colors and routes"
                             >
                                 <RefreshIcon />
@@ -178,7 +173,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 href={googleMapsUrl} 
                                 target="_blank" 
                                 rel="noopener noreferrer" 
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${routeData?.mappableJobs.length > 0 ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-gray-400 text-white cursor-not-allowed opacity-70'}`}
+                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${routeData?.mappableJobs.length > 0 ? 'bg-brand-blue text-white hover:bg-brand-blue-dark' : 'bg-bg-quaternary text-text-quaternary cursor-not-allowed opacity-70'}`}
                                 onClick={(e) => routeData?.mappableJobs.length === 0 && e.preventDefault()}
                             >
                                 <ClipboardIcon />
@@ -186,10 +181,10 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             </a>
                         </div>
                         
-                        <div className="border-t border-gray-200 -mx-2"></div>
+                        <div className="border-t -mx-2 border-border-primary"></div>
 
                         <div className="flex flex-wrap items-center gap-1 select-none">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">Filter Time:</span>
+                            <span className="text-[10px] font-bold text-text-quaternary uppercase mr-1">Filter Time:</span>
                             {TIME_SLOTS.map(slot => {
                                 const isActive = selectedTimeSlotId === slot.id;
                                 return (
@@ -198,8 +193,8 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         onClick={() => toggleTimeSlot(slot.id)}
                                         className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${
                                             isActive 
-                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
-                                            : 'bg-white text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-600'
+                                            ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm' 
+                                            : 'bg-bg-primary text-text-tertiary border-border-primary hover:border-brand-primary/50 hover:text-brand-primary'
                                         }`}
                                     >
                                         {slot.label.replace(/am|pm/gi, '').replace(/\s/g, '')}
@@ -207,30 +202,34 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 );
                             })}
                              {selectedTimeSlotId !== null && (
-                                <button onClick={() => setSelectedTimeSlotId(null)} className="text-[10px] text-indigo-600 underline ml-1 hover:text-indigo-800">Show All</button>
+                                <button onClick={() => setSelectedTimeSlotId(null)} className="text-[10px] text-brand-primary underline ml-1 hover:text-brand-secondary">Show All</button>
                             )}
                         </div>
                     </div>
                 )}
+            </header>
+
+            <div className="flex-grow relative bg-bg-quaternary">
+                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} />
             </div>
             
-            {routeData && routeData.unmappableJobs.length > 0 && !isLoading && (
-                <div className="flex-shrink-0 bg-red-50 border-t border-red-200">
+            {uiSettings.showUnplottedJobs && routeData && routeData.unmappableJobs.length > 0 && !isLoading && (
+                <div className="flex-shrink-0 bg-tag-red-bg border-t border-tag-red-border">
                     <div className="p-3">
                         <div className="flex justify-between items-start mb-2">
                             <div>
-                                <h5 className="font-bold text-red-800 flex items-center text-sm">
+                                <h5 className="font-bold text-tag-red-text flex items-center text-sm">
                                     <span className="mr-2 text-lg">⚠️</span> 
                                     {routeData.unmappableJobs.length} Unplotted Jobs
                                 </h5>
-                                <p className="text-xs text-red-600 mt-0.5">
+                                <p className="text-xs text-tag-red-text/80 mt-0.5">
                                     Address verification required.
                                 </p>
                             </div>
                             <div className="flex items-center space-x-2">
                                  <button
                                     onClick={handleCopyUnplotted}
-                                    className={`p-1.5 rounded-md transition-colors ${copySuccess ? 'bg-green-100 text-green-700' : 'bg-white text-gray-500 hover:text-gray-800 border border-gray-200 hover:bg-gray-50'}`}
+                                    className={`p-1.5 rounded-md transition-colors ${copySuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-primary text-text-tertiary hover:text-text-primary border border-border-primary hover:bg-bg-secondary'}`}
                                     title="Copy addresses to clipboard"
                                 >
                                     <ClipboardIcon className="h-4 w-4" />
@@ -240,7 +239,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         
                         <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar mb-2">
                             {routeData.unmappableJobs.map(job => (
-                                <div key={job.id} className="bg-white rounded border border-red-100 shadow-sm">
+                                <div key={job.id} className="bg-bg-primary rounded border border-tag-red-border/50 shadow-sm">
                                     <JobCard
                                         job={job}
                                         onUpdateJob={handleUpdateJob}
@@ -248,7 +247,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         onRemove={handleRemoveJob}
                                     />
                                      {job.geocodeError && (
-                                        <div className="px-2 pb-1 text-[10px] text-red-500 font-mono">
+                                        <div className="px-2 pb-1 text-[10px] text-tag-red-text font-mono">
                                             {job.geocodeError}
                                         </div>
                                     )}
@@ -259,9 +258,9 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         <button
                             onClick={handleTryAddressVariations}
                             disabled={isTryingVariations}
-                            className="w-full flex items-center justify-center space-x-2 py-2 rounded-md text-xs font-bold transition-colors bg-white border border-red-200 text-red-700 hover:bg-red-100 shadow-sm disabled:opacity-50"
+                            className="w-full flex items-center justify-center space-x-2 py-2 rounded-md text-xs font-bold transition-colors bg-bg-primary border border-tag-red-border text-tag-red-text hover:bg-bg-primary/50 shadow-sm disabled:opacity-50"
                         >
-                            {isTryingVariations ? <LoadingIcon className="text-red-700" /> : <VariationsIcon className="h-4 w-4" />}
+                            {isTryingVariations ? <LoadingIcon className="text-tag-red-text" /> : <VariationsIcon className="h-4 w-4" />}
                             <span>{isTryingVariations ? 'Trying Variations...' : 'Try Auto-Fix Variations'}</span>
                         </button>
                     </div>
@@ -269,7 +268,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             )}
 
             {routeData && routeData.routeInfo && (routeData.repName !== 'Unassigned Jobs' && routeData.repName !== 'Job Map' && routeData.repName !== 'All Rep Locations' && !routeData.repName.startsWith('Zip:')) && !isLoading && (
-                <footer className="p-2 border-t border-gray-200 text-center bg-white text-sm font-semibold text-gray-700 flex-shrink-0">
+                <footer className="p-2 border-t border-border-primary text-center bg-bg-primary text-sm font-semibold text-text-secondary flex-shrink-0">
                     Estimated Route: {routeData.routeInfo.distance.toFixed(1)} miles / {routeData.routeInfo.duration.toFixed(0)} mins driving
                 </footer>
             )}

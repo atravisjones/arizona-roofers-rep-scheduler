@@ -64,6 +64,13 @@ export interface Settings {
   allowRegionalRepsInPhoenix: boolean;
 }
 
+export interface UiSettings {
+  theme: 'light' | 'dark' | 'system' | 'midnight' | 'gruvbox' | 'custom';
+  showUnplottedJobs: boolean;
+  showUnassignedJobsColumn: boolean;
+  customTheme?: Record<string, string>;
+}
+
 
 export interface Rep {
   id: string;
@@ -178,6 +185,10 @@ export interface AppContextType {
     handleRefreshRoute: () => void;
     settings: Settings;
     updateSettings: (updatedSettings: Partial<Settings>) => void;
+    uiSettings: UiSettings;
+    updateUiSettings: (updatedSettings: Partial<UiSettings>) => void;
+    updateCustomTheme: (updates: Record<string, string>) => void;
+    resetCustomTheme: () => void;
     loadReps: (date: Date) => Promise<void>;
     // FIX: Changed from `handleSelectRepForRoute` to `handleShowRoute` to match the context implementation.
     handleShowRoute: (repId: string, optimize: boolean) => Promise<void>;

@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { XIcon, ClipboardIcon, SaveIcon, BrainIcon } from './icons';
@@ -95,34 +94,34 @@ const TrainingDataModal: React.FC<TrainingDataModalProps> = ({ isOpen, onClose }
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-                <header className="px-6 py-4 border-b flex justify-between items-center bg-gray-50">
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]" onClick={onClose}>
+            <div className="popup-surface w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+                <header className="px-6 py-4 border-b border-border-primary flex justify-between items-center bg-bg-secondary">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg">
+                        <div className="p-2 bg-brand-bg-light text-brand-text-light rounded-lg">
                             <BrainIcon className="h-6 w-6" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-gray-900">Training Data & Session Analysis</h2>
-                            <p className="text-xs text-gray-500">Complete snapshot for logistics optimization analysis</p>
+                            <h2 className="text-xl font-bold text-text-primary">Training Data & Session Analysis</h2>
+                            <p className="text-xs text-text-tertiary">Complete snapshot for logistics optimization analysis</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
                         <button 
                             onClick={handleDownload}
-                            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                            className="flex items-center gap-2 px-4 py-2 bg-bg-primary border border-border-primary text-text-secondary font-semibold rounded-lg hover:bg-bg-tertiary transition-colors text-sm"
                         >
                             <SaveIcon className="h-4 w-4" />
                             Download JSON
                         </button>
                         <button 
                             onClick={handleCopy}
-                            className={`flex items-center gap-2 px-4 py-2 font-bold rounded-lg transition-colors text-sm text-white shadow-md ${copySuccess ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                            className={`flex items-center gap-2 px-4 py-2 font-bold rounded-lg transition-colors text-sm text-brand-text-on-primary shadow-md ${copySuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-brand-primary hover:bg-brand-secondary'}`}
                         >
                             <ClipboardIcon className="h-4 w-4" />
                             {copySuccess ? 'Copied!' : 'Copy to Clipboard'}
                         </button>
-                        <button onClick={onClose} className="ml-2 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-full transition-colors">
+                        <button onClick={onClose} className="ml-2 p-2 text-text-quaternary hover:text-text-secondary hover:bg-bg-tertiary rounded-full transition-colors">
                             <XIcon className="h-6 w-6" />
                         </button>
                     </div>
@@ -130,30 +129,30 @@ const TrainingDataModal: React.FC<TrainingDataModalProps> = ({ isOpen, onClose }
 
                 <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
                     {/* Sidebar Summary */}
-                    <div className="w-full md:w-80 bg-gray-50 border-r border-gray-200 p-6 overflow-y-auto flex-shrink-0">
-                        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">Session Stats</h3>
+                    <div className="w-full md:w-80 bg-bg-secondary border-r border-border-primary p-6 overflow-y-auto flex-shrink-0">
+                        <h3 className="text-sm font-bold text-text-tertiary uppercase tracking-wider mb-4">Session Stats</h3>
                         
                         <div className="space-y-4">
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                                <p className="text-xs text-gray-500">Assigned Jobs</p>
-                                <p className="text-2xl font-bold text-green-600">{trainingData.statistics.totalAssignedJobs}</p>
+                            <div className="bg-bg-primary p-4 rounded-lg border border-border-primary shadow-sm">
+                                <p className="text-xs text-text-tertiary">Assigned Jobs</p>
+                                <p className="text-2xl font-bold text-tag-green-text">{trainingData.statistics.totalAssignedJobs}</p>
                             </div>
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                                <p className="text-xs text-gray-500">Unassigned Jobs</p>
-                                <p className="text-2xl font-bold text-amber-600">{trainingData.statistics.totalUnassignedJobs}</p>
+                            <div className="bg-bg-primary p-4 rounded-lg border border-border-primary shadow-sm">
+                                <p className="text-xs text-text-tertiary">Unassigned Jobs</p>
+                                <p className="text-2xl font-bold text-tag-amber-text">{trainingData.statistics.totalUnassignedJobs}</p>
                             </div>
-                            <div className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm">
-                                <p className="text-xs text-gray-500">Active Reps</p>
-                                <p className="text-2xl font-bold text-indigo-600">{trainingData.representatives.filter(r => r.currentLoad.totalJobs > 0).length} / {trainingData.statistics.totalReps}</p>
+                            <div className="bg-bg-primary p-4 rounded-lg border border-border-primary shadow-sm">
+                                <p className="text-xs text-text-tertiary">Active Reps</p>
+                                <p className="text-2xl font-bold text-brand-primary">{trainingData.representatives.filter(r => r.currentLoad.totalJobs > 0).length} / {trainingData.statistics.totalReps}</p>
                             </div>
                         </div>
 
                         <div className="mt-8">
-                            <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-2">Active Settings</h3>
-                            <div className="text-xs space-y-1.5 text-gray-600">
+                            <h3 className="text-sm font-bold text-text-tertiary uppercase tracking-wider mb-2">Active Settings</h3>
+                            <div className="text-xs space-y-1.5 text-text-secondary">
                                 <p>Max Jobs/Rep: <b>{trainingData.settings.maxJobsPerRep}</b></p>
                                 <p>Weights:</p>
-                                <ul className="pl-2 space-y-1 border-l-2 border-gray-200 ml-1">
+                                <ul className="pl-2 space-y-1 border-l-2 border-border-primary ml-1">
                                     <li>Cluster: {trainingData.settings.scoringWeights.distanceCluster}x</li>
                                     <li>Skill: {trainingData.settings.scoringWeights.skillRoofing}x</li>
                                     <li>Rank: {trainingData.settings.scoringWeights.performance}x</li>
@@ -163,12 +162,12 @@ const TrainingDataModal: React.FC<TrainingDataModalProps> = ({ isOpen, onClose }
                     </div>
 
                     {/* Main Content - JSON Viewer */}
-                    <div className="flex-grow flex flex-col h-full overflow-hidden bg-slate-900">
-                        <div className="flex items-center justify-between px-4 py-2 bg-slate-800 border-b border-slate-700">
-                            <span className="text-xs font-mono text-slate-400">training_session_data.json</span>
-                            <span className="text-xs text-slate-500">{Math.round(jsonString.length / 1024)} KB</span>
+                    <div className="flex-grow flex flex-col h-full overflow-hidden bg-bg-secondary">
+                        <div className="flex items-center justify-between px-4 py-2 bg-bg-tertiary border-b border-border-primary">
+                            <span className="text-xs font-mono text-text-tertiary">training_session_data.json</span>
+                            <span className="text-xs text-text-quaternary">{Math.round(jsonString.length / 1024)} KB</span>
                         </div>
-                        <pre className="flex-grow p-4 overflow-auto font-mono text-xs leading-relaxed text-slate-300 selection:bg-indigo-500/30">
+                        <pre className="flex-grow p-4 overflow-auto font-mono text-xs leading-relaxed text-text-secondary selection:bg-brand-primary/30">
                             {jsonString}
                         </pre>
                     </div>

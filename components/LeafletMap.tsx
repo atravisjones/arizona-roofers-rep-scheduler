@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { geocodeAddresses, Coordinates, fetchRoute } from '../services/osmService';
@@ -315,13 +314,13 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
                   const b = job.scoreBreakdown;
                   const showType = b.skillType >= 0;
                   breakdownHtml = `
-                    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #e5e7eb; font-size: 9px; color: #666; text-align: left;">
+                    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgb(var(--border-primary)); font-size: 9px; color: rgb(var(--text-tertiary)); text-align: left;">
                         <div style="display:flex; justify-content:space-between;"><span>Dist:</span> <b>${Math.round(b.distanceBase)}</b></div>
                         <div style="display:flex; justify-content:space-between;"><span>Skill:</span> <b>${Math.round(b.skillRoofing)}</b></div>
                         ${showType ? `<div style="display:flex; justify-content:space-between;"><span>Type:</span> <b>${Math.round(b.skillType)}</b></div>` : ''}
                         <div style="display:flex; justify-content:space-between;"><span>Perf:</span> <b>${Math.round(b.performance)}</b></div>
-                        ${b.penalty > 0 ? `<div style="display:flex; justify-content:space-between; color: #ef4444;"><span>Penalty:</span> <b>-${b.penalty}</b></div>` : ''}
-                        <div style="margin-top:2px; font-weight:bold; color:#d97706; text-align:right;">Score: ${job.assignmentScore}</div>
+                        ${b.penalty > 0 ? `<div style="display:flex; justify-content:space-between; color: rgb(var(--red-text));"><span>Penalty:</span> <b>-${b.penalty}</b></div>` : ''}
+                        <div style="margin-top:2px; font-weight:bold; color:rgb(var(--amber-text)); text-align:right;">Score: ${job.assignmentScore}</div>
                     </div>
                   `;
               }
@@ -329,36 +328,36 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
               let toolTipContent = '';
               if (job.isRepHome) {
                   toolTipContent = `
-                    <div style="text-align: center; line-height: 1.3; min-width: 120px;">
-                        <div style="font-weight: bold; font-size: 11px; color: #4b5563; text-transform: uppercase; margin-bottom: 2px;">Home Base</div>
-                        <div style="font-weight: 800; font-size: 13px; color: #111; margin-bottom: 1px;">${job.zipCode}</div>
+                    <div style="text-align: center; line-height: 1.3; min-width: 120px; color: rgb(var(--text-primary));">
+                        <div style="font-weight: bold; font-size: 11px; color: rgb(var(--text-tertiary)); text-transform: uppercase; margin-bottom: 2px;">Home Base</div>
+                        <div style="font-weight: 800; font-size: 13px; color: rgb(var(--text-primary)); margin-bottom: 1px;">${job.zipCode}</div>
                         ${job.assignedRepName ? `
-                        <div style="font-size: 11px; color: #4338ca; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; background-color: #e0e7ff; padding: 2px 6px; border-radius: 4px; display: inline-flex; margin-top: 2px;">
+                        <div style="font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; background-color: rgb(var(--brand-bg-light)); color: rgb(var(--brand-text-light)); padding: 2px 6px; border-radius: 4px; display: inline-flex; margin-top: 2px;">
                             ${job.assignedRepName}
                         </div>` : ''}
                     </div>
                   `;
               } else {
                   toolTipContent = `
-                    <div style="text-align: center; line-height: 1.3; min-width: 120px;">
-                        <div style="font-weight: bold; font-size: 11px; color: #4b5563; text-transform: uppercase; margin-bottom: 2px;">${timeLabel}</div>
-                        <div style="font-weight: 800; font-size: 13px; color: #111; margin-bottom: 1px;">${job.customerName}</div>
-                        <div style="font-size: 10px; color: #6b7280; margin-bottom: 4px;">${job.address}</div>
+                    <div style="text-align: center; line-height: 1.3; min-width: 120px; color: rgb(var(--text-primary));">
+                        <div style="font-weight: bold; font-size: 11px; color: rgb(var(--text-tertiary)); text-transform: uppercase; margin-bottom: 2px;">${timeLabel}</div>
+                        <div style="font-weight: 800; font-size: 13px; margin-bottom: 1px;">${job.customerName}</div>
+                        <div style="font-size: 10px; color: rgb(var(--text-secondary)); margin-bottom: 4px;">${job.address}</div>
                         
                         ${tagsString ? `
                         <div style="margin-bottom: 4px;">
-                            <span style="display: inline-block; background-color: #f3f4f6; color: #374151; border: 1px solid #d1d5db; padding: 2px 6px; border-radius: 12px; font-size: 9px; font-weight: 600;">
+                            <span style="display: inline-block; background-color: rgb(var(--bg-tertiary)); color: rgb(var(--text-secondary)); border: 1px solid rgb(var(--border-primary)); padding: 2px 6px; border-radius: 12px; font-size: 9px; font-weight: 600;">
                                 ${tagsString}
                             </span>
                         </div>` : ''}
                         
                         ${job.assignedRepName ? `
-                        <div style="font-size: 11px; color: #4338ca; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; background-color: #e0e7ff; padding: 2px 6px; border-radius: 4px; display: inline-flex;">
+                        <div style="font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 3px; background-color: rgb(var(--brand-bg-light)); color: rgb(var(--brand-text-light)); padding: 2px 6px; border-radius: 4px; display: inline-flex;">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" style="width: 10px; height: 10px;"><path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" /></svg>
                             ${job.assignedRepName}
                         </div>` : ''}
 
-                        ${isPriority ? '<div style="color: #b45309; font-weight: bold; font-size: 10px; margin-top: 4px;">★ Priority Job</div>' : ''}
+                        ${isPriority ? '<div style="color: rgb(var(--amber-text)); font-weight: bold; font-size: 10px; margin-top: 4px;">★ Priority Job</div>' : ''}
                         
                         ${breakdownHtml}
                     </div>
@@ -369,7 +368,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
                   direction: 'top', 
                   offset: [0, -10],
                   opacity: job.isDimmed ? 0.5 : 1,
-                  className: 'shadow-md border border-gray-200 rounded-md px-2 py-1'
+                  className: 'job-tooltip'
               });
 
               // Prepare for React content inside popup
@@ -392,7 +391,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
                   root.render(
                       <React.StrictMode>
                           <AppContext.Provider value={currentContext}>
-                              <div className="w-[420px] p-2">
+                              <div className="popup-surface w-[420px] overflow-hidden">
                                   <JobCard
                                       job={job}
                                       onUnassign={job.assignedRepName ? currentContext.handleUnassignJob : undefined}
@@ -447,15 +446,15 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   // Note: Removed handlers from dependency array as they are stable from contextRef
 
   return (
-    <div className="w-full h-full relative rounded-lg overflow-hidden bg-gray-200">
+    <div className="w-full h-full relative rounded-lg overflow-hidden bg-bg-tertiary">
       {isLoading && (
-        <div className="absolute inset-0 bg-gray-100/80 flex flex-col items-center justify-center z-20">
+        <div className="absolute inset-0 bg-bg-primary/80 flex flex-col items-center justify-center z-20">
           <LoadingIcon />
-          <span className="mt-2 text-gray-700">Generating route map...</span>
+          <span className="mt-2 text-text-primary">Generating route map...</span>
         </div>
       )}
       {error && (
-         <div className="absolute top-2 left-2 right-2 bg-yellow-100/90 border border-yellow-300 text-yellow-800 text-xs text-center font-semibold p-2 rounded-md shadow-lg z-20">
+         <div className="absolute top-2 left-2 right-2 bg-tag-amber-bg/90 border border-tag-amber-border text-tag-amber-text text-xs text-center font-semibold p-2 rounded-md shadow-lg z-20">
           {error}
         </div>
       )}

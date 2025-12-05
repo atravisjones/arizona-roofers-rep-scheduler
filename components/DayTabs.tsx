@@ -36,9 +36,9 @@ const CalendarPicker: React.FC<{ onSelect: (date: Date) => void }> = ({ onSelect
             <button
                 key={day}
                 onClick={() => onSelect(currentDate)}
-                className={`w-10 h-10 flex items-center justify-center rounded-full text-sm transition-colors
-                    ${isToday ? 'border-2 border-indigo-500 font-bold' : ''}
-                    ${!isToday ? 'hover:bg-indigo-100' : 'hover:bg-indigo-200'}
+                className={`w-10 h-10 flex items-center justify-center rounded-full text-sm transition-colors text-text-primary
+                    ${isToday ? 'border-2 border-brand-primary font-bold' : ''}
+                    ${!isToday ? 'hover:bg-brand-bg-light' : 'hover:bg-brand-primary/20'}
                 `}
             >
                 {day}
@@ -47,15 +47,15 @@ const CalendarPicker: React.FC<{ onSelect: (date: Date) => void }> = ({ onSelect
     }
 
     return (
-        <div className="bg-white border rounded-lg p-4 shadow-lg w-80">
+        <div className="popup-surface p-4 w-80">
             <div className="flex justify-between items-center mb-3">
-                <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-gray-100 text-gray-600">&lt;</button>
-                <div className="font-bold text-base text-gray-800">
+                <button onClick={() => changeMonth(-1)} className="p-2 rounded-full hover:bg-bg-tertiary text-text-secondary">&lt;</button>
+                <div className="font-bold text-base text-text-primary">
                     {displayDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                 </div>
-                <button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-gray-100 text-gray-600">&gt;</button>
+                <button onClick={() => changeMonth(1)} className="p-2 rounded-full hover:bg-bg-tertiary text-text-secondary">&gt;</button>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-500 font-semibold mb-2">
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-text-tertiary font-semibold mb-2">
                 <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
             </div>
             <div className="grid grid-cols-7 gap-1">
@@ -63,7 +63,7 @@ const CalendarPicker: React.FC<{ onSelect: (date: Date) => void }> = ({ onSelect
             </div>
              <button
                 onClick={() => onSelect(today)}
-                className="w-full mt-3 py-2 text-sm font-semibold bg-indigo-50 text-indigo-700 rounded-md hover:bg-indigo-100 transition"
+                className="w-full mt-3 py-2 text-sm font-semibold bg-brand-bg-light text-brand-text-light rounded-md hover:bg-brand-primary/20 transition"
             >
                 Go to Today
             </button>
@@ -97,7 +97,7 @@ const DayTabs: React.FC = () => {
     const selectedKey = selectedDate.toISOString().split('T')[0];
 
     return (
-        <div className="flex items-center space-x-1 bg-white border border-gray-300 rounded-md p-1 shadow-sm">
+        <div className="flex items-center space-x-1 bg-bg-primary border border-border-secondary rounded-md p-1 shadow-sm">
             {activeDayKeys.map(dateKey => {
                 const date = new Date(dateKey + 'T12:00:00'); // Use noon to avoid timezone shifts
                 const isSelected = dateKey === selectedKey;
@@ -109,7 +109,7 @@ const DayTabs: React.FC = () => {
                     <div
                         key={dateKey}
                         onClick={() => setSelectedDate(date)}
-                        className={`relative flex items-center space-x-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+                        className={`relative flex items-center space-x-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors group ${isSelected ? 'bg-brand-primary text-brand-text-on-primary' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
                     >
                         <span className="font-semibold text-sm">{dayName} {dayOfMonth}</span>
                         {activeDayKeys.length > 1 && (
@@ -118,7 +118,7 @@ const DayTabs: React.FC = () => {
                                     e.stopPropagation();
                                     removeActiveDay(dateKey);
                                 }}
-                                className={`absolute -top-1 -right-1 p-0.5 rounded-full ${isSelected ? 'bg-indigo-400 hover:bg-indigo-300' : 'bg-gray-300 hover:bg-red-500 hover:text-white'}`}
+                                className={`absolute -top-1 -right-1 p-0.5 rounded-full ${isSelected ? 'bg-brand-secondary hover:bg-brand-primary text-brand-text-on-primary' : 'bg-border-tertiary text-text-inverted hover:bg-tag-red-bg'}`}
                             >
                                 <XIcon className="h-3 w-3" />
                             </button>
@@ -129,7 +129,7 @@ const DayTabs: React.FC = () => {
             <div className="relative" ref={calendarRef}>
                 <button
                     onClick={() => setIsCalendarOpen(prev => !prev)}
-                    className="px-3 py-1.5 text-sm font-semibold bg-green-100 text-green-700 rounded-md hover:bg-green-200 transition"
+                    className="px-3 py-1.5 text-sm font-semibold bg-tag-green-bg text-tag-green-text rounded-md hover:bg-tag-green-bg/80 transition"
                     title="Add a new day to your workspace"
                 >
                     + Add Day

@@ -21,23 +21,23 @@ const AiAssistantPopup: React.FC<AiAssistantPopupProps> = ({ isOpen, onClose, th
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 w-96 bg-white rounded-lg shadow-2xl border border-gray-200 z-[100] flex flex-col max-h-[50vh] transition-all duration-300">
-      <header className="p-3 border-b flex justify-between items-center bg-gray-50 rounded-t-lg flex-shrink-0">
-        <h3 className="text-sm font-bold text-gray-800 flex items-center">
+    <div className="popup-surface fixed bottom-4 right-4 w-96 z-[100] flex flex-col max-h-[50vh] transition-all duration-300 overflow-hidden">
+      <header className="p-3 border-b border-border-primary flex justify-between items-center bg-bg-secondary flex-shrink-0">
+        <h3 className="text-sm font-bold text-text-primary flex items-center">
           {isThinking && <LoadingIcon />}
           <span className="ml-2">{title}</span>
         </h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary">
           <XIcon className="h-5 w-5" />
         </button>
       </header>
       <div ref={contentRef} className="p-3 flex-grow overflow-y-auto">
         <ul className="space-y-2">
           {thoughts.map((thought, index) => (
-            <li key={index} className="text-xs text-gray-700 animate-fade-in">{thought}</li>
+            <li key={index} className="text-xs text-text-secondary animate-fade-in">{thought}</li>
           ))}
           {isThinking && thoughts.length === 0 && (
-            <li className="text-xs text-gray-500 animate-pulse">Waiting for AI to start thinking...</li>
+            <li className="text-xs text-text-tertiary animate-pulse">Waiting for AI to start thinking...</li>
           )}
         </ul>
       </div>

@@ -24,7 +24,7 @@ const RepRoutesPanel: React.FC<RepRoutesPanelProps> = ({ jobs }) => {
 
     return (
         <div className="h-full flex flex-col">
-            <div className="flex-grow bg-gray-50 rounded-lg overflow-y-auto">
+            <div className="flex-grow bg-bg-secondary rounded-lg overflow-y-auto">
                 {sortedRepNames.length > 0 ? (
                     <div className="space-y-4 p-1">
                         {sortedRepNames.map(repName => (
@@ -32,7 +32,7 @@ const RepRoutesPanel: React.FC<RepRoutesPanelProps> = ({ jobs }) => {
                         ))}
                     </div>
                 ) : (
-                    <div className="flex items-center justify-center h-full text-center text-gray-500">
+                    <div className="flex items-center justify-center h-full text-center text-text-tertiary">
                         <div>
                             <p className="font-semibold">No Routes to Display</p>
                             <p className="text-sm mt-1">Assign jobs to reps to see their routes here.</p>

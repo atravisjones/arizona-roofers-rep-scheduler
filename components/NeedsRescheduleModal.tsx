@@ -106,16 +106,16 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-[60]" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-                <header className="px-6 py-4 border-b flex justify-between items-center bg-blue-50 rounded-t-xl">
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]" onClick={onClose}>
+            <div className="bg-bg-primary rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+                <header className="px-6 py-4 border-b border-border-primary flex justify-between items-center bg-tag-blue-bg rounded-t-xl">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-100 text-blue-700 rounded-lg border border-blue-200 shadow-sm">
+                        <div className="p-2 bg-tag-blue-bg text-tag-blue-text rounded-lg border border-tag-blue-border shadow-sm">
                             <RescheduleIcon className="h-6 w-6" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-gray-900">Needs Reschedule</h2>
-                            <p className="text-xs text-gray-600">
+                            <h2 className="text-xl font-bold text-text-primary">Needs Reschedule</h2>
+                            <p className="text-xs text-text-secondary">
                                 Found {jobsNeedingReschedule.length} jobs with potential scheduling conflicts.
                             </p>
                         </div>
@@ -123,54 +123,54 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
                     <div className="flex items-center space-x-4">
                         <button
                             onClick={handleSelectAll}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-green-600 text-white' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50'}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors shadow-sm ${selectSuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-primary text-brand-primary border border-border-primary hover:bg-brand-bg-light'}`}
                         >
                             <ClipboardIcon />
                             <span>{selectSuccess ? 'Selected!' : 'Select All'}</span>
                         </button>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 p-1 rounded-full hover:bg-gray-200 transition">
+                        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary p-1 rounded-full hover:bg-bg-tertiary transition">
                             <XIcon className="h-6 w-6" />
                         </button>
                     </div>
                 </header>
 
-                <div className="bg-white p-4 border-b border-gray-100">
-                    <p className="text-sm text-gray-600 leading-relaxed">
+                <div className="bg-bg-primary p-4 border-b border-border-primary">
+                    <p className="text-sm text-text-secondary leading-relaxed">
                         This list includes any job scheduled at a time that does not overlap with its original request. Check the box to confirm the change and remove it from this list.
                     </p>
                 </div>
 
-                <div ref={contentRef} className="flex-grow overflow-y-auto bg-gray-50 p-4 custom-scrollbar">
+                <div ref={contentRef} className="flex-grow overflow-y-auto bg-bg-secondary p-4 custom-scrollbar">
                     {Object.keys(jobsByRep).length > 0 ? (
                         <div className="space-y-4">
                             {Object.values(jobsByRep).map(({ repName, isOptimized, jobs }) => (
-                                <div key={repName} className="bg-white border border-gray-200 rounded-lg shadow-sm">
-                                    <h3 className="text-base font-bold text-gray-800 px-4 py-2 border-b flex items-center gap-2">
+                                <div key={repName} className="bg-bg-primary border border-border-primary rounded-lg shadow-sm">
+                                    <h3 className="text-base font-bold text-text-primary px-4 py-2 border-b border-border-primary flex items-center gap-2">
                                         {repName}
-                                        {isOptimized && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 border border-teal-200">Optimized</span>}
+                                        {isOptimized && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-tag-teal-bg text-tag-teal-text border border-tag-teal-border">Optimized</span>}
                                     </h3>
-                                    <ul className="divide-y divide-gray-100">
+                                    <ul className="divide-y divide-border-primary">
                                         {jobs.map(({ job, reason }) => (
-                                            <li key={job.id} className="p-3 flex items-start gap-3 hover:bg-gray-50/50 transition-colors">
+                                            <li key={job.id} className="p-3 flex items-start gap-3 hover:bg-bg-secondary/50 transition-colors">
                                                 <div className="flex-grow min-w-0 flex items-start gap-3">
                                                     {/* Checkbox */}
                                                     <div>
                                                         <input 
                                                             type="checkbox" 
-                                                            className="h-5 w-5 mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                            className="h-5 w-5 mt-0.5 rounded border-border-secondary text-brand-primary focus:ring-brand-primary cursor-pointer"
                                                             title="Confirm reschedule. This will update the original time and remove this item from the list."
                                                             onChange={() => handleConfirmReschedule(job)}
                                                         />
                                                     </div>
                                                     {/* Details */}
                                                     <div className="flex-grow">
-                                                        <p className="font-bold text-sm text-gray-800 truncate">{job.city}</p>
-                                                        <p className="text-xs text-gray-500 truncate">{job.address}</p>
+                                                        <p className="font-bold text-sm text-text-primary truncate">{job.city}</p>
+                                                        <p className="text-xs text-text-tertiary truncate">{job.address}</p>
                                                         <div className="mt-1 text-xs flex flex-wrap gap-x-3 gap-y-1 items-center">
-                                                            <p className="text-gray-500">Original: <span className="font-semibold text-gray-700 line-through">{job.originalTimeframe || 'N/A'}</span></p>
-                                                            <p className="text-blue-600">→ Scheduled: <span className="font-bold text-blue-700">{job.timeSlotLabel || 'N/A'}</span></p>
+                                                            <p className="text-text-tertiary">Original: <span className="font-semibold text-text-secondary line-through">{job.originalTimeframe || 'N/A'}</span></p>
+                                                            <p className="text-tag-blue-text">→ Scheduled: <span className="font-bold text-tag-blue-text/80">{job.timeSlotLabel || 'N/A'}</span></p>
                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                                                reason === 'Mismatch' ? 'bg-red-100 text-red-800 border-red-200' : 'bg-teal-100 text-teal-800 border-teal-200'
+                                                                reason === 'Mismatch' ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border' : 'bg-tag-teal-bg text-tag-teal-text border-tag-teal-border'
                                                             }`}>
                                                                 {reason}
                                                             </span>
@@ -184,17 +184,17 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
                             ))}
                         </div>
                     ) : (
-                         <div className="flex flex-col items-center justify-center h-full text-gray-400 text-center pb-10">
-                            <div className="p-4 bg-green-50 rounded-full mb-3">
-                                <RescheduleIcon className="h-12 w-12 text-green-400" />
+                         <div className="flex flex-col items-center justify-center h-full text-text-quaternary text-center pb-10">
+                            <div className="p-4 bg-tag-green-bg rounded-full mb-3">
+                                <RescheduleIcon className="h-12 w-12 text-tag-green-text" />
                             </div>
-                            <p className="text-lg font-semibold text-gray-700">All Good!</p>
+                            <p className="text-lg font-semibold text-text-primary">All Good!</p>
                             <p className="text-sm mt-1">No jobs with time conflicts were found.</p>
                         </div>
                     )}
                 </div>
-                 <footer className="px-6 py-3 bg-gray-50 border-t flex justify-end rounded-b-xl">
-                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition shadow-sm">
+                 <footer className="px-6 py-3 bg-bg-secondary border-t border-border-primary flex justify-end rounded-b-xl">
+                    <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-text-secondary bg-bg-primary border border-border-secondary rounded-lg hover:bg-bg-tertiary transition shadow-sm">
                         Close
                     </button>
                 </footer>

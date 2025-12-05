@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 
 // Simple debounce function
@@ -52,13 +51,13 @@ const NotesWidget: React.FC = () => {
 
     return (
         <div className="mb-4">
-            <label htmlFor="daily-notes" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="daily-notes" className="block text-sm font-medium text-text-secondary mb-1">
                 Daily Notes
             </label>
             <textarea
                 id="daily-notes"
                 rows={5}
-                className="w-full p-2 border border-gray-300 bg-white rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition"
+                className="w-full p-2 border border-primary rounded-md shadow-sm focus:ring-2 focus:ring-brand-primary focus:outline-none transition bg-secondary text-primary placeholder:text-secondary hover:bg-tertiary"
                 placeholder="Add any notes for the day here..."
                 value={notes}
                 onChange={handleChange}

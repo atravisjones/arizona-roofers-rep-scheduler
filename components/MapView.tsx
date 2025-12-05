@@ -11,7 +11,7 @@ const MapView: React.FC<MapViewProps> = ({ jobs }) => {
 
   // The map itself is now the primary responsibility. The empty state is handled by the parent.
   return (
-    <div className="w-full h-full flex flex-col bg-gray-200">
+    <div className="w-full h-full flex flex-col bg-bg-tertiary">
       <LeafletMap jobs={displayJobs} mapType="unassigned" />
     </div>
   );

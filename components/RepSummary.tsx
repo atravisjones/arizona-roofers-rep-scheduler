@@ -87,23 +87,23 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <header className="p-4 border-b flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-lg font-bold text-gray-800">Summary by Representative</h2>
+        <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+            <div className="bg-bg-primary rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <header className="p-4 border-b border-border-primary flex justify-between items-center flex-shrink-0">
+                    <h2 className="text-lg font-bold text-text-primary">Summary by Representative</h2>
                     <div className="flex items-center space-x-4">
                         <button 
                             onClick={handleSelectAll}
-                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${selectSuccess ? 'bg-green-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                            className={`flex items-center space-x-2 px-4 py-2 rounded-md text-sm font-semibold transition-colors disabled:opacity-50 ${selectSuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-brand-primary hover:bg-brand-secondary text-brand-text-on-primary'}`}
                             disabled={repsWithJobs.length === 0}
                         >
                             <ClipboardIcon />
                             <span>{selectSuccess ? 'Selected!' : 'Select All'}</span>
                         </button>
-                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-3xl leading-none">&times;</button>
+                        <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary text-3xl leading-none">&times;</button>
                     </div>
                 </header>
-                <div className="flex-grow bg-white text-gray-800 rounded-b-lg p-4 overflow-y-auto font-mono">
+                <div className="flex-grow bg-bg-primary text-text-primary rounded-b-lg p-4 overflow-y-auto font-mono">
                     <div ref={summaryRef}>
                         {repsWithJobs.length > 0 ? (
                             repsWithJobs.map(rep => {
@@ -123,20 +123,20 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                     .map(slot => slot.label);
 
                                 return (
-                                <div key={rep.id} className="py-4 border-b border-gray-200 last:border-b-0">
-                                    <h3 className="text-xl font-bold text-gray-900 mb-1">
+                                <div key={rep.id} className="py-4 border-b border-border-primary last:border-b-0">
+                                    <h3 className="text-xl font-bold text-text-primary mb-1">
                                         {rep.name} ({rep.totalJobs})
                                     </h3>
                                     <div className="mb-3 flex flex-wrap items-center gap-1">
-                                        <span className="text-sm text-gray-500 mr-1">Available:</span>
+                                        <span className="text-sm text-text-tertiary mr-1">Available:</span>
                                         {availableSlots.length > 0 ? (
                                             availableSlots.map(label => (
-                                                <span key={label} className="px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-800 border border-green-200">
+                                                <span key={label} className="px-2 py-0.5 rounded text-xs font-bold bg-tag-green-bg text-tag-green-text border border-tag-green-border">
                                                     {label}
                                                 </span>
                                             ))
                                         ) : (
-                                            <span className="text-sm text-gray-400 italic">No free slots today</span>
+                                            <span className="text-sm text-text-quaternary italic">No free slots today</span>
                                         )}
                                     </div>
                                     <ul className="space-y-1">
@@ -148,9 +148,9 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                             const timeDisplay = job.originalTimeframe || job.timeSlotLabel;
                                             return (
                                                 <li key={job.id}>
-                                                    <span className="text-gray-500">{timeDisplay}:</span> {fullAddress} (<strong className="text-gray-900 font-bold">{tags}</strong>)
-                                                    {isGoldJob && <span className="text-yellow-500 font-bold ml-2"># {priorityReason}</span>}
-                                                    {rescheduleInfo && <span className="text-blue-600 italic ml-2">(Rescheduled from {rescheduleInfo})</span>}
+                                                    <span className="text-text-tertiary">{timeDisplay}:</span> {fullAddress} (<strong className="text-text-primary font-bold">{tags}</strong>)
+                                                    {isGoldJob && <span className="text-tag-amber-text font-bold ml-2"># {priorityReason}</span>}
+                                                    {rescheduleInfo && <span className="text-tag-blue-text italic ml-2">(Rescheduled from {rescheduleInfo})</span>}
                                                 </li>
                                             );
                                         })}
@@ -159,7 +159,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                             )})
                         ) : (
                             <div className="flex items-center justify-center h-full">
-                                <p className="text-gray-500 font-sans">No assigned jobs to summarize.</p>
+                                <p className="text-text-tertiary font-sans">No assigned jobs to summarize.</p>
                             </div>
                         )}
                     </div>

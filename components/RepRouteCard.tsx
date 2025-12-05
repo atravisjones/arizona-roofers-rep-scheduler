@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { DisplayJob, RouteInfo, ItineraryItem } from '../types';
 import { geocodeAddresses, fetchRoute, Coordinates } from '../services/osmService';
@@ -367,9 +366,9 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
     };
 
     return (
-        <div className="bg-white rounded-lg shadow-md border border-gray-200">
-            <div className="p-3 border-b flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-                <h4 className="font-bold text-base text-gray-800">{repName} ({jobs.length} stops)</h4>
+        <div className="bg-bg-primary rounded-lg shadow-md border border-border-primary">
+            <div className="p-3 border-b border-border-primary flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
+                <h4 className="font-bold text-base text-text-primary">{repName} ({jobs.length} stops)</h4>
                 {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
             </div>
             {isExpanded && (
@@ -377,11 +376,11 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <div className="flex items-center space-x-2 mb-2">
-                                <button onClick={handleOptimize} disabled={isLoading || orderedJobs.length <=1} className="flex-1 text-sm bg-indigo-600 text-white py-1.5 px-3 rounded-md hover:bg-indigo-700 disabled:bg-indigo-300 flex items-center justify-center transition">
+                                <button onClick={handleOptimize} disabled={isLoading || orderedJobs.length <=1} className="flex-1 text-sm bg-brand-primary text-brand-text-on-primary py-1.5 px-3 rounded-md hover:bg-brand-secondary disabled:bg-brand-primary/50 flex items-center justify-center transition">
                                     <OptimizeIcon className="h-4 w-4 mr-2" />
                                     <span>Optimize Order</span>
                                 </button>
-                                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-sm text-center bg-blue-500 text-white py-1.5 px-3 rounded-md hover:bg-blue-600 flex items-center justify-center transition">
+                                <a href={googleMapsUrl} target="_blank" rel="noopener noreferrer" className="flex-1 text-sm text-center bg-brand-blue text-brand-text-on-primary py-1.5 px-3 rounded-md hover:bg-brand-blue-dark flex items-center justify-center transition">
                                     <ClipboardIcon className="h-4 w-4 mr-2" />
                                     <span>Google Maps</span>
                                 </a>
@@ -390,32 +389,32 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                             {itinerary.length > 0 && (
                                 <button 
                                     onClick={handleCopyItinerary}
-                                    className={`w-full mb-2 text-sm flex items-center justify-center py-1.5 px-3 rounded-md transition border ${copySuccess ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                                    className={`w-full mb-2 text-sm flex items-center justify-center py-1.5 px-3 rounded-md transition border ${copySuccess ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border' : 'bg-bg-primary text-text-secondary border-border-secondary hover:bg-bg-tertiary'}`}
                                 >
                                     <MessageIcon className="h-4 w-4 mr-2" />
                                     <span>{copySuccess ? 'Copied to Clipboard!' : 'Copy Itinerary for Rep'}</span>
                                 </button>
                             )}
 
-                            <div className="border rounded-md p-2 h-64 overflow-y-auto bg-gray-50 custom-scrollbar">
+                            <div className="border border-border-primary rounded-md p-2 h-64 overflow-y-auto bg-bg-secondary custom-scrollbar">
                                 {itinerary.length > 0 ? (
                                     <ul className="space-y-3 text-sm">
                                         {itinerary.map((item, idx) => (
-                                            <li key={idx} className={`flex flex-col ${item.type === 'lunch' ? 'bg-amber-100 p-2 rounded text-center font-bold text-amber-800 border border-amber-200' : item.type === 'travel' ? 'text-gray-400 text-xs italic text-center' : ''}`}>
+                                            <li key={idx} className={`flex flex-col ${item.type === 'lunch' ? 'bg-tag-amber-bg p-2 rounded font-bold text-tag-amber-text border border-tag-amber-border' : item.type === 'travel' ? 'text-text-quaternary text-xs italic text-center' : ''}`}>
                                                 {item.type === 'job' && item.job ? (
                                                     <div 
                                                         onMouseEnter={() => setHoveredJobId(item.job!.id)}
                                                         onMouseLeave={() => setHoveredJobId(null)}
-                                                        className="bg-white p-2 rounded border border-gray-200 shadow-sm hover:shadow-md transition-shadow"
+                                                        className="bg-bg-primary p-2 rounded border border-border-primary shadow-sm hover:shadow-md transition-shadow"
                                                     >
-                                                        <div className="flex justify-between text-xs font-bold text-indigo-700 mb-1">
+                                                        <div className="flex justify-between text-xs font-bold text-brand-primary mb-1">
                                                             <span>{item.job.originalTimeframe || item.timeRange}</span>
                                                             <span>{item.job.city}</span>
                                                         </div>
-                                                        <div className="text-gray-800 leading-tight mb-1">{item.job.address}</div>
-                                                        {item.job.notes && <div className="text-gray-500 text-xs truncate">{item.job.notes}</div>}
+                                                        <div className="text-text-primary leading-tight mb-1">{item.job.address}</div>
+                                                        {item.job.notes && <div className="text-text-tertiary text-xs truncate">{item.job.notes}</div>}
                                                         {item.job.originalTimeframe && item.job.timeSlotLabel && !doTimesOverlap(item.job.originalTimeframe, item.job.timeSlotLabel) && (
-                                                            <div className="text-[10px] text-red-600 mt-0.5 font-bold">
+                                                            <div className="text-[10px] text-tag-red-text mt-0.5 font-bold">
                                                                 Schedule: {item.timeRange} (Reschedule Needed)
                                                             </div>
                                                         )}
@@ -433,10 +432,10 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                                 key={job.id}
                                                 onMouseEnter={() => setHoveredJobId(job.id)}
                                                 onMouseLeave={() => setHoveredJobId(null)}
-                                                className="hover:bg-gray-100 rounded px-1 py-0.5 transition-colors cursor-default"
+                                                className="hover:bg-bg-tertiary rounded px-1 py-0.5 transition-colors cursor-default text-text-primary"
                                             >
                                                 <span className="font-semibold">{job.timeSlotLabel}: </span>
-                                                <span className="text-gray-700">{job.address}</span>
+                                                <span className="text-text-secondary">{job.address}</span>
                                             </li>
                                         ))}
                                     </ol>
@@ -448,11 +447,11 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                         </div>
                     </div>
                     {(isLoading || routeInfo) && (
-                        <div className="mt-2 text-center bg-gray-100 p-2 rounded-md text-sm font-semibold">
+                        <div className="mt-2 text-center bg-bg-secondary p-2 rounded-md text-sm font-semibold text-text-secondary">
                             {isLoading ? "Calculating..." : routeInfo ? `Est. Route: ${routeInfo.distance.toFixed(1)} miles / ${routeInfo.duration.toFixed(0)} mins driving` : ''}
                         </div>
                     )}
-                    {error && <p className="text-red-500 text-xs text-center mt-2 font-semibold bg-red-50 p-1 rounded-md">{error}</p>}
+                    {error && <p className="text-tag-red-text text-xs text-center mt-2 font-semibold bg-tag-red-bg p-1 rounded-md">{error}</p>}
                 </div>
             )}
         </div>

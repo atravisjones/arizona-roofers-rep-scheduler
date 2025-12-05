@@ -127,11 +127,11 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`mt-1 flex flex-col px-2 py-1.5 rounded-lg bg-gray-100 border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-red-500 bg-red-100' : hasJobs ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}>
+            className={`mt-1 flex flex-col px-2 py-1.5 rounded-lg bg-bg-tertiary border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-tag-red-border bg-tag-red-bg' : hasJobs ? 'border-tag-red-border bg-tag-red-bg/50' : 'border-border-secondary'}`}>
             <div className="mb-1">
-                <h4 className={`font-bold text-[11px] uppercase ${isDoubleBooked ? 'text-red-700' : hasJobs ? 'text-red-700' : 'text-gray-400'}`}>
-                    {label} <span className="font-normal text-gray-400 ml-1">(Unavailable)</span>
-                    {hasJobs && <span className="ml-1 font-bold text-red-600 text-[10px]">! Mismatch</span>}
+                <h4 className={`font-bold text-[11px] uppercase ${isDoubleBooked ? 'text-tag-red-text' : hasJobs ? 'text-tag-red-text' : 'text-text-quaternary'}`}>
+                    {label} <span className="font-normal text-text-quaternary ml-1">(Unavailable)</span>
+                    {hasJobs && <span className="ml-1 font-bold text-tag-red-text text-[10px]">! Mismatch</span>}
                 </h4>
             </div>
             <div className={`flex-1 min-w-0 min-h-[24px] ${isDoubleBooked ? 'grid grid-cols-2 gap-2' : 'space-y-1'}`}>
@@ -160,11 +160,11 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`mt-1 flex flex-col px-2 py-1.5 rounded-lg border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300'}`}
+      className={`mt-1 flex flex-col px-2 py-1.5 rounded-lg border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-brand-primary bg-brand-bg-light' : 'border-border-secondary'}`}
     >
       <div className="mb-1 flex justify-between items-center">
-          <h4 className={`font-bold text-[11px] uppercase tracking-wide ${isDoubleBooked ? 'text-red-600' : 'text-gray-500'}`}>{label}</h4>
-          {hasJobs && isDoubleBooked && <span className="text-[9px] bg-red-100 text-red-800 px-1.5 rounded font-bold">Double Booked</span>}
+          <h4 className={`font-bold text-[11px] uppercase tracking-wide ${isDoubleBooked ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{label}</h4>
+          {hasJobs && isDoubleBooked && <span className="text-[9px] bg-tag-red-bg text-tag-red-text px-1.5 rounded font-bold">Double Booked</span>}
       </div>
       
       <div className={`flex-1 min-w-0 min-h-[32px] ${ isDoubleBooked ? 'grid grid-cols-1 sm:grid-cols-2 gap-2' : hasJobs ? 'space-y-2' : 'flex flex-col items-center justify-center' }`}>
@@ -183,7 +183,7 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
                         isCompact={isDoubleBooked}
                     />;
         })}
-        {jobs.length === 0 && !isOptimized && <div className="text-[11px] text-gray-400 font-medium select-none">Drop job here</div>}
+        {jobs.length === 0 && !isOptimized && <div className="text-[11px] text-text-quaternary font-medium select-none">Drop job here</div>}
       </div>
     </div>
   );
@@ -195,17 +195,17 @@ const renderStars = (level?: number) => {
     const emptyStars = totalStars - filledStars;
     return (
         <div className="flex text-[10px] tracking-tighter">
-            {[...Array(filledStars)].map((_, i) => <span key={`filled-${i}`} className="text-amber-400">★</span>)}
-            {[...Array(emptyStars)].map((_, i) => <span key={`empty-${i}`} className="text-gray-200">★</span>)}
+            {[...Array(filledStars)].map((_, i) => <span key={`filled-${i}`} className="text-tag-amber-text">★</span>)}
+            {[...Array(emptyStars)].map((_, i) => <span key={`empty-${i}`} className="text-border-primary">★</span>)}
         </div>
     );
 };
 
-const REGION_COLORS: Record<string, string> = {
-    'PHX': 'bg-blue-100 text-blue-800 border-blue-200',
-    'NORTH': 'bg-green-100 text-green-800 border-green-200',
-    'SOUTH': 'bg-orange-100 text-orange-800 border-orange-200',
-    'UNKNOWN': 'bg-gray-100 text-gray-800 border-gray-200'
+const REGION_CLASSES: Record<string, string> = {
+    'PHX': 'bg-tag-blue-bg text-tag-blue-text border-tag-blue-border',
+    'NORTH': 'bg-tag-green-bg text-tag-green-text border-tag-green-border',
+    'SOUTH': 'bg-tag-orange-bg text-tag-orange-text border-tag-orange-border',
+    'UNKNOWN': 'bg-bg-tertiary text-text-secondary border-border-primary'
 };
 
 const generateColorFromName = (name: string): string => {
@@ -232,19 +232,19 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-                <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+        <div className="fixed inset-0 bg-bg-secondary/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={onClose}>
+            <div className="popup-surface w-full max-w-lg overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+                <div className="bg-bg-secondary px-4 py-3 border-b border-border-primary flex justify-between items-center">
                     <div>
-                        <h3 className="font-bold text-gray-800 text-sm">{repName} - Performance Breakdown</h3>
-                        <div className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                            Daily Average Score: <span className="font-bold text-amber-600 bg-amber-50 px-1.5 rounded border border-amber-100">{averageScore}</span>
+                        <h3 className="font-bold text-text-primary text-sm">{repName} - Performance Breakdown</h3>
+                        <div className="text-xs text-text-tertiary flex items-center gap-1 mt-0.5">
+                            Daily Average Score: <span className="font-bold text-tag-amber-text bg-tag-amber-bg px-1.5 rounded border border-tag-amber-border">{averageScore}</span>
                         </div>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-200 transition"><XIcon className="h-5 w-5" /></button>
+                    <button onClick={onClose} className="text-text-quaternary hover:text-text-secondary p-1 rounded-full hover:bg-bg-tertiary transition"><XIcon className="h-5 w-5" /></button>
                 </div>
                 <div className="p-4 max-h-[60vh] overflow-y-auto custom-scrollbar space-y-3">
-                    <div className="text-[10px] bg-blue-50 border border-blue-100 rounded p-2 text-blue-800">
+                    <div className="text-[10px] bg-tag-blue-bg border border-tag-blue-border rounded p-2 text-tag-blue-text">
                         Scores are calculated based on Proximity (Home & Job Clusters), Skill Matching (Roof Type), and Sales Rank (Priority Jobs Only).
                     </div>
                     {jobs.map(job => {
@@ -254,33 +254,33 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
                         const showTypeScore = b.skillType >= 0; // If -1, hide it
 
                         return (
-                            <div key={job.id} className={`border rounded-md p-2 text-sm shadow-sm ${isElite ? 'bg-amber-50/30 border-amber-200' : 'bg-white border-gray-200'}`}>
+                            <div key={job.id} className={`border rounded-md p-2 text-sm shadow-sm ${isElite ? 'bg-tag-amber-bg/30 border-tag-amber-border' : 'bg-bg-primary border-border-primary'}`}>
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="min-w-0 pr-2">
-                                        <div className="font-bold text-gray-800 text-xs uppercase truncate">{job.city || 'Unknown City'}</div>
-                                        <div className="text-xs text-gray-500 truncate">{job.address}</div>
+                                        <div className="font-bold text-text-primary text-xs uppercase truncate">{job.city || 'Unknown City'}</div>
+                                        <div className="text-xs text-text-tertiary truncate">{job.address}</div>
                                     </div>
-                                    <div className={`font-bold px-1.5 py-0.5 rounded border whitespace-nowrap text-xs flex-shrink-0 ${isElite ? 'bg-amber-100 text-amber-700 border-amber-300' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                                    <div className={`font-bold px-1.5 py-0.5 rounded border whitespace-nowrap text-xs flex-shrink-0 ${isElite ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border' : 'bg-bg-tertiary text-text-secondary border-border-primary'}`}>
                                         {job.assignmentScore || 0}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-6 gap-1 text-[10px] text-gray-500 mt-2">
-                                    <div className="bg-gray-50 rounded px-1 py-1 text-center border border-gray-100">
-                                        <div className="font-bold text-gray-800 text-xs">{Math.round(b.distanceBase)}</div>
+                                <div className="grid grid-cols-6 gap-1 text-[10px] text-text-tertiary mt-2">
+                                    <div className="bg-bg-secondary rounded px-1 py-1 text-center border border-border-primary">
+                                        <div className="font-bold text-text-primary text-xs">{Math.round(b.distanceBase)}</div>
                                         <div className="text-[8px] uppercase tracking-wide">Home</div>
                                     </div>
-                                    <div className="bg-gray-50 rounded px-1 py-1 text-center border border-gray-100">
-                                        <div className="font-bold text-gray-800 text-xs">{Math.round(b.distanceCluster)}</div>
+                                    <div className="bg-bg-secondary rounded px-1 py-1 text-center border border-border-primary">
+                                        <div className="font-bold text-text-primary text-xs">{Math.round(b.distanceCluster)}</div>
                                         <div className="text-[8px] uppercase tracking-wide">Cluster</div>
                                     </div>
-                                    <div className="bg-gray-50 rounded px-1 py-1 text-center border border-gray-100">
-                                        <div className="font-bold text-gray-800 text-xs">{Math.round(b.skillRoofing)}</div>
+                                    <div className="bg-bg-secondary rounded px-1 py-1 text-center border border-border-primary">
+                                        <div className="font-bold text-text-primary text-xs">{Math.round(b.skillRoofing)}</div>
                                         <div className="text-[8px] uppercase tracking-wide">Roof</div>
                                     </div>
                                     
                                     {showTypeScore ? (
-                                        <div className="bg-gray-50 rounded px-1 py-1 text-center border border-gray-100">
-                                            <div className="font-bold text-gray-800 text-xs">{Math.round(b.skillType)}</div>
+                                        <div className="bg-bg-secondary rounded px-1 py-1 text-center border border-border-primary">
+                                            <div className="font-bold text-text-primary text-xs">{Math.round(b.skillType)}</div>
                                             <div className="text-[8px] uppercase tracking-wide">Type</div>
                                         </div>
                                     ) : (
@@ -290,19 +290,19 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
                                         </div>
                                     )}
 
-                                    <div className={`rounded px-1 py-1 text-center border ${b.performance > 0 ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100 opacity-50'}`}>
-                                        <div className={`font-bold text-xs ${b.performance > 0 ? 'text-amber-700' : 'text-gray-400'}`}>{b.performance > 0 ? `${Math.round(b.performance)}` : '-'}</div>
+                                    <div className={`rounded px-1 py-1 text-center border ${b.performance > 0 ? 'bg-tag-amber-bg border-tag-amber-border' : 'bg-bg-secondary border-border-primary opacity-50'}`}>
+                                        <div className={`font-bold text-xs ${b.performance > 0 ? 'text-tag-amber-text' : 'text-text-quaternary'}`}>{b.performance > 0 ? `${Math.round(b.performance)}` : '-'}</div>
                                         <div className="text-[8px] uppercase tracking-wide">Rank</div>
                                     </div>
-                                    <div className={`rounded px-1 py-1 text-center border ${penaltyVal > 0 ? 'bg-red-50 border-red-100' : 'bg-gray-50 border-gray-100 opacity-50'}`}>
-                                        <div className={`font-bold text-xs ${penaltyVal > 0 ? 'text-red-700' : 'text-gray-400'}`}>{penaltyVal > 0 ? `-${penaltyVal}` : '-'}</div>
+                                    <div className={`rounded px-1 py-1 text-center border ${penaltyVal > 0 ? 'bg-tag-red-bg border-tag-red-border' : 'bg-bg-secondary border-border-primary opacity-50'}`}>
+                                        <div className={`font-bold text-xs ${penaltyVal > 0 ? 'text-tag-red-text' : 'text-text-quaternary'}`}>{penaltyVal > 0 ? `-${penaltyVal}` : '-'}</div>
                                         <div className="text-[8px] uppercase tracking-wide">Pen</div>
                                     </div>
                                 </div>
                             </div>
                         );
                     })}
-                    {jobs.length === 0 && <p className="text-gray-500 text-center italic text-xs">No scored jobs assigned.</p>}
+                    {jobs.length === 0 && <p className="text-text-tertiary text-center italic text-xs">No scored jobs assigned.</p>}
                 </div>
             </div>
         </div>
@@ -475,25 +475,25 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
   const containerClasses = useMemo(() => {
     const base = 'p-2 rounded-lg transition-all duration-300 border-2 min-w-0';
     let stateClasses = '';
-    if (rep.isOptimized) { stateClasses = 'border-teal-400 bg-teal-50/50 shadow-inner'; } 
-    else if (rep.isLocked) { stateClasses = 'border-amber-400 bg-amber-50 shadow-inner'; } 
-    else if (isHighlighted) { stateClasses = 'border-sky-400 bg-sky-50 shadow-lg scale-[1.02]'; } 
+    if (rep.isOptimized) { stateClasses = 'border-tag-teal-border bg-tag-teal-bg/50 shadow-inner'; } 
+    else if (rep.isLocked) { stateClasses = 'border-tag-amber-border bg-tag-amber-bg shadow-inner'; } 
+    else if (isHighlighted) { stateClasses = 'border-tag-sky-border bg-tag-sky-bg shadow-lg scale-[1.02]'; } 
     else if (isBeingHoveredWithJob) {
         if (isInvalidDropTarget) {
-            if (isOverrideActive) { stateClasses = 'border-purple-500 bg-purple-50/50'; } 
-            else { stateClasses = 'border-red-500 bg-red-100/50 opacity-60 cursor-not-allowed'; }
+            if (isOverrideActive) { stateClasses = 'border-tag-purple-border bg-tag-purple-bg/50'; } 
+            else { stateClasses = 'border-tag-red-border bg-tag-red-bg/50 opacity-60 cursor-not-allowed'; }
         } else {
             switch (skillMatchStatus) {
-                case 'good': stateClasses = 'border-green-500 bg-green-50/50'; break;
-                case 'average': stateClasses = 'border-yellow-500 bg-yellow-50/50'; break;
-                case 'poor': stateClasses = 'border-red-500 bg-red-50/50'; break;
-                default: stateClasses = 'border-indigo-400 bg-indigo-50/50';
+                case 'good': stateClasses = 'border-tag-green-border bg-tag-green-bg/50'; break;
+                case 'average': stateClasses = 'border-tag-amber-border bg-tag-amber-bg/50'; break;
+                case 'poor': stateClasses = 'border-tag-red-border bg-tag-red-bg/50'; break;
+                default: stateClasses = 'border-brand-primary bg-brand-bg-light';
             }
         }
-    } else if (isSelected) { stateClasses = 'border-indigo-500 bg-indigo-50'; } 
-    else { stateClasses = 'border-transparent bg-gray-50'; }
+    } else if (isSelected) { stateClasses = 'border-brand-primary bg-brand-bg-light'; } 
+    else { stateClasses = 'border-transparent bg-bg-secondary'; }
     
-    const unavailabilityClasses = isNotWorking ? 'opacity-60 bg-gray-100 grayscale' : '';
+    const unavailabilityClasses = isNotWorking ? 'opacity-60 bg-bg-tertiary grayscale' : '';
     
     return `${base} ${stateClasses} ${unavailabilityClasses}`;
   }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isNotWorking, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized]);
@@ -513,12 +513,12 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
 
   const rankColor = useMemo(() => {
       const rank = rep.salesRank;
-      if (!rank) return 'text-gray-400';
-      if (rank === 1) return 'text-yellow-600 font-black'; // Gold
-      if (rank === 2) return 'text-gray-600 font-bold'; // Silver
-      if (rank === 3) return 'text-amber-700 font-bold'; // Bronze
-      if (rank <= 10) return 'text-slate-600 font-semibold';
-      return 'text-gray-500';
+      if (!rank) return 'text-text-quaternary';
+      if (rank === 1) return 'text-tag-amber-text font-black'; // Gold
+      if (rank === 2) return 'text-text-secondary font-bold'; // Silver
+      if (rank === 3) return 'text-tag-orange-text font-bold'; // Bronze
+      if (rank <= 10) return 'text-text-secondary font-semibold';
+      return 'text-text-tertiary';
   }, [rep.salesRank]);
 
   const rankIcon = useMemo(() => {
@@ -576,36 +576,36 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
       <div className="flex justify-between items-center cursor-pointer" onClick={onToggleExpansion}>
         <div className="flex items-center min-w-0 flex-1 mr-2">
             <div 
-                className="w-5 h-5 rounded-full mr-2 flex-shrink-0 ring-1 ring-inset ring-gray-300"
+                className="w-5 h-5 rounded-full mr-2 flex-shrink-0 ring-1 ring-inset ring-border-secondary"
                 style={{ backgroundColor: repColor }}
                 title={rep.name}
             />
-          <h3 className="text-sm font-bold truncate">{rep.name}</h3>
+          <h3 className="text-sm font-bold truncate text-text-primary">{rep.name}</h3>
            {rep.isOptimized ? (
-                <div className="ml-2 flex items-center bg-teal-100 text-teal-800 border border-teal-200 rounded-full px-2 py-0.5">
+                <div className="ml-2 flex items-center bg-tag-teal-bg text-tag-teal-text border border-tag-teal-border rounded-full px-2 py-0.5">
                     <span className="text-xs font-semibold mr-1">Optimized</span>
                     <button 
                         onClick={(e) => { e.stopPropagation(); handleUnoptimizeRepRoute(rep.id); }}
-                        className="p-0.5 hover:bg-teal-200 rounded-full text-teal-700 transition-colors"
+                        className="p-0.5 hover:bg-tag-teal-bg/80 rounded-full text-tag-teal-text transition-colors"
                         title="Reset to original schedule"
                     >
                         <UndoIcon className="h-3 w-3" />
                     </button>
                 </div>
            ) : isDoubleBooked && (
-                <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200 whitespace-nowrap`}>Double-Booked</span>
+                <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-tag-red-bg text-tag-red-text border border-tag-red-border whitespace-nowrap`}>Double-Booked</span>
             )}
           {rep.region && rep.region !== 'UNKNOWN' && rep.region !== 'PHX' && (
-            <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${REGION_COLORS[rep.region]}`}>{rep.region}</span>
+            <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${REGION_CLASSES[rep.region]}`}>{rep.region}</span>
           )}
           {isFullyUnavailable && (
-              <span className="ml-2 text-[10px] bg-gray-200 text-gray-600 font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">Unavailable</span>
+              <span className="ml-2 text-[10px] bg-bg-quaternary text-text-tertiary font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">Unavailable</span>
           )}
           
           {jobCount > 0 && (
               <span 
                 onClick={(e) => { e.stopPropagation(); setIsScoreDetailsOpen(true); }}
-                className="ml-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 cursor-pointer hover:bg-amber-100 transition-colors whitespace-nowrap" 
+                className="ml-2 flex items-center gap-1 text-[10px] font-bold text-tag-amber-text bg-tag-amber-bg px-1.5 py-0.5 rounded border border-tag-amber-border cursor-pointer hover:bg-tag-amber-bg/80 transition-colors whitespace-nowrap" 
                 title={scoreTooltip}
               >
                   <TrophyIcon className="h-3 w-3" />
@@ -617,7 +617,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
              {rep.isOptimized && (
                  <button
                     onClick={(e) => { e.stopPropagation(); handleCopySchedule(); }}
-                    className={`p-1 rounded-full text-sm transition-colors ${copySuccess ? 'bg-green-100 text-green-600' : 'bg-gray-100 hover:bg-teal-100 text-gray-400 hover:text-teal-600'}`}
+                    className={`p-1 rounded-full text-sm transition-colors ${copySuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-tertiary hover:bg-tag-teal-bg text-text-quaternary hover:text-tag-teal-text'}`}
                     title="Copy Itinerary to Clipboard"
                  >
                      <MessageIcon className="h-3.5 w-3.5" />
@@ -625,7 +625,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
              )}
              <button 
                 onClick={(e) => { e.stopPropagation(); onSelectRep(e); }}
-                className={`p-1 rounded-full text-sm transition-colors ${isSelected ? 'bg-indigo-600 text-white' : 'bg-gray-100 hover:bg-indigo-100 text-gray-400 hover:text-indigo-600'}`}
+                className={`p-1 rounded-full text-sm transition-colors ${isSelected ? 'bg-brand-primary text-brand-text-on-primary' : 'bg-bg-tertiary hover:bg-brand-bg-light text-text-quaternary hover:text-brand-primary'}`}
                 title="Pin to Map View"
               >
                 <PinIcon className="h-3.5 w-3.5" />
@@ -634,24 +634,24 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
             <div className="relative" ref={menuRef}>
                 <button
                     onClick={(e) => { e.stopPropagation(); setIsMenuOpen(prev => !prev); }}
-                    className="p-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-800"
+                    className="p-1 rounded-full text-sm transition-colors bg-bg-tertiary text-text-tertiary hover:bg-bg-quaternary hover:text-text-primary"
                     title="More Options"
                 >
                     <MenuIcon className="h-4 w-4" />
                 </button>
                 
                 {isMenuOpen && (
-                    <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-20 py-1 animate-fade-in">
+                    <div className="popup-surface absolute top-full right-0 mt-2 w-48 z-20 py-1 animate-fade-in overflow-hidden">
                         <button
                             onClick={(e) => { e.stopPropagation(); handleAutoAssignForRep(rep.id); setIsMenuOpen(false); }}
-                            className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={rep.isLocked || !hasUnassignedJobs || isAssignmentRunning || rep.isOptimized}
                         >
                             <AutoAssignIcon className="h-3 w-3 mr-2" /> Auto-Assign
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); handleOptimizeRepRoute(rep.id); setIsMenuOpen(false); }}
-                            className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                             disabled={jobCount < 2 || isAssignmentRunning}
                         >
                             <OptimizeIcon className="h-3 w-3 mr-2" /> Optimize Route
@@ -660,19 +660,19 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                         <div className="relative" ref={swapMenuRef}>
                              <button
                                 onClick={(e) => { e.stopPropagation(); setIsSwapMenuOpen(prev => !prev); }}
-                                className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                                 disabled={rep.isLocked || rep.isOptimized || jobCount === 0}
                             >
                                 <SwapIcon className="h-3 w-3 mr-2" /> Swap Schedule...
                             </button>
                             {isSwapMenuOpen && (
-                                <div className="absolute top-0 right-full mr-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-30 max-h-60 overflow-y-auto">
-                                    <div className="p-2 text-[10px] font-bold text-gray-500 border-b bg-gray-50">Swap with:</div>
+                                <div className="popup-surface absolute top-0 right-full mr-1 w-48 z-30 max-h-60 overflow-y-auto">
+                                    <div className="p-2 text-[10px] font-bold text-text-tertiary border-b bg-bg-secondary">Swap with:</div>
                                     {appState.reps.filter(r => r.id !== rep.id).map(otherRep => (
                                         <button
                                             key={otherRep.id}
                                             onClick={(e) => { e.stopPropagation(); handleSwapClick(otherRep.id); }}
-                                            className="w-full text-left px-3 py-2 text-xs text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed truncate"
+                                            className="w-full text-left px-3 py-2 text-xs text-text-primary hover:bg-bg-secondary disabled:opacity-50 disabled:cursor-not-allowed truncate"
                                             disabled={otherRep.isLocked || otherRep.isOptimized}
                                         >
                                             {otherRep.name}
@@ -684,7 +684,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
 
                         <button
                             onClick={(e) => { e.stopPropagation(); setRepSettingsModalRepId(rep.id); setIsMenuOpen(false); }}
-                            className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center"
+                            className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center"
                         >
                             <SettingsIcon className="h-3 w-3 mr-2" /> Rep Settings
                         </button>
@@ -694,16 +694,16 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => { if (jobCount === 0) e.preventDefault(); setIsMenuOpen(false); e.stopPropagation(); }}
-                            className={`w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center ${jobCount === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center ${jobCount === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             <ClipboardIcon className="h-3 w-3 mr-2" /> Google Maps
                         </a>
                         
-                        <div className="border-t border-gray-100 my-1"></div>
+                        <div className="border-t border-border-primary my-1"></div>
                         
                         <button
                             onClick={(e) => { e.stopPropagation(); onToggleLock(rep.id); setIsMenuOpen(false); }}
-                            className="w-full text-left px-4 py-2 text-xs text-gray-700 hover:bg-gray-100 flex items-center"
+                            className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center"
                         >
                             {rep.isLocked ? <UnlockIcon className="h-3 w-3 mr-2" /> : <LockIcon className="h-3 w-3 mr-2" />}
                             {rep.isLocked ? 'Unlock Rep' : 'Lock Rep'}
@@ -719,13 +719,13 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
           <div className="flex justify-between items-start">
               <div className="space-y-0.5 min-w-0">
                   {rep.zipCodes && rep.zipCodes.length > 0 && (
-                    <div className="text-[10px] text-gray-500 flex flex-wrap items-center gap-1">
+                    <div className="text-[10px] text-text-tertiary flex flex-wrap items-center gap-1">
                       <span>Areas:</span>
                       {rep.zipCodes.map(zip => (
                         <button
                             key={zip}
                             onClick={(e) => { e.stopPropagation(); handleShowZipOnMap(zip, rep); }}
-                            className="px-1 bg-gray-100 hover:bg-indigo-50 hover:text-indigo-700 rounded text-[9px] font-mono transition-colors border border-gray-200"
+                            className="px-1 bg-bg-tertiary hover:bg-brand-bg-light hover:text-brand-text-light rounded text-[9px] font-mono transition-colors border border-border-primary"
                             title="Show area on map"
                             type="button"
                         >
@@ -737,7 +737,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                   {assignedCities.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-0.5">
                           {assignedCities.map(city => (
-                              <span key={city} className="px-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 text-[9px] font-bold rounded">{city}</span>
+                              <span key={city} className="px-1.5 bg-brand-bg-light text-brand-text-light border border-brand-primary/20 text-[9px] font-bold rounded">{city}</span>
                           ))}
                       </div>
                   )}
@@ -751,7 +751,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                         </span>
                       </>
                   ) : (
-                      <span className="text-gray-300 whitespace-nowrap">Unranked</span>
+                      <span className="text-text-quaternary whitespace-nowrap">Unranked</span>
                   )}
               </div>
           </div>
@@ -760,12 +760,12 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
       {isExpanded && (
         <>
             {rep.skills && (
-              <div className="mt-1.5 pt-1 border-t border-dashed border-gray-200">
+              <div className="mt-1.5 pt-1 border-t border-dashed border-border-primary">
                 <div className="flex flex-wrap gap-x-3 gap-y-0.5 items-center">
                   {TAG_KEYWORDS.map(skill => {
                     const level = rep.skills?.[skill];
                     if (level && level > 0) {
-                      return ( <div key={skill} className="flex items-center space-x-1 text-[9px]"> <span className="text-gray-500 font-medium">{skill}</span> {renderStars(level)} </div> )
+                      return ( <div key={skill} className="flex items-center space-x-1 text-[9px]"> <span className="text-text-tertiary font-medium">{skill}</span> {renderStars(level)} </div> )
                     }
                     return null;
                   })}

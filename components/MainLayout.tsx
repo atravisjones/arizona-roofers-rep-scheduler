@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, WarningIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -16,6 +16,8 @@ import NeedsDetailsModal from './NeedsDetailsModal';
 import NeedsRescheduleModal from './NeedsRescheduleModal';
 import { TAG_KEYWORDS } from '../constants';
 import { Job } from '../types';
+import SettingsPanel from './SettingsPanel';
+import ThemeEditorModal from './ThemeEditorModal';
 
 const MIN_COLUMN_PERCENTAGE = 10;
 type ColumnId = 'schedules' | 'jobs' | 'routes';
@@ -66,6 +68,9 @@ const MainLayout: React.FC = () => {
   const [isNeedsDetailsOpen, setIsNeedsDetailsOpen] = useState(false);
   const [isNeedsRescheduleOpen, setIsNeedsRescheduleOpen] = useState(false);
   const [isAiPopupOpen, setIsAiPopupOpen] = useState(false);
+  const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
+  const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -92,6 +97,16 @@ const MainLayout: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
 }, [context]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+            setIsSettingsPanelOpen(false);
+        }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
 
   const handleCloseAiPopup = () => {
@@ -226,6 +241,25 @@ const MainLayout: React.FC = () => {
     return count;
   }, [context.appState.reps]);
 
+  const visibleColumnOrder = useMemo(() => {
+    return columnOrder.filter(id => id !== 'jobs' || context.uiSettings.showUnassignedJobsColumn);
+  }, [columnOrder, context.uiSettings.showUnassignedJobsColumn]);
+
+  const visibleColumnWidths = useMemo(() => {
+      if (context.uiSettings.showUnassignedJobsColumn) {
+          return columnWidths;
+      }
+      const hiddenWidth = columnWidths.jobs;
+      const remainingCols = visibleColumnOrder;
+      const remainingTotalWidth = remainingCols.reduce((acc, id) => acc + columnWidths[id], 0);
+  
+      const newWidths: Record<string, number> = {};
+      remainingCols.forEach(id => {
+          newWidths[id] = columnWidths[id] + hiddenWidth * (columnWidths[id] / remainingTotalWidth);
+      });
+      return newWidths;
+  }, [columnWidths, context.uiSettings.showUnassignedJobsColumn, visibleColumnOrder]);
+
 
   const renderPanelContent = (id: ColumnId) => {
     switch (id) {
@@ -242,7 +276,7 @@ const MainLayout: React.FC = () => {
                 draggable
                 onDragStart={() => handleDragStart('routes')}
                 onDragEnd={handleDragEnd}
-                className="cursor-move text-gray-400 hover:text-gray-600" title="Drag to reorder column">
+                className="cursor-move text-text-quaternary hover:text-text-secondary" title="Drag to reorder column">
                 <DragHandleIcon />
               </div>
             </div>
@@ -257,33 +291,33 @@ const MainLayout: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 text-gray-800 font-sans overflow-hidden">
-      <header className="bg-white border-b border-gray-200 h-16 flex-shrink-0 px-6 flex items-center justify-between z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
+    <div className="h-screen flex flex-col bg-bg-secondary text-text-primary font-sans overflow-hidden">
+      <header className="bg-bg-primary border-b border-border-primary h-16 flex-shrink-0 px-6 flex items-center justify-between z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
         {/* Left Section: Branding & History */}
         <div className="flex items-center gap-6">
              {/* Branding */}
              <div className="flex flex-col justify-center">
-                <h1 className="text-lg font-bold text-gray-900 tracking-tight leading-none">Rep Route Planner</h1>
+                <h1 className="text-lg font-bold text-text-primary tracking-tight leading-none">Rep Route Planner</h1>
                 <div className="flex items-center gap-1.5 mt-1">
                     <div className={`w-2 h-2 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
-                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wide">
+                    <span className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">
                         {context.usingMockData ? 'Mock Data' : 'Live'}:
                     </span>
-                    <span className="text-[10px] font-bold text-gray-700 truncate max-w-[200px]" title={context.activeSheetName}>
+                    <span className="text-[10px] font-bold text-text-secondary truncate max-w-[200px]" title={context.activeSheetName}>
                         {context.activeSheetName || 'Loading...'}
                     </span>
                 </div>
              </div>
 
              {/* Divider */}
-             <div className="h-8 w-px bg-gray-100"></div>
+             <div className="h-8 w-px bg-bg-tertiary"></div>
 
              {/* History Controls */}
-             <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-lg border border-gray-100">
-                <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-gray-500 hover:text-gray-800 disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
+             <div className="flex items-center gap-1 bg-bg-secondary p-1 rounded-lg border border-border-primary">
+                <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-bg-primary hover:shadow-sm text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
                     <UndoIcon className="h-4 w-4" />
                 </button>
-                <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded-md hover:bg-white hover:shadow-sm text-gray-500 hover:text-gray-800 disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
+                <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded-md hover:bg-bg-primary hover:shadow-sm text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
                     <RedoIcon className="h-4 w-4" />
                 </button>
             </div>
@@ -293,8 +327,8 @@ const MainLayout: React.FC = () => {
         <div className="flex-1 flex justify-center items-center px-4 gap-4">
             <DayTabs />
             {context.announcement && (
-                <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 text-xs font-semibold p-2 rounded-md flex items-center gap-2 animate-fade-in">
-                    <MegaphoneIcon className="h-4 w-4 text-indigo-600" />
+                <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-xs font-semibold p-2 rounded-md flex items-center gap-2 animate-fade-in">
+                    <MegaphoneIcon className="h-4 w-4 text-brand-primary" />
                     <span>{context.announcement}</span>
                 </div>
             )}
@@ -307,15 +341,15 @@ const MainLayout: React.FC = () => {
                 onClick={() => setIsNeedsRescheduleOpen(true)}
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
                     jobsNeedingRescheduleCount > 0 
-                        ? 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50 shadow-sm' 
-                        : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
+                        ? 'bg-bg-primary text-tag-blue-text border-tag-blue-border hover:bg-tag-blue-bg shadow-sm' 
+                        : 'bg-bg-secondary text-text-quaternary border-transparent hover:bg-bg-tertiary'
                 }`}
                 title="Review jobs with potential scheduling conflicts"
             >
-                <RescheduleIcon className={`h-3.5 w-3.5 ${jobsNeedingRescheduleCount > 0 ? 'text-blue-600' : 'text-gray-400'}`} />
+                <RescheduleIcon className={`h-3.5 w-3.5 ${jobsNeedingRescheduleCount > 0 ? 'text-brand-blue' : 'text-text-quaternary'}`} />
                 <span>Needs Reschedule</span>
                 {jobsNeedingRescheduleCount > 0 && (
-                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-blue-500 text-white shadow-sm">
+                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-brand-blue text-white shadow-sm">
                         {jobsNeedingRescheduleCount}
                     </span>
                 )}
@@ -325,38 +359,38 @@ const MainLayout: React.FC = () => {
                 onClick={() => setIsNeedsDetailsOpen(true)} 
                 className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
                     needsDetailsCount > 0 
-                        ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50 shadow-sm' 
-                        : 'bg-gray-50 text-gray-400 border-transparent hover:bg-gray-100'
+                        ? 'bg-bg-primary text-tag-amber-text border-tag-amber-border hover:bg-tag-amber-bg shadow-sm' 
+                        : 'bg-bg-secondary text-text-quaternary border-transparent hover:bg-bg-tertiary'
                 }`}
                 title="Review jobs missing essential details"
             >
-                <RepairIcon className={`h-3.5 w-3.5 ${needsDetailsCount > 0 ? 'text-amber-600' : 'text-gray-400'}`} />
+                <RepairIcon className={`h-3.5 w-3.5 ${needsDetailsCount > 0 ? 'text-tag-amber-text' : 'text-text-quaternary'}`} />
                 <span>Needs Details</span>
                 {needsDetailsCount > 0 && (
-                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-amber-500 text-white shadow-sm">
+                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-tag-amber-text text-white shadow-sm">
                         {needsDetailsCount}
                     </span>
                 )}
             </button>
 
             {/* Reports Navigation */}
-             <div className="flex items-center bg-gray-100/50 p-1 rounded-lg border border-gray-200/50">
-                <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
+             <div className="flex items-center bg-bg-tertiary/50 p-1 rounded-lg border border-border-primary/50">
+                <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
                     <SummaryIcon className="h-3.5 w-3.5" />
                     <span>Daily</span>
                 </button>
-                <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                 <button onClick={() => setIsRepSummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
+                <div className="w-px h-4 bg-border-primary mx-1"></div>
+                 <button onClick={() => setIsRepSummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
                     <UserIcon className="h-3.5 w-3.5" />
                     <span>Reps</span>
                 </button>
-                <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                 <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:text-indigo-600 hover:bg-white hover:shadow-sm rounded-md transition-all">
+                <div className="w-px h-4 bg-border-primary mx-1"></div>
+                 <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
                     <TagIcon className="h-3.5 w-3.5" />
                     <span>Slots</span>
                 </button>
-                <div className="w-px h-4 bg-gray-200 mx-1"></div>
-                 <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 hover:shadow-sm rounded-md transition-all" title="View Training Data">
+                <div className="w-px h-4 bg-border-primary mx-1"></div>
+                 <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-text-light bg-brand-bg-light hover:bg-brand-primary/20 border border-brand-primary/20 hover:shadow-sm rounded-md transition-all" title="View Training Data">
                     <BrainIcon className="h-3.5 w-3.5" />
                     <span>Training</span>
                 </button>
@@ -364,36 +398,42 @@ const MainLayout: React.FC = () => {
 
              {/* Data Controls */}
             <div className="flex items-center gap-2">
-                <button onClick={context.handleSaveStateToFile} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Save State">
-                    <SaveIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                <button onClick={context.handleSaveStateToFile} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Save State">
+                    <SaveIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
                 </button>
-                <button onClick={handleLoadClick} className="group p-2 rounded-full hover:bg-indigo-50 transition relative" title="Load State">
-                    <UploadIcon className="h-5 w-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                <button onClick={handleLoadClick} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Load State">
+                    <UploadIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
                 </button>
             </div>
 
-            <div className="h-8 w-px bg-gray-200"></div>
+            <div className="h-8 w-px bg-border-primary"></div>
             
+            <div ref={settingsRef} className="relative">
+                <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Settings">
+                    <SettingsIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
+                </button>
+                {isSettingsPanelOpen && <SettingsPanel onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }} />}
+            </div>
             <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
         </div>
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
       <div ref={containerRef} className="flex w-full flex-grow min-h-0 relative z-10 p-4 gap-4 overflow-hidden">
-        {columnOrder.map((id, i) => {
-          const rightColId = i < columnOrder.length - 1 ? columnOrder[i + 1] : null;
+        {visibleColumnOrder.map((id, i) => {
+          const rightColId = i < visibleColumnOrder.length - 1 ? visibleColumnOrder[i + 1] : null;
           return (
             <React.Fragment key={id}>
               <div
                 data-col-id={id}
-                className="bg-white p-4 rounded-lg shadow-md flex flex-col min-w-0 h-full"
-                style={{ flexBasis: `${columnWidths[id]}%` }}
+                className="bg-bg-primary p-4 rounded-lg shadow-md flex flex-col min-w-0 h-full"
+                style={{ flexBasis: `${visibleColumnWidths[id]}%` }}
                 onDragEnter={() => handleDragEnter(id)}
                 onDragOver={(e) => e.preventDefault()}
               >
                 {renderPanelContent(id)}
               </div>
-              {rightColId && ( <div className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0" onMouseDown={e => handleResizeStart(e, id, rightColId)}> <div className="w-1 h-16 bg-gray-300 group-hover:bg-indigo-400 rounded-full transition-colors" /> </div> )}
+              {rightColId && ( <div className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0" onMouseDown={e => handleResizeStart(e, id, rightColId)}> <div className="w-1 h-16 bg-border-secondary group-hover:bg-brand-primary rounded-full transition-colors" /> </div> )}
             </React.Fragment>
           );
         })}
@@ -418,6 +458,11 @@ const MainLayout: React.FC = () => {
             isOpen={!!context.repSettingsModalRepId}
             onClose={() => context.setRepSettingsModalRepId(null)}
             repId={context.repSettingsModalRepId}
+        />
+        
+        <ThemeEditorModal
+            isOpen={isThemeEditorOpen}
+            onClose={() => setIsThemeEditorOpen(false)}
         />
 
     </div>

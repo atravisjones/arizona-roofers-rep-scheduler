@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings } from '../types';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage } from '../services/googleSheetsService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
@@ -72,6 +72,12 @@ export const DEFAULT_SETTINGS: Settings = {
   allowRegionalRepsInPhoenix: false,
 };
 
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  theme: 'light',
+  showUnplottedJobs: true,
+  showUnassignedJobsColumn: true,
+};
+
 const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS };
 
 export const useAppLogic = () => {
@@ -127,6 +133,92 @@ export const useAppLogic = () => {
   // Ref to track the latest map request to prevent race conditions
   const mapRequestRef = useRef(0);
 
+  const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
+    try {
+        const stored = localStorage.getItem('ui-settings');
+        if (stored) return { ...DEFAULT_UI_SETTINGS, ...JSON.parse(stored) };
+    } catch (e) {
+        console.warn("Could not load UI settings from localStorage", e);
+    }
+    return DEFAULT_UI_SETTINGS;
+  });
+
+  const updateUiSettings = useCallback((updates: Partial<UiSettings>) => {
+    setUiSettings(prev => {
+        const newSettings = { ...prev, ...updates };
+        try {
+            localStorage.setItem('ui-settings', JSON.stringify(newSettings));
+        } catch (e) {
+            console.warn("Could not save UI settings to localStorage", e);
+        }
+        return newSettings;
+    });
+  }, []);
+
+  const updateCustomTheme = useCallback((updates: Record<string, string>) => {
+    setUiSettings(prev => {
+        const newCustomTheme = { ...(prev.customTheme || {}), ...updates };
+        const newSettings = { ...prev, theme: 'custom' as const, customTheme: newCustomTheme };
+        try {
+            localStorage.setItem('ui-settings', JSON.stringify(newSettings));
+        } catch(e) { console.warn("Could not save UI settings", e); }
+        return newSettings;
+    });
+  }, []);
+
+  const resetCustomTheme = useCallback(() => {
+    setUiSettings(prev => {
+        const newSettings = { ...prev, theme: 'light' as const, customTheme: undefined };
+         try {
+            const stored = JSON.parse(localStorage.getItem('ui-settings') || '{}');
+            delete stored.customTheme;
+            stored.theme = 'light';
+            localStorage.setItem('ui-settings', JSON.stringify(stored));
+        } catch (e) { console.warn("Could not save UI settings", e); }
+        return newSettings;
+    });
+  }, []);
+
+  // Theme application effect
+  useEffect(() => {
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    // Always clear any existing inline custom theme properties first
+    const style = root.style;
+    const toRemove = [];
+    for (let i = 0; i < style.length; i++) {
+        const propName = style[i];
+        if (propName.startsWith('--')) {
+            toRemove.push(propName);
+        }
+    }
+    toRemove.forEach(prop => style.removeProperty(prop));
+
+    const applySystemTheme = () => {
+        const systemTheme = mediaQuery.matches ? 'dark' : 'light';
+        root.setAttribute('data-theme', systemTheme);
+    };
+    
+    // Remove listener before re-evaluating to prevent duplicates
+    mediaQuery.removeEventListener('change', applySystemTheme);
+
+    if (uiSettings.theme === 'system') {
+        applySystemTheme();
+        mediaQuery.addEventListener('change', applySystemTheme);
+    } else if (uiSettings.theme === 'custom' && uiSettings.customTheme) {
+        // Use a base theme for non-color properties like `color-scheme`
+        root.setAttribute('data-theme', 'light');
+        Object.entries(uiSettings.customTheme).forEach(([key, value]) => {
+            root.style.setProperty(key, value);
+        });
+    } else {
+        root.setAttribute('data-theme', uiSettings.theme);
+    }
+    
+    return () => mediaQuery.removeEventListener('change', applySystemTheme);
+  }, [uiSettings.theme, uiSettings.customTheme]);
+
   const updateGeoCache = useCallback(async (addresses: string[]) => {
       const unique = [...new Set(addresses)].filter(addr => !geoCache.has(addr));
       if (unique.length === 0) return;
@@ -162,7 +254,7 @@ export const useAppLogic = () => {
   }, []);
 
   useEffect(() => {
-    const loadAuxiliaryData = async () => {
+      const loadAuxiliaryData = async () => {
         log('Fetching Roofr job IDs...');
         const idMap = await fetchRoofrJobIds();
         setRoofrJobIdMap(idMap);
@@ -2036,6 +2128,7 @@ export const useAppLogic = () => {
     isOverrideActive, sortConfig, setSortConfig, debugLogs, log, aiThoughts, activeRoute, isRouting,
     draggedJob, setDraggedJob, draggedOverRepId, setDraggedOverRepId, handleJobDragEnd,
     handleRefreshRoute, settings: appState.settings, updateSettings,
+    uiSettings, updateUiSettings, updateCustomTheme, resetCustomTheme,
     loadReps, handleShowRoute, handleParseJobs, handleAutoAssign, handleDistributeJobs, handleAutoAssignForRep, handleAiAssign, handleAiFixAddresses, handleTryAddressVariations, clearAiThoughts, handleUnassignJob,
     handleClearAllSchedules, handleJobDrop, handleToggleRepLock,
     handleToggleRepExpansion, handleToggleAllReps, handleUpdateJob, handleRemoveJob, handleUpdateRep, allJobs, assignedJobs, assignedJobsCount,
