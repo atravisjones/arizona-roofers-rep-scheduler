@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev:*)",
+      "Bash(node test-normalization.js:*)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(node test-week-parser.js:*)",
+      "Bash(dir /s /b \"C:\\Users\\atrav\\Downloads\\arizona-roofers-rep-schedler (3)\")",
+      "Bash(node:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(timeout 3 echo:*)",
+      "Bash(start http://localhost:3002)",
+      "Bash(dir:*)",
+      "Bash(rm:*)",
+      "Bash(start http://localhost:3003)",
+      "Bash(timeout 30 echo:*)",
+      "Bash(npm run build:*)",
+      "Bash(start http://localhost:3004)",
+      "Bash(ls:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -95,6 +95,86 @@ const buildRepNameMatchers = (reps: Rep[]): { rep: Rep; searchTerms: string[] }[
 
 
 /**
+ * Splits pasted text into separate day sections based on date headers.
+ * @param text The raw text pasted by the user containing multiple days.
+ * @returns An array of objects containing the date string and text for each day.
+ */
+export function splitTextByDays(text: string): Array<{ dateString: string; text: string }> {
+  const dateRegex = /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]{3,9})\s+(\d{1,2}),\s+(\d{4})/i;
+  const monthMap: { [key: string]: number } = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+  };
+
+  const lines = text.split('\n');
+  const daysSections: Array<{ dateString: string; text: string }> = [];
+  let currentDayLines: string[] = [];
+  let currentDateString: string | null = null;
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+
+    // Check if this line matches the date pattern
+    const match = trimmedLine.match(dateRegex);
+
+    // Only treat it as a day header if:
+    // 1. It matches the date pattern
+    // 2. It's a short line (day headers are typically < 6 words)
+    // 3. It doesn't contain " at XX:XX" which indicates a timestamp at the end
+    const isTimestamp = trimmedLine.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmedLine);
+    const isDayHeader = match && trimmedLine.split(' ').length < 6 && !isTimestamp;
+
+    if (isDayHeader) {
+      // Found a new date header
+      // Save the previous day's data if it exists
+      if (currentDateString && currentDayLines.length > 0) {
+        daysSections.push({
+          dateString: currentDateString,
+          text: currentDayLines.join('\n')
+        });
+      }
+
+      // Start a new day
+      const [, monthName, day, year] = match!;
+      const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
+      const month = monthMap[normalizedMonthKey];
+
+      if (month !== undefined) {
+        const parsedDate = new Date(parseInt(year), month, parseInt(day));
+        const y = parsedDate.getFullYear();
+        const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
+        const d = String(parsedDate.getDate()).padStart(2, '0');
+        currentDateString = `${y}-${m}-${d}`;
+        currentDayLines = [line]; // Include the date header line
+      }
+    } else if (currentDateString) {
+      // Add line to current day
+      currentDayLines.push(line);
+    }
+  }
+
+  // Don't forget the last day
+  if (currentDateString && currentDayLines.length > 0) {
+    daysSections.push({
+      dateString: currentDateString,
+      text: currentDayLines.join('\n')
+    });
+  }
+
+  // Deduplicate by date - if multiple sections have the same date, merge their text
+  const uniqueSections = new Map<string, string>();
+  for (const section of daysSections) {
+    if (uniqueSections.has(section.dateString)) {
+      uniqueSections.set(section.dateString, uniqueSections.get(section.dateString) + '\n' + section.text);
+    } else {
+      uniqueSections.set(section.dateString, section.text);
+    }
+  }
+
+  return Array.from(uniqueSections.entries()).map(([dateString, text]) => ({ dateString, text }));
+}
+
+/**
  * Parses jobs from a pasted text block.
  * It now also detects representative names anywhere in the job line (outside the address)
  * and creates pre-assignments for them.
@@ -118,10 +198,16 @@ export async function parseJobsFromText(
     jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
     jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
   };
-  
-  for (const line of lines.slice(0, 5)) {
-    const match = line.trim().match(dateRegex);
-    if (match) {
+
+  // Search through the first 15 lines (or all lines if fewer) to find the date header
+  // Only accept date headers that appear at the start of a line (not timestamps at the end)
+  for (const line of lines.slice(0, Math.min(15, lines.length))) {
+    const trimmed = line.trim();
+    // Skip lines that have "at XX:XX" which indicates a timestamp, not a date header
+    if (trimmed.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmed)) continue;
+
+    const match = trimmed.match(dateRegex);
+    if (match && trimmed.split(' ').length < 6) { // Date headers are typically short
         const [, monthName, day, year] = match;
         const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
         const month = monthMap[normalizedMonthKey];
@@ -142,9 +228,17 @@ export async function parseJobsFromText(
   const knownCitiesList = Array.from(ALL_KNOWN_CITIES).sort((a, b) => b.length - a.length);
 
   for (const line of lines) {
-    const trimmedLine = line.trim();
+    let trimmedLine = line.trim();
     if (!trimmedLine) continue;
     if (dateRegex.test(trimmedLine) && trimmedLine.split(' ').length < 6) continue;
+
+    // Remove timestamp suffix (multiple formats):
+    // - "- Tuesday, December 9, 2025 at 9:17 AM MST"
+    // - "- Dec 8, 2025 4:12 PM"
+    // - "- Dec 9, 2025"
+    // This prevents the timestamp from being confused with the job date
+    const timestampRegex = /\s*-\s*(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
+    trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
 
     const timeSlotMatch = trimmedLine.match(timeSlotRegex);
     if (timeSlotMatch && /\(\d+\)$/.test(trimmedLine)) {

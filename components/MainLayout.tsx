@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -14,42 +14,15 @@ import RepSettingsModal from './RepSettingsModal';
 import TrainingDataModal from './TrainingDataModal';
 import NeedsDetailsModal from './NeedsDetailsModal';
 import NeedsRescheduleModal from './NeedsRescheduleModal';
+import ChangeLogModal from './ChangeLogModal';
 import { TAG_KEYWORDS } from '../constants';
 import { Job } from '../types';
 import SettingsPanel from './SettingsPanel';
 import ThemeEditorModal from './ThemeEditorModal';
+import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 
 const MIN_COLUMN_PERCENTAGE = 10;
 type ColumnId = 'schedules' | 'jobs' | 'routes';
-
-// Helper function to check time overlap, required for badge calculation
-const parseTimeRange = (timeStr: string | undefined): { start: number, end: number } | null => {
-    if (!timeStr) return null;
-    const parts = timeStr.split('-').map(s => s.trim());
-    
-    const parseTime = (t: string) => {
-        const match = t.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-        if (!match) return 0;
-        let h = parseInt(match[1]);
-        const m = parseInt(match[2] || '0');
-        const p = match[3]?.toLowerCase();
-        if (p === 'pm' && h < 12) h += 12;
-        if (p === 'am' && h === 12) h = 0;
-        if (!p && h >= 1 && h <= 6) h += 12;
-        return h * 60 + m;
-    };
-
-    if (parts.length >= 2) {
-        return { start: parseTime(parts[0]), end: parseTime(parts[1]) };
-    }
-    return null;
-};
-const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean => {
-    const r1 = parseTimeRange(t1);
-    const r2 = parseTimeRange(t2);
-    if (!r1 || !r2) return true; 
-    return r1.start < r2.end && r2.start < r1.end;
-};
 
 
 const MainLayout: React.FC = () => {
@@ -70,39 +43,40 @@ const MainLayout: React.FC = () => {
   const [isAiPopupOpen, setIsAiPopupOpen] = useState(false);
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
+  const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (context.isAiAssigning || context.aiThoughts.length > 0) {
-        setIsAiPopupOpen(true);
+      setIsAiPopupOpen(true);
     }
   }, [context.isAiAssigning, context.aiThoughts.length]);
-  
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const isUndo = (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && e.key === 'z';
-        const isRedo = (isMac ? e.metaKey && e.shiftKey : e.ctrlKey) && e.key === 'y' || (isMac && e.metaKey && e.shiftKey && e.key === 'z');
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const isUndo = (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && e.key === 'z';
+      const isRedo = (isMac ? e.metaKey && e.shiftKey : e.ctrlKey) && e.key === 'y' || (isMac && e.metaKey && e.shiftKey && e.key === 'z');
 
-        if (isUndo) {
-            e.preventDefault();
-            context.handleUndo();
-        } else if (isRedo) {
-            e.preventDefault();
-            context.handleRedo();
-        }
+      if (isUndo) {
+        e.preventDefault();
+        context.handleUndo();
+      } else if (isRedo) {
+        e.preventDefault();
+        context.handleRedo();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-}, [context]);
+  }, [context]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-        if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
-            setIsSettingsPanelOpen(false);
-        }
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setIsSettingsPanelOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -110,10 +84,10 @@ const MainLayout: React.FC = () => {
 
 
   const handleCloseAiPopup = () => {
-      setIsAiPopupOpen(false);
-      if (!context.isAiAssigning) {
-          context.clearAiThoughts();
-      }
+    setIsAiPopupOpen(false);
+    if (!context.isAiAssigning) {
+      context.clearAiThoughts();
+    }
   };
 
   const handleDragStart = (id: ColumnId) => { draggedItem.current = id; };
@@ -140,7 +114,7 @@ const MainLayout: React.FC = () => {
     if (!containerNode) return;
     const initialLeftPercent = columnWidths[leftColId];
     const initialRightPercent = columnWidths[rightColId];
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const containerWidth = containerNode.getBoundingClientRect().width;
@@ -149,12 +123,12 @@ const MainLayout: React.FC = () => {
       let newLeftPercent = initialLeftPercent + dxPercent;
       let newRightPercent = initialRightPercent - dxPercent;
       if (newLeftPercent < MIN_COLUMN_PERCENTAGE) {
-          newRightPercent += newLeftPercent - MIN_COLUMN_PERCENTAGE;
-          newLeftPercent = MIN_COLUMN_PERCENTAGE;
+        newRightPercent += newLeftPercent - MIN_COLUMN_PERCENTAGE;
+        newLeftPercent = MIN_COLUMN_PERCENTAGE;
       }
       if (newRightPercent < MIN_COLUMN_PERCENTAGE) {
-          newLeftPercent += newRightPercent - MIN_COLUMN_PERCENTAGE;
-          newRightPercent = MIN_COLUMN_PERCENTAGE;
+        newLeftPercent += newRightPercent - MIN_COLUMN_PERCENTAGE;
+        newRightPercent = MIN_COLUMN_PERCENTAGE;
       }
       setColumnWidths(prev => ({ ...prev, [leftColId]: newLeftPercent, [rightColId]: newRightPercent }));
     };
@@ -180,22 +154,22 @@ const MainLayout: React.FC = () => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-        try {
-            const text = e.target?.result;
-            if (typeof text !== 'string') {
-                throw new Error("File content is not readable text.");
-            }
-            const loadedState = JSON.parse(text);
-            context.handleLoadStateFromFile(loadedState);
-        } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : "Failed to read or parse file.";
-            context.log(`- ERROR (File Read): ${errorMessage}`);
-            alert(`Error reading file: ${errorMessage}`);
+      try {
+        const text = e.target?.result;
+        if (typeof text !== 'string') {
+          throw new Error("File content is not readable text.");
         }
+        const loadedState = JSON.parse(text);
+        context.handleLoadStateFromFile(loadedState);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Failed to read or parse file.";
+        context.log(`- ERROR (File Read): ${errorMessage}`);
+        alert(`Error reading file: ${errorMessage}`);
+      }
     };
     reader.onerror = () => {
-        context.log(`- ERROR (File Read): FileReader error.`);
-        alert("An error occurred while reading the file.");
+      context.log(`- ERROR (File Read): FileReader error.`);
+      alert("An error occurred while reading the file.");
     };
     reader.readAsText(file);
 
@@ -204,18 +178,18 @@ const MainLayout: React.FC = () => {
 
   // Logic to count jobs needing details for badge
   const needsDetailsCount = useMemo(() => {
-      const countTags = (job: Job) => {
-        const notes = (job.notes || '').toLowerCase();
-        let count = 0;
-        TAG_KEYWORDS.forEach(tag => {
-            if (new RegExp(`\\b${tag.toLowerCase()}\\b`).test(notes)) count++;
-        });
-        if (/\b\d+\s*sq/i.test(notes)) count++;
-        if (/\b\d+\s*yrs\b/i.test(notes)) count++;
-        if (/\b\d+S\b/i.test(notes)) count++;
-        return count;
-      };
-      return context.appState.unassignedJobs.filter(job => countTags(job) <= 1).length;
+    const countTags = (job: Job) => {
+      const notes = (job.notes || '').toLowerCase();
+      let count = 0;
+      TAG_KEYWORDS.forEach(tag => {
+        if (new RegExp(`\\b${tag.toLowerCase()}\\b`).test(notes)) count++;
+      });
+      if (/\b\d+\s*sq/i.test(notes)) count++;
+      if (/\b\d+\s*yrs\b/i.test(notes)) count++;
+      if (/\b\d+S\b/i.test(notes)) count++;
+      return count;
+    };
+    return context.appState.unassignedJobs.filter(job => countTags(job) <= 1).length;
   }, [context.appState.unassignedJobs]);
 
   const jobsNeedingRescheduleCount = useMemo(() => {
@@ -223,20 +197,20 @@ const MainLayout: React.FC = () => {
     const seenJobIds = new Set<string>();
 
     context.appState.reps.forEach(rep => {
-        rep.schedule.forEach(slot => {
-            slot.jobs.forEach(job => {
-                // For optimized jobs, `job.timeSlotLabel` has the new time. For manual, `slot.label` is the time.
-                const scheduledTimeLabel = job.timeSlotLabel || slot.label;
-                
-                if (job.originalTimeframe && scheduledTimeLabel) {
-                    const overlaps = doTimesOverlap(job.originalTimeframe, scheduledTimeLabel);
-                    if (!overlaps && !seenJobIds.has(job.id)) {
-                        count++;
-                        seenJobIds.add(job.id);
-                    }
-                }
-            });
+      rep.schedule.forEach(slot => {
+        slot.jobs.forEach(job => {
+          // For optimized jobs, `job.timeSlotLabel` has the new time. For manual, `slot.label` is the time.
+          const scheduledTimeLabel = job.timeSlotLabel || slot.label;
+
+          if (job.originalTimeframe && scheduledTimeLabel) {
+            const overlaps = doTimesOverlap(job.originalTimeframe, scheduledTimeLabel);
+            if (!overlaps && !seenJobIds.has(job.id)) {
+              count++;
+              seenJobIds.add(job.id);
+            }
+          }
         });
+      });
     });
     return count;
   }, [context.appState.reps]);
@@ -246,18 +220,18 @@ const MainLayout: React.FC = () => {
   }, [columnOrder, context.uiSettings.showUnassignedJobsColumn]);
 
   const visibleColumnWidths = useMemo(() => {
-      if (context.uiSettings.showUnassignedJobsColumn) {
-          return columnWidths;
-      }
-      const hiddenWidth = columnWidths.jobs;
-      const remainingCols = visibleColumnOrder;
-      const remainingTotalWidth = remainingCols.reduce((acc, id) => acc + columnWidths[id], 0);
-  
-      const newWidths: Record<string, number> = {};
-      remainingCols.forEach(id => {
-          newWidths[id] = columnWidths[id] + hiddenWidth * (columnWidths[id] / remainingTotalWidth);
-      });
-      return newWidths;
+    if (context.uiSettings.showUnassignedJobsColumn) {
+      return columnWidths;
+    }
+    const hiddenWidth = columnWidths.jobs;
+    const remainingCols = visibleColumnOrder;
+    const remainingTotalWidth = remainingCols.reduce((acc, id) => acc + columnWidths[id], 0);
+
+    const newWidths: Record<string, number> = {};
+    remainingCols.forEach(id => {
+      newWidths[id] = columnWidths[id] + hiddenWidth * (columnWidths[id] / remainingTotalWidth);
+    });
+    return newWidths;
   }, [columnWidths, context.uiSettings.showUnassignedJobsColumn, visibleColumnOrder]);
 
 
@@ -272,7 +246,7 @@ const MainLayout: React.FC = () => {
           <>
             <div className="flex justify-between items-center mb-2 border-b pb-1">
               <h2 className="text-lg font-semibold">3. Route Map</h2>
-              <div 
+              <div
                 draggable
                 onDragStart={() => handleDragStart('routes')}
                 onDragEnd={handleDragEnd}
@@ -292,129 +266,159 @@ const MainLayout: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg-secondary text-text-primary font-sans overflow-hidden">
-      <header className="bg-bg-primary border-b border-border-primary h-16 flex-shrink-0 px-6 flex items-center justify-between z-30 shadow-[0_2px_8px_rgba(0,0,0,0.04)]">
-        {/* Left Section: Branding & History */}
-        <div className="flex items-center gap-6">
-             {/* Branding */}
-             <div className="flex flex-col justify-center">
-                <h1 className="text-lg font-bold text-text-primary tracking-tight leading-none">Rep Route Planner</h1>
-                <div className="flex items-center gap-1.5 mt-1">
-                    <div className={`w-2 h-2 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
-                    <span className="text-[10px] font-medium text-text-tertiary uppercase tracking-wide">
-                        {context.usingMockData ? 'Mock Data' : 'Live'}:
-                    </span>
-                    <span className="text-[10px] font-bold text-text-secondary truncate max-w-[200px]" title={context.activeSheetName}>
-                        {context.activeSheetName || 'Loading...'}
-                    </span>
-                </div>
-             </div>
-
-             {/* Divider */}
-             <div className="h-8 w-px bg-bg-tertiary"></div>
-
-             {/* History Controls */}
-             <div className="flex items-center gap-1 bg-bg-secondary p-1 rounded-lg border border-border-primary">
-                <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded-md hover:bg-bg-primary hover:shadow-sm text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
-                    <UndoIcon className="h-4 w-4" />
-                </button>
-                <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded-md hover:bg-bg-primary hover:shadow-sm text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
-                    <RedoIcon className="h-4 w-4" />
-                </button>
+      {/* Two-Level Header */}
+      <header className="bg-bg-primary border-b border-border-primary flex-shrink-0 z-30 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+        {/* Top Bar: Reports, Alerts, Data Controls */}
+        <div className="h-10 px-4 flex items-center justify-between border-b border-border-secondary/50 bg-bg-secondary/30">
+          {/* Left: Branding */}
+          <div className="flex items-center gap-3">
+            <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
+            <div className="flex items-center gap-1.5">
+              <div className={`w-1.5 h-1.5 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
+              <span className="text-[9px] font-medium text-text-tertiary uppercase tracking-wide">
+                {context.usingMockData ? 'Mock' : 'Live'}
+              </span>
+              <span className="text-[9px] font-semibold text-text-secondary truncate max-w-[150px]" title={context.activeSheetName}>
+                {context.activeSheetName || '...'}
+              </span>
             </div>
-        </div>
+          </div>
 
-        {/* Center Section: Date Navigation & Announcement */}
-        <div className="flex-1 flex justify-center items-center px-4 gap-4">
-            <DayTabs />
-            {context.announcement && (
-                <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-xs font-semibold p-2 rounded-md flex items-center gap-2 animate-fade-in">
-                    <MegaphoneIcon className="h-4 w-4 text-brand-primary" />
-                    <span>{context.announcement}</span>
-                </div>
-            )}
-        </div>
-
-        {/* Right Section: Reports & Tools */}
-        <div className="flex items-center gap-4">
-            
-            <button 
+          {/* Center: Reports & Alerts */}
+          <div className="flex items-center gap-3">
+            {/* Alerts */}
+            <div className="flex items-center gap-1">
+              <button
                 onClick={() => setIsNeedsRescheduleOpen(true)}
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
-                    jobsNeedingRescheduleCount > 0 
-                        ? 'bg-bg-primary text-tag-blue-text border-tag-blue-border hover:bg-tag-blue-bg shadow-sm' 
-                        : 'bg-bg-secondary text-text-quaternary border-transparent hover:bg-bg-tertiary'
-                }`}
+                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${jobsNeedingRescheduleCount > 0
+                  ? 'bg-tag-blue-bg text-tag-blue-text hover:bg-tag-blue-bg/80'
+                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                  }`}
                 title="Review jobs with potential scheduling conflicts"
-            >
-                <RescheduleIcon className={`h-3.5 w-3.5 ${jobsNeedingRescheduleCount > 0 ? 'text-brand-blue' : 'text-text-quaternary'}`} />
-                <span>Needs Reschedule</span>
+              >
+                <RescheduleIcon className="h-3 w-3" />
+                <span>Reschedule</span>
                 {jobsNeedingRescheduleCount > 0 && (
-                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-brand-blue text-white shadow-sm">
-                        {jobsNeedingRescheduleCount}
-                    </span>
+                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-brand-blue text-white">
+                    {jobsNeedingRescheduleCount}
+                  </span>
                 )}
-            </button>
-            
-            <button 
-                onClick={() => setIsNeedsDetailsOpen(true)} 
-                className={`relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border rounded-md transition-all ${
-                    needsDetailsCount > 0 
-                        ? 'bg-bg-primary text-tag-amber-text border-tag-amber-border hover:bg-tag-amber-bg shadow-sm' 
-                        : 'bg-bg-secondary text-text-quaternary border-transparent hover:bg-bg-tertiary'
-                }`}
+              </button>
+
+              <button
+                onClick={() => setIsNeedsDetailsOpen(true)}
+                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${needsDetailsCount > 0
+                  ? 'bg-tag-amber-bg text-tag-amber-text hover:bg-tag-amber-bg/80'
+                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                  }`}
                 title="Review jobs missing essential details"
-            >
-                <RepairIcon className={`h-3.5 w-3.5 ${needsDetailsCount > 0 ? 'text-tag-amber-text' : 'text-text-quaternary'}`} />
-                <span>Needs Details</span>
+              >
+                <RepairIcon className="h-3 w-3" />
+                <span>Details</span>
                 {needsDetailsCount > 0 && (
-                    <span className="flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full bg-tag-amber-text text-white shadow-sm">
-                        {needsDetailsCount}
-                    </span>
+                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-tag-amber-text text-white">
+                    {needsDetailsCount}
+                  </span>
                 )}
+              </button>
+            </div>
+
+            <div className="w-px h-4 bg-border-secondary"></div>
+
+            {/* Reports */}
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+                <SummaryIcon className="h-3 w-3" />
+                <span>Daily</span>
+              </button>
+              <button onClick={() => setIsRepSummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+                <UserIcon className="h-3 w-3" />
+                <span>Reps</span>
+              </button>
+              <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+                <TagIcon className="h-3 w-3" />
+                <span>Slots</span>
+              </button>
+              <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-brand-text-light bg-brand-bg-light hover:bg-brand-primary/20 rounded transition-all" title="View Training Data">
+                <BrainIcon className="h-3 w-3" />
+                <span>Training</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right: Data Controls & Settings */}
+          <div className="flex items-center gap-1">
+            <button onClick={context.handleSaveStateToFile} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Save to File">
+              <SaveIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
-
-            {/* Reports Navigation */}
-             <div className="flex items-center bg-bg-tertiary/50 p-1 rounded-lg border border-border-primary/50">
-                <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
-                    <SummaryIcon className="h-3.5 w-3.5" />
-                    <span>Daily</span>
-                </button>
-                <div className="w-px h-4 bg-border-primary mx-1"></div>
-                 <button onClick={() => setIsRepSummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
-                    <UserIcon className="h-3.5 w-3.5" />
-                    <span>Reps</span>
-                </button>
-                <div className="w-px h-4 bg-border-primary mx-1"></div>
-                 <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-brand-primary hover:bg-bg-primary hover:shadow-sm rounded-md transition-all">
-                    <TagIcon className="h-3.5 w-3.5" />
-                    <span>Slots</span>
-                </button>
-                <div className="w-px h-4 bg-border-primary mx-1"></div>
-                 <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-brand-text-light bg-brand-bg-light hover:bg-brand-primary/20 border border-brand-primary/20 hover:shadow-sm rounded-md transition-all" title="View Training Data">
-                    <BrainIcon className="h-3.5 w-3.5" />
-                    <span>Training</span>
-                </button>
-            </div>
-
-             {/* Data Controls */}
-            <div className="flex items-center gap-2">
-                <button onClick={context.handleSaveStateToFile} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Save State">
-                    <SaveIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
-                </button>
-                <button onClick={handleLoadClick} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Load State">
-                    <UploadIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
-                </button>
-            </div>
-
-            <div className="h-8 w-px bg-border-primary"></div>
-            
+            <button onClick={handleLoadClick} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from File">
+              <UploadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
+            </button>
+            <button onClick={() => context.handleSaveStateToCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Save to Cloud">
+              <CloudUploadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
+            </button>
+            <button onClick={() => context.handleLoadStateFromCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
+              <CloudDownloadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
+            </button>
+            <div className="w-px h-4 bg-border-secondary mx-1"></div>
             <div ref={settingsRef} className="relative">
-                <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="group p-2 rounded-full hover:bg-brand-bg-light transition relative" title="Settings">
-                    <SettingsIcon className="h-5 w-5 text-text-quaternary group-hover:text-brand-primary transition-colors" />
-                </button>
-                {isSettingsPanelOpen && <SettingsPanel onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }} />}
+              <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
+                <SettingsIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
+              </button>
+              {isSettingsPanelOpen && <SettingsPanel onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }} />}
             </div>
             <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
+          </div>
+        </div>
+
+        {/* Bottom Bar: Navigation, Calendar, History */}
+        <div className="h-12 px-4 flex items-center justify-between">
+          {/* Left: History Controls & Changes */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-0.5 bg-bg-secondary/50 p-0.5 rounded-md border border-border-secondary/50">
+              <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
+                <UndoIcon className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
+                <RedoIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsChangeLogOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${context.changeLog.length > 0
+                ? 'bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20'
+                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary'
+                }`}
+              title="View Change Log"
+            >
+              <HistoryIcon className="h-3.5 w-3.5" />
+              <span>Changes</span>
+              {context.changeLog.length > 0 && (
+                <span className="px-1.5 py-0.5 bg-brand-primary text-brand-text-on-primary rounded-full text-[9px] font-bold">
+                  {context.changeLog.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Center: Date Navigation */}
+          <div className="flex-1 flex justify-center items-center gap-3">
+            <DayTabs />
+            {context.announcement && (
+              <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-[10px] font-semibold px-2 py-1 rounded flex items-center gap-1.5 animate-fade-in max-w-xs truncate">
+                <MegaphoneIcon className="h-3 w-3 text-brand-primary flex-shrink-0" />
+                <span className="truncate">{context.announcement}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Quick Info */}
+          <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
+            <span className="px-2 py-1 bg-bg-secondary/50 rounded">
+              <span className="font-medium">SRA</span> {context.selectedDate?.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }) || ''}
+            </span>
+          </div>
         </div>
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
@@ -426,44 +430,45 @@ const MainLayout: React.FC = () => {
             <React.Fragment key={id}>
               <div
                 data-col-id={id}
-                className="bg-bg-primary p-4 rounded-lg shadow-md flex flex-col min-w-0 h-full"
+                className="bg-bg-primary p-4 rounded-lg shadow-lg border border-border-primary/50 flex flex-col min-w-0 h-full"
                 style={{ flexBasis: `${visibleColumnWidths[id]}%` }}
                 onDragEnter={() => handleDragEnter(id)}
                 onDragOver={(e) => e.preventDefault()}
               >
                 {renderPanelContent(id)}
               </div>
-              {rightColId && ( <div className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0" onMouseDown={e => handleResizeStart(e, id, rightColId)}> <div className="w-1 h-16 bg-border-secondary group-hover:bg-brand-primary rounded-full transition-colors" /> </div> )}
+              {rightColId && (<div className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0" onMouseDown={e => handleResizeStart(e, id, rightColId)}> <div className="w-1 h-16 bg-border-secondary group-hover:bg-brand-primary rounded-full transition-colors" /> </div>)}
             </React.Fragment>
           );
         })}
       </div>
 
-        <DailySummaryModal isOpen={isDailySummaryOpen} onClose={() => setIsDailySummaryOpen(false)} />
-        <RepSummaryModal isOpen={isRepSummaryOpen} onClose={() => setIsRepSummaryOpen(false)} />
-        <AvailabilitySummaryModal isOpen={isAvailabilitySummaryOpen} onClose={() => setIsAvailabilitySummaryOpen(false)} />
-        <TrainingDataModal isOpen={isTrainingDataOpen} onClose={() => setIsTrainingDataOpen(false)} />
-        <NeedsDetailsModal isOpen={isNeedsDetailsOpen} onClose={() => setIsNeedsDetailsOpen(false)} />
-        <NeedsRescheduleModal isOpen={isNeedsRescheduleOpen} onClose={() => setIsNeedsRescheduleOpen(false)} />
-        
-        <AiAssistantPopup 
-            isOpen={isAiPopupOpen}
-            onClose={handleCloseAiPopup}
-            thoughts={context.aiThoughts}
-            isThinking={context.isAiAssigning}
-            title="AI Assignment Assistant"
-        />
-        
-        <RepSettingsModal
-            isOpen={!!context.repSettingsModalRepId}
-            onClose={() => context.setRepSettingsModalRepId(null)}
-            repId={context.repSettingsModalRepId}
-        />
-        
-        <ThemeEditorModal
-            isOpen={isThemeEditorOpen}
-            onClose={() => setIsThemeEditorOpen(false)}
-        />
+      <DailySummaryModal isOpen={isDailySummaryOpen} onClose={() => setIsDailySummaryOpen(false)} />
+      <RepSummaryModal isOpen={isRepSummaryOpen} onClose={() => setIsRepSummaryOpen(false)} />
+      <AvailabilitySummaryModal isOpen={isAvailabilitySummaryOpen} onClose={() => setIsAvailabilitySummaryOpen(false)} />
+      <TrainingDataModal isOpen={isTrainingDataOpen} onClose={() => setIsTrainingDataOpen(false)} />
+      <NeedsDetailsModal isOpen={isNeedsDetailsOpen} onClose={() => setIsNeedsDetailsOpen(false)} />
+      <NeedsRescheduleModal isOpen={isNeedsRescheduleOpen} onClose={() => setIsNeedsRescheduleOpen(false)} />
+      <ChangeLogModal isOpen={isChangeLogOpen} onClose={() => setIsChangeLogOpen(false)} changes={context.changeLog} />
+
+      <AiAssistantPopup
+        isOpen={isAiPopupOpen}
+        onClose={handleCloseAiPopup}
+        thoughts={context.aiThoughts}
+        isThinking={context.isAiAssigning}
+        title="AI Assignment Assistant"
+      />
+
+      <RepSettingsModal
+        isOpen={!!context.repSettingsModalRepId}
+        onClose={() => context.setRepSettingsModalRepId(null)}
+        repId={context.repSettingsModalRepId}
+      />
+
+      <ThemeEditorModal
+        isOpen={isThemeEditorOpen}
+        onClose={() => setIsThemeEditorOpen(false)}
+      />
 
     </div>
   );

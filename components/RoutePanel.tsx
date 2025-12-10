@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { DisplayJob, RouteInfo } from '../types';
 import LeafletMap from './LeafletMap';
-import { ClipboardIcon, LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon } from './icons';
+import { ClipboardIcon, LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
-import { TIME_SLOTS } from '../constants';
+import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS, TAG_KEYWORDS } from '../constants';
 
 interface RouteMapPanelProps {
     routeData: {
@@ -44,25 +44,176 @@ const parseTimeRange = (timeStr: string | undefined): { start: number, end: numb
     return null;
 };
 
-const doRangesOverlap = (r1: {start: number, end: number} | null, r2: {start: number, end: number} | null): boolean => {
+const doRangesOverlap = (r1: { start: number, end: number } | null, r2: { start: number, end: number } | null): boolean => {
     if (!r1 || !r2) return false;
     // Standard overlap check: StartA < EndB and StartB < EndA
     return r1.start < r2.end && r2.start < r1.end;
 };
 
 
+// Helper functions for buckets
+const sizeToBucket = (sqft: number) => {
+    if (sqft < 1500) return '< 1500 sqft';
+    if (sqft <= 2500) return '1500-2500 sqft';
+    return '> 2500 sqft';
+};
+const ageToBucket = (age: number) => {
+    if (age <= 5) return '0-5 yrs';
+    if (age <= 10) return '6-10 yrs';
+    if (age <= 15) return '11-15 yrs';
+    if (age <= 20) return '16-20 yrs';
+    return '> 20 yrs';
+};
+
+const getJobTags = (job: DisplayJob) => {
+    const roofTypes = new Set<string>();
+    const stories = new Set<string>();
+
+    const notesLower = job.notes.toLowerCase();
+    TAG_KEYWORDS.forEach(keyword => {
+        if (new RegExp(`\\b${keyword.toLowerCase()}\\b`).test(notesLower)) {
+            roofTypes.add(keyword);
+        }
+    });
+
+    const storiesMatch = job.notes.match(/\b(\d)S\b/i);
+    if (storiesMatch) stories.add(storiesMatch[1]);
+
+    let sizeBucket: string | null = null;
+    const sqftMatch = job.notes.match(/\b(\d+)\s*sq/i);
+    if (sqftMatch) sizeBucket = sizeToBucket(parseInt(sqftMatch[1], 10));
+
+    let ageBucket: string | null = null;
+    const ageMatch = job.notes.match(/\b(\d+)\s*yrs\b/i);
+    if (ageMatch) ageBucket = ageToBucket(parseInt(ageMatch[1], 10));
+
+    let priorityLevel: number | null = null;
+    const priorityMatch = job.notes.match(/#+/);
+    if (priorityMatch) priorityLevel = priorityMatch[0].length;
+
+    return { roofTypes, stories, sizeBucket, ageBucket, priorityLevel };
+};
+
+const checkJobMatch = (
+    job: DisplayJob,
+    tags: ReturnType<typeof getJobTags>,
+    filters: {
+        roofTypes: Set<string>;
+        stories: Set<string>;
+        sizes: Set<string>;
+        priorityLevels: Set<number>;
+        ages: Set<string>;
+    },
+    selectedTimeSlotId: string | null
+) => {
+    // Time Check
+    if (selectedTimeSlotId) {
+        const jobRange = parseTimeRange(job.timeSlotLabel);
+        const selectedSlot = TIME_SLOTS.find(ts => ts.id === selectedTimeSlotId);
+        if (selectedSlot) {
+            const filterRange = parseTimeRange(selectedSlot.label);
+            // If job has no time but filter is active? Assuming filter is exclusionary.
+            if (!doRangesOverlap(filterRange, jobRange)) return false;
+        }
+    }
+
+    // Tag Checks
+    if (filters.priorityLevels.size > 0) {
+        if (tags.priorityLevel === null || !filters.priorityLevels.has(tags.priorityLevel)) return false;
+    }
+
+    if (filters.roofTypes.size > 0) {
+        // OR logic within category
+        const hasMatch = Array.from(filters.roofTypes).some(t => tags.roofTypes.has(t));
+        if (!hasMatch) return false;
+    }
+
+    if (filters.stories.size > 0) {
+        const hasMatch = Array.from(filters.stories).some(t => tags.stories.has(t));
+        if (!hasMatch) return false;
+    }
+
+    if (filters.sizes.size > 0) {
+        if (!tags.sizeBucket || !filters.sizes.has(tags.sizeBucket)) return false;
+    }
+
+    if (filters.ages.size > 0) {
+        if (!tags.ageBucket || !filters.ages.has(tags.ageBucket)) return false;
+    }
+
+    return true;
+};
+
+interface TagFilters {
+    roofTypes: Set<string>;
+    stories: Set<string>;
+    sizes: Set<string>;
+    priorityLevels: Set<number>;
+    ages: Set<string>;
+}
+
 const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) => {
-    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings } = useAppContext();
+    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings, placementJobId, setPlacementJobId, handlePlaceJobOnMap } = useAppContext();
     const [copySuccess, setCopySuccess] = useState(false);
-    
-    // State for time slot filtering (Single selection now)
+
+    const [isUnplottedExpanded, setIsUnplottedExpanded] = useState(true);
+    const [showTagFilters, setShowTagFilters] = useState(false);
+
+    // State for filtering
     const [selectedTimeSlotId, setSelectedTimeSlotId] = useState<string | null>(null);
+    const [tagFilters, setTagFilters] = useState<TagFilters>({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() });
+
+    // Memoize parsed tags for all jobs to avoid frequent regex
+    const jobTagsMap = useMemo(() => {
+        const map = new Map<string, ReturnType<typeof getJobTags>>();
+        if (routeData) {
+            routeData.mappableJobs.forEach(job => {
+                map.set(job.id, getJobTags(job));
+            });
+        }
+        return map;
+    }, [routeData]);
+
+    // Extract available tags dynamically based on ALL active filters
+    const { availableTags, availablePriorityLevels } = useMemo(() => {
+        if (!routeData) return { availableTags: { roofTypes: [], stories: [], sizes: [], ages: [] }, availablePriorityLevels: [] };
+
+        const roofs = new Set<string>();
+        const stories = new Set<string>();
+        const sizeBuckets = new Set<string>();
+        const ageBuckets = new Set<string>();
+        const priorities = new Set<number>();
+
+        routeData.mappableJobs.forEach(job => {
+            const tags = jobTagsMap.get(job.id);
+            if (!tags) return;
+
+            if (checkJobMatch(job, tags, tagFilters, selectedTimeSlotId)) {
+                // Add to sets
+                tags.roofTypes.forEach(r => roofs.add(r));
+                tags.stories.forEach(s => stories.add(s));
+                if (tags.sizeBucket) sizeBuckets.add(tags.sizeBucket);
+                if (tags.ageBucket) ageBuckets.add(tags.ageBucket);
+                if (tags.priorityLevel !== null) priorities.add(tags.priorityLevel);
+            }
+        });
+
+        return {
+            availableTags: {
+                roofTypes: Array.from(roofs).sort(),
+                stories: Array.from(stories).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)),
+                sizes: ['< 1500 sqft', '1500-2500 sqft', '> 2500 sqft'].filter(b => sizeBuckets.has(b)),
+                ages: ['0-5 yrs', '6-10 yrs', '11-15 yrs', '16-20 yrs', '> 20 yrs'].filter(b => ageBuckets.has(b)),
+            },
+            availablePriorityLevels: Array.from(priorities).sort(),
+        };
+    }, [routeData, tagFilters, selectedTimeSlotId, jobTagsMap]);
 
     const googleMapsUrl = useMemo(() => {
         if (!routeData || routeData.mappableJobs.length === 0) return '#';
         const addresses = routeData.mappableJobs.map(j => j.address);
         if (addresses.length === 1) {
-          return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addresses[0])}`;
+            return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addresses[0])}`;
         }
         const encoded = addresses.map(addr => encodeURIComponent(addr));
         return `https://www.google.com/maps/dir/${encoded.join('/')}`;
@@ -70,9 +221,9 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
 
     const handleCopyUnplotted = () => {
         if (!routeData || routeData.unmappableJobs.length === 0) return;
-        
+
         const addressesToCopy = routeData.unmappableJobs.map(job => job.address).join('\n');
-        
+
         navigator.clipboard.writeText(addressesToCopy).then(() => {
             setCopySuccess(true);
             setTimeout(() => setCopySuccess(false), 2500);
@@ -89,24 +240,14 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
     // Filter jobs based on active time slots - sets 'isDimmed' on non-matching jobs
     const jobsForMap = useMemo(() => {
         if (!routeData) return [];
-        
-        if (!selectedTimeSlotId) {
-            return routeData.mappableJobs.map(job => ({ ...job, isDimmed: false }));
-        }
-
-        const selectedSlot = TIME_SLOTS.find(ts => ts.id === selectedTimeSlotId);
-        if (!selectedSlot) {
-            return routeData.mappableJobs.map(job => ({ ...job, isDimmed: false }));
-        }
-
-        const filterRange = parseTimeRange(selectedSlot.label);
 
         return routeData.mappableJobs.map(job => {
-            const jobRange = parseTimeRange(job.timeSlotLabel);
-            const isMatch = doRangesOverlap(filterRange, jobRange);
+            const tags = jobTagsMap.get(job.id);
+            // Default to matching if tags parsing failed (unlikely)
+            const isMatch = tags ? checkJobMatch(job, tags, tagFilters, selectedTimeSlotId) : true;
             return { ...job, isDimmed: !isMatch };
         });
-    }, [routeData, selectedTimeSlotId]);
+    }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap]);
 
     let title: string, subtitle: string;
     const totalJobs = (routeData?.mappableJobs.length ?? 0) + (routeData?.unmappableJobs.length ?? 0);
@@ -147,79 +288,210 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                     <h4 className="font-bold text-base text-text-primary">{title}</h4>
                     <p className="text-sm text-text-secondary">{subtitle}</p>
                 </div>
-                
-                {(totalJobs > 0 && !isLoading) && (
-                    <div className="mt-3 bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
-                        <div className="flex items-center gap-2">
-                             <button
-                                onClick={handleShowAllJobsOnMap}
-                                disabled={isLoading}
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
-                                title="Show all assigned and unassigned jobs on the map"
-                            >
-                                <MapPinIcon />
-                                <span>Show All</span>
-                            </button>
-                            <button
-                                onClick={handleRefreshRoute}
-                                disabled={isLoading}
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
-                                title="Refresh map view to update rep colors and routes"
-                            >
-                                <RefreshIcon />
-                                <span>Refresh</span>
-                            </button>
-                            <a 
-                                href={googleMapsUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer" 
-                                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${routeData?.mappableJobs.length > 0 ? 'bg-brand-blue text-white hover:bg-brand-blue-dark' : 'bg-bg-quaternary text-text-quaternary cursor-not-allowed opacity-70'}`}
-                                onClick={(e) => routeData?.mappableJobs.length === 0 && e.preventDefault()}
-                            >
-                                <ClipboardIcon />
-                                <span>Google Maps</span>
-                            </a>
-                        </div>
-                        
-                        <div className="border-t -mx-2 border-border-primary"></div>
 
+
+                <div className="mt-3 bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={handleShowAllJobsOnMap}
+                            disabled={isLoading}
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            title="Show all assigned and unassigned jobs on the map"
+                        >
+                            <MapPinIcon />
+                            <span>Show All</span>
+                        </button>
+                        <button
+                            onClick={handleRefreshRoute}
+                            disabled={isLoading}
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            title="Refresh map view to update rep colors and routes"
+                        >
+                            <RefreshIcon />
+                            <span>Refresh</span>
+                        </button>
+                        <a
+                            href={googleMapsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${routeData?.mappableJobs.length > 0 ? 'bg-brand-blue text-white hover:bg-brand-blue-dark' : 'bg-bg-quaternary text-text-quaternary cursor-not-allowed opacity-70'}`}
+                            onClick={(e) => (!routeData || routeData.mappableJobs.length === 0) && e.preventDefault()}
+                        >
+                            <ClipboardIcon />
+                            <span>Google Maps</span>
+                        </a>
+                    </div>
+
+                    <div className="border-t -mx-2 border-border-primary"></div>
+
+                    <div className="flex flex-col gap-2">
                         <div className="flex flex-wrap items-center gap-1 select-none">
-                            <span className="text-[10px] font-bold text-text-quaternary uppercase mr-1">Filter Time:</span>
+                            <button
+                                onClick={() => setShowTagFilters(!showTagFilters)}
+                                className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-all flex items-center gap-1 mr-2 ${showTagFilters
+                                    ? 'bg-bg-primary text-brand-primary border-brand-primary shadow-sm'
+                                    : 'bg-bg-primary text-text-quaternary border-border-primary hover:text-text-secondary hover:bg-bg-secondary'
+                                    }`}
+                            >
+                                <TagIcon className="h-3 w-3" />
+                                <span>Tags</span>
+                            </button>
+
+                            <span className="text-[10px] font-bold text-text-quaternary uppercase mr-1">Time:</span>
                             {TIME_SLOTS.map(slot => {
                                 const isActive = selectedTimeSlotId === slot.id;
                                 return (
                                     <button
                                         key={slot.id}
                                         onClick={() => toggleTimeSlot(slot.id)}
-                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${
-                                            isActive 
-                                            ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm' 
+                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${isActive
+                                            ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm'
                                             : 'bg-bg-primary text-text-tertiary border-border-primary hover:border-brand-primary/50 hover:text-brand-primary'
-                                        }`}
+                                            }`}
                                     >
-                                        {slot.label.replace(/am|pm/gi, '').replace(/\s/g, '')}
+                                        {(TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label).replace(/AM|PM|am|pm/gi, '').replace(/\s/g, '')}
                                     </button>
                                 );
                             })}
-                             {selectedTimeSlotId !== null && (
-                                <button onClick={() => setSelectedTimeSlotId(null)} className="text-[10px] text-brand-primary underline ml-1 hover:text-brand-secondary">Show All</button>
+                            {(selectedTimeSlotId !== null || Object.values(tagFilters).some((s: any) => s.size > 0)) && (
+                                <button onClick={() => { setSelectedTimeSlotId(null); setTagFilters({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() }); }} className="text-[10px] text-brand-primary underline ml-1 hover:text-brand-secondary">
+                                    Clear
+                                </button>
                             )}
                         </div>
+
+                        {showTagFilters && (
+                            <div className="p-2 bg-bg-primary rounded-md border border-border-primary space-y-2">
+                                {availablePriorityLevels.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Status</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {availablePriorityLevels.map(level => (
+                                                <button
+                                                    key={level}
+                                                    onClick={(e) => setTagFilters(f => {
+                                                        const n = new Set(f.priorityLevels);
+                                                        if (e.altKey) {
+                                                            n.has(level) ? n.delete(level) : n.add(level);
+                                                        } else {
+                                                            const wasSelected = n.has(level);
+                                                            const manySelected = n.size > 1;
+                                                            n.clear();
+                                                            if (!wasSelected || manySelected) n.add(level);
+                                                        }
+                                                        return { ...f, priorityLevels: n };
+                                                    })}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all flex items-center gap-1 ${tagFilters.priorityLevels.has(level) ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                >
+                                                    <StarIcon className={`h-3 w-3 ${tagFilters.priorityLevels.has(level) ? 'text-tag-amber-text' : 'text-text-quaternary'}`} />
+                                                    {'#'.repeat(level)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {availableTags.roofTypes.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Roof</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {availableTags.roofTypes.map(tag => (
+                                                <button key={tag} onClick={(e) => setTagFilters(f => {
+                                                    const n = new Set(f.roofTypes);
+                                                    if (e.altKey) {
+                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                    } else {
+                                                        const wasSelected = n.has(tag);
+                                                        const manySelected = n.size > 1;
+                                                        n.clear();
+                                                        if (!wasSelected || manySelected) n.add(tag);
+                                                    }
+                                                    return { ...f, roofTypes: n };
+                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.roofTypes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {availableTags.stories.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Height</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {availableTags.stories.map(tag => (
+                                                <button key={tag} onClick={(e) => setTagFilters(f => {
+                                                    const n = new Set(f.stories);
+                                                    if (e.altKey) {
+                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                    } else {
+                                                        const wasSelected = n.has(tag);
+                                                        const manySelected = n.size > 1;
+                                                        n.clear();
+                                                        if (!wasSelected || manySelected) n.add(tag);
+                                                    }
+                                                    return { ...f, stories: n };
+                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.stories.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag} Story</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {availableTags.ages.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Age</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {availableTags.ages.map(tag => (
+                                                <button key={tag} onClick={(e) => setTagFilters(f => {
+                                                    const n = new Set(f.ages);
+                                                    if (e.altKey) {
+                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                    } else {
+                                                        const wasSelected = n.has(tag);
+                                                        const manySelected = n.size > 1;
+                                                        n.clear();
+                                                        if (!wasSelected || manySelected) n.add(tag);
+                                                    }
+                                                    return { ...f, ages: n };
+                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.ages.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {availableTags.sizes.length > 0 && (
+                                    <div className="flex items-start gap-2">
+                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Size</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {availableTags.sizes.map(tag => (
+                                                <button key={tag} onClick={(e) => setTagFilters(f => {
+                                                    const n = new Set(f.sizes);
+                                                    if (e.altKey) {
+                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                    } else {
+                                                        const wasSelected = n.has(tag);
+                                                        const manySelected = n.size > 1;
+                                                        n.clear();
+                                                        if (!wasSelected || manySelected) n.add(tag);
+                                                    }
+                                                    return { ...f, sizes: n };
+                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.sizes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
+
             </header>
 
             <div className="flex-grow relative bg-bg-quaternary">
-                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} />
+                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} placementJobId={placementJobId} onPlaceJob={handlePlaceJobOnMap} />
             </div>
-            
+
             {uiSettings.showUnplottedJobs && routeData && routeData.unmappableJobs.length > 0 && !isLoading && (
                 <div className="flex-shrink-0 bg-tag-red-bg border-t border-tag-red-border">
                     <div className="p-3">
                         <div className="flex justify-between items-start mb-2">
                             <div>
                                 <h5 className="font-bold text-tag-red-text flex items-center text-sm">
-                                    <span className="mr-2 text-lg">⚠️</span> 
+                                    <span className="mr-2 text-lg">⚠️</span>
                                     {routeData.unmappableJobs.length} Unplotted Jobs
                                 </h5>
                                 <p className="text-xs text-tag-red-text/80 mt-0.5">
@@ -227,42 +499,54 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 </p>
                             </div>
                             <div className="flex items-center space-x-2">
-                                 <button
+                                <button
                                     onClick={handleCopyUnplotted}
                                     className={`p-1.5 rounded-md transition-colors ${copySuccess ? 'bg-tag-green-bg text-tag-green-text' : 'bg-bg-primary text-text-tertiary hover:text-text-primary border border-border-primary hover:bg-bg-secondary'}`}
                                     title="Copy addresses to clipboard"
                                 >
                                     <ClipboardIcon className="h-4 w-4" />
                                 </button>
+                                <button
+                                    onClick={() => setIsUnplottedExpanded(!isUnplottedExpanded)}
+                                    className="p-1.5 rounded-md transition-colors bg-bg-primary text-text-tertiary hover:text-text-primary border border-border-primary hover:bg-bg-secondary"
+                                    title={isUnplottedExpanded ? "Minimize" : "Expand"}
+                                >
+                                    {isUnplottedExpanded ? <ChevronDownIcon className="h-4 w-4" /> : <ChevronUpIcon className="h-4 w-4" />}
+                                </button>
                             </div>
                         </div>
-                        
-                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar mb-2">
-                            {routeData.unmappableJobs.map(job => (
-                                <div key={job.id} className="bg-bg-primary rounded border border-tag-red-border/50 shadow-sm">
-                                    <JobCard
-                                        job={job}
-                                        onUpdateJob={handleUpdateJob}
-                                        onUnassign={job.assignedRepName ? handleUnassignJob : undefined}
-                                        onRemove={handleRemoveJob}
-                                    />
-                                     {job.geocodeError && (
-                                        <div className="px-2 pb-1 text-[10px] text-tag-red-text font-mono">
-                                            {job.geocodeError}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
 
-                        <button
-                            onClick={handleTryAddressVariations}
-                            disabled={isTryingVariations}
-                            className="w-full flex items-center justify-center space-x-2 py-2 rounded-md text-xs font-bold transition-colors bg-bg-primary border border-tag-red-border text-tag-red-text hover:bg-bg-primary/50 shadow-sm disabled:opacity-50"
-                        >
-                            {isTryingVariations ? <LoadingIcon className="text-tag-red-text" /> : <VariationsIcon className="h-4 w-4" />}
-                            <span>{isTryingVariations ? 'Trying Variations...' : 'Try Auto-Fix Variations'}</span>
-                        </button>
+                        {isUnplottedExpanded && (
+                            <>
+                                <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar mb-2">
+                                    {routeData.unmappableJobs.map(job => (
+                                        <div key={job.id} className="bg-bg-primary rounded border border-tag-red-border/50 shadow-sm">
+                                            <JobCard
+                                                job={job}
+                                                onUpdateJob={handleUpdateJob}
+                                                onUnassign={job.assignedRepName ? handleUnassignJob : undefined}
+                                                onRemove={handleRemoveJob}
+                                                onPlaceOnMap={setPlacementJobId}
+                                            />
+                                            {job.geocodeError && (
+                                                <div className="px-2 pb-1 text-[10px] text-tag-red-text font-mono">
+                                                    {job.geocodeError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <button
+                                    onClick={handleTryAddressVariations}
+                                    disabled={isTryingVariations}
+                                    className="w-full flex items-center justify-center space-x-2 py-2 rounded-md text-xs font-bold transition-colors bg-bg-primary border border-tag-red-border text-tag-red-text hover:bg-bg-primary/50 shadow-sm disabled:opacity-50"
+                                >
+                                    {isTryingVariations ? <LoadingIcon className="text-tag-red-text" /> : <VariationsIcon className="h-4 w-4" />}
+                                    <span>{isTryingVariations ? 'Trying Variations...' : 'Try Auto-Fix Variations'}</span>
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

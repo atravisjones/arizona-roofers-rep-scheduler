@@ -12,7 +12,6 @@ interface UnassignedJobsProps {
   onSetDraggedOverRepId: (id: string | null) => void;
   onJobDragStart: (job: Job) => void;
   onJobDragEnd: () => void;
-  // FIX: Update prop type to match context, allowing 'originalTimeframe' updates and fixing type inconsistencies.
   onUpdateJob: (jobId: string, updatedDetails: Partial<Pick<Job, 'customerName' | 'address' | 'notes' | 'originalTimeframe'>>) => void;
   onRemoveJob: (jobId: string) => void;
   onShowOnMap: () => void;

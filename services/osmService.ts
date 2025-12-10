@@ -60,7 +60,7 @@ function getAddressVariations(address: string): string[] {
         .replace(/\b(\d+)\s*story\b/gi, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
-    
+
     variations.add(clean);
 
     // Helper to expand directions/types
@@ -92,18 +92,18 @@ function getAddressVariations(address: string): string[] {
     // Captures: Number + Direction (opt) + Name + Suffix (opt)
     // Detects end of street by comma OR known Arizona city names to handle missing commas.
     const streetRegex = /^(\d+\s+(?:[NESWnesw]\.?\s+)?[a-zA-Z0-9\s]+?(?:\b(?:St|Street|Rd|Road|Dr|Drive|Ave|Avenue|Blvd|Boulevard|Ln|Lane|Ct|Court|Pl|Place|Trl|Trail|Cir|Circle|Wy|Way)\b)?)(?:,|\s+(?:Mesa|Phoenix|Scottsdale|Tempe|Chandler|Gilbert|Glendale|Peoria|Buckeye|Surprise|Queen Creek|San Tan Valley|Apache Junction|Goodyear|Avondale|Tolleson|Litchfield Park|Paradise Valley|Fountain Hills|Cave Creek|Carefree|Anthem|New River|Sun City|Sun City West|El Mirage|Youngtown|Laveen|Maricopa|Casa Grande|Florence|Coolidge|Eloy|Arizona City|Tucson|Oro Valley|Marana|Vail|Sahuarita|Green Valley|Nogales|Rio Rico|Sierra Vista|Flagstaff|Prescott|Sedona|Payson|Cottonwood|Camp Verde|Kingman|Bullhead City|Lake Havasu City|Show Low|Page|Winslow|Holbrook|Williams|Globe|Miami|Safford|Thatcher|Douglas|Bisbee|Benson|Willcox|Yuma|Somerton|San Luis|Fortuna Foothills|Gila Bend|Wickenburg|Quartzsite|Parker|AZ)\b)/i;
-    
+
     const match = noJunk.match(streetRegex);
     if (match) {
         const streetOnly = match[1].trim();
         // Add "Street Only" (e.g. "21036 W Maiden Lane")
-        variations.add(streetOnly); 
-        
+        variations.add(streetOnly);
+
         // Add "Street Only Expanded" (e.g., "21036 West Maiden Lane")
         // This is critical for the user's use case where W -> West makes it plot.
         const expandedStreet = expand(streetOnly);
         variations.add(expandedStreet);
-        
+
         // Try Street + AZ context
         variations.add(`${expandedStreet}, AZ`);
     } else {
@@ -197,15 +197,65 @@ async function queryNominatim(query: string, retries = 2, initialDelay = 1000): 
 }
 
 /**
+ * Attempts to parse an address as a coordinate pair in the format "lat,lon".
+ * Returns coordinates if valid, null otherwise.
+ */
+function parseCoordinateFormat(address: string): GeocodeResult {
+    // Trim whitespace and check for coordinate pattern
+    const trimmed = address.trim();
+    const coordPattern = /^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/;
+    const match = trimmed.match(coordPattern);
+
+    if (!match) {
+        return { coordinates: null, error: null };
+    }
+
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+
+    // Validate coordinate ranges
+    if (isNaN(lat) || isNaN(lon)) {
+        return { coordinates: null, error: 'Invalid coordinate format' };
+    }
+
+    if (lat < -90 || lat > 90) {
+        return { coordinates: null, error: 'Latitude must be between -90 and 90' };
+    }
+
+    if (lon < -180 || lon > 180) {
+        return { coordinates: null, error: 'Longitude must be between -180 and 180' };
+    }
+
+    // Optional: Check if coordinates are within Arizona bounds
+    if (lat >= ARIZONA_BOUNDS.south && lat <= ARIZONA_BOUNDS.north &&
+        lon >= ARIZONA_BOUNDS.west && lon <= ARIZONA_BOUNDS.east) {
+        return { coordinates: { lat, lon }, error: null };
+    }
+
+    // Allow coordinates outside Arizona but warn
+    console.warn(`Coordinates ${lat},${lon} are outside Arizona bounds but will be used.`);
+    return { coordinates: { lat, lon }, error: null };
+}
+
+/**
  * Geocodes an address, trying multiple variations if the initial query fails.
+ * First checks if the address is in coordinate format (lat,lon).
  */
 async function geocodeSingleAddressAPI(address: string): Promise<GeocodeResult> {
+    // First, check if this is a coordinate format
+    const coordResult = parseCoordinateFormat(address);
+    if (coordResult.coordinates) {
+        console.log(`Using manual coordinates for: ${address}`);
+        return coordResult;
+    }
+
+    // If not coordinates, proceed with normal geocoding
     const variations = getAddressVariations(address);
     let lastError = 'Address not found';
 
     for (let i = 0; i < variations.length; i++) {
         const variation = variations[i];
-        
+
         // Respect rate limiting between variations for the same job
         if (i > 0) await sleep(1200);
 
@@ -235,7 +285,7 @@ export async function preCacheGeocodes(addresses: string[]): Promise<void> {
     }
 
     console.log(`[GeoCache] Pre-caching ${addressesToFetch.length} new addresses in the background.`);
-    
+
     for (const address of addressesToFetch) {
         // Check cache again in case another process geocoded it
         if (!geocodeCache.has(address)) {
@@ -264,14 +314,14 @@ export async function geocodeAddresses(addresses: string[]): Promise<GeocodeResu
         for (const address of uniqueAddressesToFetch) {
             // Re-check cache in case a parallel pre-cache process is running
             if (geocodeCache.has(address)) continue;
-            
+
             await sleep(1000); // Respect Nominatim's usage policy of max 1 request/sec
             const result = await geocodeSingleAddressAPI(address);
             geocodeCache.set(address, result); // Cache the result (even if null)
             saveCacheToStorage(); // Save after every new fetch
         }
     }
-    
+
     // Now that the cache is populated, map over the original addresses to preserve order.
     return addresses.map(address => geocodeCache.get(address) ?? { coordinates: null, error: 'Internal cache failure' });
 }

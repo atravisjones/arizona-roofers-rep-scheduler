@@ -156,7 +156,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <div className="p-4 flex items-center justify-between">
                                 <div>
                                     <label htmlFor="allowAssignOutsideAvailability" className="block text-sm font-semibold text-text-primary">Override Rep Availability</label>
-                                    <p className="text-xs text-text-tertiary mt-0.5">Allow AI to assign jobs to unavailable slots (with penalty).</p>
+                                    <p className="text-xs text-text-tertiary mt-0.5">Allow jobs in unavailable slots for reps with partial availability (not fully off).</p>
                                 </div>
                                 <input
                                     type="checkbox" id="allowAssignOutsideAvailability"

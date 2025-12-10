@@ -1,33 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rep Route Planner</title>
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-     crossorigin=""/>
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-     crossorigin=""></script>
 
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.27.0"
-  }
-}
-</script>
-<script>
+<head>
+  <meta charset="UTF-8" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rep Route Planner</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
     tailwind.config = {
-      darkMode: false, // We use a custom `data-theme` attribute for theming
+      // darkMode: false, // Removed deprecated option
       theme: {
         extend: {
           colors: {
@@ -53,7 +43,7 @@
             'brand-text-on-primary': 'rgb(var(--brand-text-on-primary) / <alpha-value>)',
             'brand-bg-light': 'rgb(var(--brand-bg-light) / <alpha-value>)',
             'brand-text-light': 'rgb(var(--brand-text-light) / <alpha-value>)',
-            
+
             // State & Tag Colors
             'tag-amber-bg': 'rgb(var(--amber-bg) / <alpha-value>)',
             'tag-amber-text': 'rgb(var(--amber-text) / <alpha-value>)',
@@ -70,13 +60,13 @@
             'tag-blue-bg': 'rgb(var(--blue-bg) / <alpha-value>)',
             'tag-blue-text': 'rgb(var(--blue-text) / <alpha-value>)',
             'tag-blue-border': 'rgb(var(--blue-border) / <alpha-value>)',
-            'brand-blue': 'rgb(var(--blue-brand) / <alpha-value>)', 
+            'brand-blue': 'rgb(var(--blue-brand) / <alpha-value>)',
             'brand-blue-dark': 'rgb(var(--blue-brand-dark) / <alpha-value>)',
 
             'tag-teal-bg': 'rgb(var(--teal-bg) / <alpha-value>)',
             'tag-teal-text': 'rgb(var(--teal-text) / <alpha-value>)',
             'tag-teal-border': 'rgb(var(--teal-border) / <alpha-value>)',
-            
+
             'tag-orange-bg': 'rgb(var(--orange-bg) / <alpha-value>)',
             'tag-orange-text': 'rgb(var(--orange-text) / <alpha-value>)',
             'tag-orange-border': 'rgb(var(--orange-border) / <alpha-value>)',
@@ -96,7 +86,7 @@
             'tag-emerald-bg': 'rgb(var(--emerald-bg) / <alpha-value>)',
             'tag-emerald-text': 'rgb(var(--emerald-text) / <alpha-value>)',
             'tag-emerald-border': 'rgb(var(--emerald-border) / <alpha-value>)',
-            
+
             'tag-sky-bg': 'rgb(var(--sky-bg) / <alpha-value>)',
             'tag-sky-text': 'rgb(var(--sky-text) / <alpha-value>)',
             'tag-sky-border': 'rgb(var(--sky-border) / <alpha-value>)',
@@ -108,235 +98,365 @@
         }
       }
     }
-</script>
-<script src="https://cdn.tailwindcss.com"></script>
-<style>
-  html, body, #root {
-    height: 100vh;
-    overflow: hidden;
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .animate-fade-in {
-    animation: fade-in 0.5s ease-out forwards;
-  }
-  /* Custom styles for job card popups on the map */
-  .job-card-popup .leaflet-popup-content-wrapper {
-    background: transparent;
-    box-shadow: none;
-    border: none;
-    padding: 0;
-    border-radius: 0;
-  }
-  .job-card-popup .leaflet-popup-content {
-    margin: 0;
-  }
-  .job-card-popup .leaflet-popup-tip-container {
-    display: none;
-  }
+  </script>
 
-  .job-tooltip {
-    background-color: rgb(var(--bg-primary));
-    border: 1px solid rgb(var(--border-primary));
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  }
+  <style>
+    html,
+    body,
+    #root {
+      height: 100vh;
+      overflow: hidden;
+    }
 
-  /* --- THEME SYSTEM --- */
-  :root, [data-theme="light"], [data-theme="custom"] {
-    color-scheme: light;
-    --bg-primary: 255 255 255;
-    --bg-secondary: 249 250 251;
-    --bg-tertiary: 243 244 246;
-    --bg-quaternary: 229 231 235;
-    
-    --text-primary: 17 24 39;
-    --text-secondary: 55 65 81;
-    --text-tertiary: 107 114 128;
-    --text-quaternary: 156 163 175;
-    --text-inverted: 255 255 255;
-    
-    --border-primary: 229 231 235;
-    --border-secondary: 209 213 219;
-    --border-tertiary: 156 163 175;
-    
-    --brand-primary: 79 70 229;
-    --brand-secondary: 67 56 202;
-    --brand-text-on-primary: 255 255 255;
-    --brand-bg-light: 238 242 255;
-    --brand-text-light: 55 48 163;
-    
-    --amber-bg: 255 251 235; --amber-text: 180 83 9; --amber-border: 253 230 138;
-    --red-bg: 254 242 242; --red-text: 185 28 28; --red-border: 254 202 202;
-    --green-bg: 240 253 244; --green-text: 20 83 45; --green-border: 187 247 208;
-    --blue-bg: 239 246 255; --blue-text: 30 64 175; --blue-border: 191 219 254; --blue-brand: 59 130 246; --blue-brand-dark: 37 99 235;
-    --teal-bg: 240 253 250; --teal-text: 15 118 110; --teal-border: 153 246 228;
-    --orange-bg: 255 247 237; --orange-text: 154 52 18; --orange-border: 254 215 170;
-    --cyan-bg: 236 254 255; --cyan-text: 22 78 99; --cyan-border: 165 243 252;
-    --slate-bg: 241 245 249; --slate-text: 30 41 59; --slate-border: 203 213 225;
-    --purple-bg: 250 245 255; --purple-text: 91 33 182; --purple-border: 221 214 254;
-    --emerald-bg: 236 253 245; --emerald-text: 6 95 70; --emerald-border: 167 243 208;
-    --sky-bg: 240 249 255; --sky-text: 7 89 133; --sky-border: 186 230 253;
-    --stone-bg: 250 250 249; --stone-text: 68 64 60; --stone-border: 231 229 228;
+    @keyframes fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
 
-    --map-tile-filter: none;
-  }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
 
-  [data-theme="dark"] {
-    color-scheme: dark;
-    --bg-primary: 30 41 59;
-    --bg-secondary: 15 23 42;
-    --bg-tertiary: 51 65 85;
-    --bg-quaternary: 71 85 105;
+    .animate-fade-in {
+      animation: fade-in 0.5s ease-out forwards;
+    }
 
-    --text-primary: 248 250 252;
-    --text-secondary: 226 232 240;
-    --text-tertiary: 148 163 184;
-    --text-quaternary: 100 116 139;
-    --text-inverted: 15 23 42;
+    /* Custom styles for job card popups on the map */
+    .job-card-popup .leaflet-popup-content-wrapper {
+      background: transparent;
+      box-shadow: none;
+      border: none;
+      padding: 0;
+      border-radius: 0;
+    }
 
-    --border-primary: 51 65 85;
-    --border-secondary: 71 85 105;
-    --border-tertiary: 100 116 139;
+    .job-card-popup .leaflet-popup-content {
+      margin: 0;
+    }
 
-    --brand-primary: 129 140 248;
-    --brand-secondary: 99 102 241;
-    --brand-text-on-primary: 15 23 42;
-    --brand-bg-light: 49 46 129;
-    --brand-text-light: 199 210 254;
-    
-    --amber-bg: 59 13 0; --amber-text: 252 211 77; --amber-border: 120 53 15;
-    --red-bg: 76 29 29; --red-text: 253 164 175; --red-border: 153 27 27;
-    --green-bg: 6 78 59; --green-text: 110 231 183; --green-border: 22 101 52;
-    --blue-bg: 30 58 138; --blue-text: 147 197 253; --blue-border: 30 64 175; --blue-brand: 96 165 250; --blue-brand-dark: 59 130 246;
-    --teal-bg: 19 78 74; --teal-text: 94 234 212; --teal-border: 17 94 89;
-    --orange-bg: 61 24 0; --orange-text: 253 186 116; --orange-border: 124 45 18;
-    --cyan-bg: 21 94 117; --cyan-text: 103 232 249; --cyan-border: 8 145 178;
-    --slate-bg: 51 65 85; --slate-text: 203 213 225; --slate-border: 100 116 139;
-    --purple-bg: 88 28 135; --purple-text: 233 213 255; --purple-border: 107 33 168;
-    --emerald-bg: 6 78 59; --emerald-text: 110 231 183; --emerald-border: 5 150 105;
-    --sky-bg: 7 89 133; --sky-text: 125 211 252; --sky-border: 3 105 161;
-    --stone-bg: 68 64 60; --stone-text: 214 211 209; --stone-border: 120 113 108;
-    
-    --map-tile-filter: invert(1) hue-rotate(180deg) brightness(95%) contrast(90%);
-  }
-  
-  [data-theme="midnight"] {
-    color-scheme: dark;
-    --bg-primary: 2 6 23; 
-    --bg-secondary: 17 24 39; 
-    --bg-tertiary: 30 41 59; 
-    --bg-quaternary: 51 65 85;
+    .job-card-popup .leaflet-popup-tip-container {
+      display: none;
+    }
 
-    --text-primary: 248 250 252;
-    --text-secondary: 226 232 240;
-    --text-tertiary: 148 163 184;
-    --text-quaternary: 100 116 139;
-    --text-inverted: 15 23 42;
+    .job-tooltip {
+      background-color: rgb(var(--bg-primary));
+      border: 1px solid rgb(var(--border-primary));
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
 
-    --border-primary: 30 41 59;
-    --border-secondary: 51 65 85;
-    --border-tertiary: 71 85 105;
+    /* --- THEME SYSTEM --- */
+    :root,
+    [data-theme="light"],
+    [data-theme="custom"] {
+      color-scheme: light;
+      --bg-primary: 255 255 255;
+      --bg-secondary: 248 250 252;
+      --bg-tertiary: 241 245 249;
+      --bg-quaternary: 226 232 240;
 
-    --brand-primary: 56 189 248;
-    --brand-secondary: 14 165 233;
-    --brand-text-on-primary: 2 6 23;
-    --brand-bg-light: 30 64 175;
-    --brand-text-light: 191 219 254;
-    
-    --amber-bg: 74 20 2; --amber-text: 254 215 170; --amber-border: 146 64 14;
-    --red-bg: 99 10 10; --red-text: 254 202 202; --red-border: 153 27 27;
-    --green-bg: 5 46 22; --green-text: 187 247 208; --green-border: 22 101 52;
-    --blue-bg: 30 58 138; --blue-text: 191 219 254; --blue-border: 37 99 235; --blue-brand: 96 165 250; --blue-brand-dark: 59 130 246;
-    --teal-bg: 13 48 45; --teal-text: 153 246 228; --teal-border: 17 94 89;
-    --orange-bg: 61 24 0; --orange-text: 254 215 170; --orange-border: 154 52 18;
-    --cyan-bg: 22 78 99; --cyan-text: 165 243 252; --cyan-border: 6 182 212;
-    --slate-bg: 51 65 85; --slate-text: 203 213 225; --slate-border: 100 116 139;
-    --purple-bg: 76 29 149; --purple-text: 221 214 254; --purple-border: 109 40 217;
-    --emerald-bg: 6 78 59; --emerald-text: 167 243 208; --emerald-border: 5 150 105;
-    --sky-bg: 12 74 110; --sky-text: 186 230 253; --sky-border: 3 105 161;
-    --stone-bg: 68 64 60; --stone-text: 214 211 209; --stone-border: 120 113 108;
-    
-    --map-tile-filter: invert(1) hue-rotate(180deg) brightness(80%) contrast(110%);
-  }
+      --text-primary: 17 24 39;
+      --text-secondary: 55 65 81;
+      --text-tertiary: 107 114 128;
+      --text-quaternary: 156 163 175;
+      --text-inverted: 255 255 255;
 
-  [data-theme="gruvbox"] {
-    color-scheme: dark;
-    --bg-primary: 40 40 40;
-    --bg-secondary: 29 32 33;
-    --bg-tertiary: 60 56 54;
-    --bg-quaternary: 80 73 69;
+      --border-primary: 226 232 240;
+      --border-secondary: 203 213 225;
+      --border-tertiary: 148 163 184;
 
-    --text-primary: 251 241 199;
-    --text-secondary: 235 219 178;
-    --text-tertiary: 189 174 147;
-    --text-quaternary: 168 153 132;
-    --text-inverted: 40 40 40;
+      --brand-primary: 79 70 229;
+      --brand-secondary: 67 56 202;
+      --brand-text-on-primary: 255 255 255;
+      --brand-bg-light: 238 242 255;
+      --brand-text-light: 55 48 163;
 
-    --border-primary: 80 73 69;
-    --border-secondary: 102 92 84;
-    --border-tertiary: 124 111 100;
+      --amber-bg: 255 251 235;
+      --amber-text: 180 83 9;
+      --amber-border: 253 230 138;
+      --red-bg: 254 242 242;
+      --red-text: 185 28 28;
+      --red-border: 254 202 202;
+      --green-bg: 240 253 244;
+      --green-text: 20 83 45;
+      --green-border: 187 247 208;
+      --blue-bg: 239 246 255;
+      --blue-text: 30 64 175;
+      --blue-border: 191 219 254;
+      --blue-brand: 59 130 246;
+      --blue-brand-dark: 37 99 235;
+      --teal-bg: 240 253 250;
+      --teal-text: 15 118 110;
+      --teal-border: 153 246 228;
+      --orange-bg: 255 247 237;
+      --orange-text: 154 52 18;
+      --orange-border: 254 215 170;
+      --cyan-bg: 236 254 255;
+      --cyan-text: 22 78 99;
+      --cyan-border: 165 243 252;
+      --slate-bg: 241 245 249;
+      --slate-text: 30 41 59;
+      --slate-border: 203 213 225;
+      --purple-bg: 250 245 255;
+      --purple-text: 91 33 182;
+      --purple-border: 221 214 254;
+      --emerald-bg: 236 253 245;
+      --emerald-text: 6 95 70;
+      --emerald-border: 167 243 208;
+      --sky-bg: 240 249 255;
+      --sky-text: 7 89 133;
+      --sky-border: 186 230 253;
+      --stone-bg: 250 250 249;
+      --stone-text: 68 64 60;
+      --stone-border: 231 229 228;
 
-    --brand-primary: 131 165 152;
-    --brand-secondary: 142 192 124;
-    --brand-text-on-primary: 40 40 40;
-    --brand-bg-light: 60 56 54;
-    --brand-text-light: 131 165 152;
-    
-    --amber-bg: 129 42 0; --amber-text: 254 128 25; --amber-border: 175 58 3;
-    --red-bg: 121 22 19; --red-text: 251 73 52; --red-border: 157 0 6;
-    --green-bg: 110 109 19; --green-text: 184 187 38; --green-border: 121 116 14;
-    --blue-bg: 7 82 99; --blue-text: 131 165 152; --blue-border: 7 102 120; --blue-brand: 131 165 152; --blue-brand-dark: 69 133 136;
-    --teal-bg: 46 103 68; --teal-text: 142 192 124; --teal-border: 66 123 88;
-    --orange-bg: 129 42 0; --orange-text: 254 128 25; --orange-border: 175 58 3;
-    --cyan-bg: 7 82 99; --cyan-text: 131 165 152; --cyan-border: 7 102 120;
-    --slate-bg: 80 73 69; --slate-text: 189 174 147; --slate-border: 124 111 100;
-    --purple-bg: 135 78 104; --purple-text: 211 134 155; --purple-border: 143 63 113;
-    --emerald-bg: 110 109 19; --emerald-text: 184 187 38; --emerald-border: 121 116 14;
-    --sky-bg: 7 82 99; --sky-text: 131 165 152; --sky-border: 7 102 120;
-    --stone-bg: 102 92 84; --stone-text: 189 174 147; --stone-border: 146 131 116;
-    
-    --map-tile-filter: grayscale(0.2) sepia(0.5) hue-rotate(-15deg) saturate(0.9);
-  }
+      --map-tile-filter: none;
+    }
 
-  body { 
-    background-color: rgb(var(--bg-secondary)); 
-    color: rgb(var(--text-secondary)); 
-  }
-  
-  .leaflet-tile { filter: var(--map-tile-filter); }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg-primary: 30 41 59;
+      --bg-secondary: 17 24 39;
+      --bg-tertiary: 51 65 85;
+      --bg-quaternary: 71 85 105;
 
-  /* Solid background for all popups / modals, bypassing Tailwind opacity issue */
-  .popup-surface {
-    background-color: rgb(var(--bg-primary));
-    color: rgb(var(--text-primary));
-    border: 1px solid rgb(var(--border-primary));
-    border-radius: 0.75rem; /* rounded-xl */
-    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); /* shadow-2xl */
-  }
+      --text-primary: 248 250 252;
+      --text-secondary: 226 232 240;
+      --text-tertiary: 148 163 184;
+      --text-quaternary: 100 116 139;
+      --text-inverted: 15 23 42;
 
-  /* Custom Scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgb(var(--bg-secondary));
-    border-radius: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: rgb(var(--bg-quaternary));
-    border-radius: 4px;
-    border: 2px solid rgb(var(--bg-secondary));
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(var(--border-tertiary));
-  }
-</style>
+      --border-primary: 71 85 105;
+      --border-secondary: 100 116 139;
+      --border-tertiary: 148 163 184;
+
+      --brand-primary: 129 140 248;
+      --brand-secondary: 99 102 241;
+      --brand-text-on-primary: 15 23 42;
+      --brand-bg-light: 49 46 129;
+      --brand-text-light: 199 210 254;
+
+      --amber-bg: 59 13 0;
+      --amber-text: 252 211 77;
+      --amber-border: 120 53 15;
+      --red-bg: 76 29 29;
+      --red-text: 253 164 175;
+      --red-border: 153 27 27;
+      --green-bg: 6 78 59;
+      --green-text: 110 231 183;
+      --green-border: 22 101 52;
+      --blue-bg: 30 58 138;
+      --blue-text: 147 197 253;
+      --blue-border: 30 64 175;
+      --blue-brand: 96 165 250;
+      --blue-brand-dark: 59 130 246;
+      --teal-bg: 19 78 74;
+      --teal-text: 94 234 212;
+      --teal-border: 17 94 89;
+      --orange-bg: 61 24 0;
+      --orange-text: 253 186 116;
+      --orange-border: 124 45 18;
+      --cyan-bg: 21 94 117;
+      --cyan-text: 103 232 249;
+      --cyan-border: 8 145 178;
+      --slate-bg: 51 65 85;
+      --slate-text: 203 213 225;
+      --slate-border: 100 116 139;
+      --purple-bg: 88 28 135;
+      --purple-text: 233 213 255;
+      --purple-border: 107 33 168;
+      --emerald-bg: 6 78 59;
+      --emerald-text: 110 231 183;
+      --emerald-border: 5 150 105;
+      --sky-bg: 7 89 133;
+      --sky-text: 125 211 252;
+      --sky-border: 3 105 161;
+      --stone-bg: 68 64 60;
+      --stone-text: 214 211 209;
+      --stone-border: 120 113 108;
+
+      --map-tile-filter: invert(1) hue-rotate(180deg) brightness(95%) contrast(90%);
+    }
+
+    [data-theme="midnight"] {
+      color-scheme: dark;
+      --bg-primary: 2 6 23;
+      --bg-secondary: 15 23 42;
+      --bg-tertiary: 30 41 59;
+      --bg-quaternary: 51 65 85;
+
+      --text-primary: 248 250 252;
+      --text-secondary: 226 232 240;
+      --text-tertiary: 148 163 184;
+      --text-quaternary: 100 116 139;
+      --text-inverted: 15 23 42;
+
+      --border-primary: 51 65 85;
+      --border-secondary: 71 85 105;
+      --border-tertiary: 100 116 139;
+
+      --brand-primary: 56 189 248;
+      --brand-secondary: 14 165 233;
+      --brand-text-on-primary: 2 6 23;
+      --brand-bg-light: 30 64 175;
+      --brand-text-light: 191 219 254;
+
+      --amber-bg: 74 20 2;
+      --amber-text: 254 215 170;
+      --amber-border: 146 64 14;
+      --red-bg: 99 10 10;
+      --red-text: 254 202 202;
+      --red-border: 153 27 27;
+      --green-bg: 5 46 22;
+      --green-text: 187 247 208;
+      --green-border: 22 101 52;
+      --blue-bg: 30 58 138;
+      --blue-text: 191 219 254;
+      --blue-border: 37 99 235;
+      --blue-brand: 96 165 250;
+      --blue-brand-dark: 59 130 246;
+      --teal-bg: 13 48 45;
+      --teal-text: 153 246 228;
+      --teal-border: 17 94 89;
+      --orange-bg: 61 24 0;
+      --orange-text: 254 215 170;
+      --orange-border: 154 52 18;
+      --cyan-bg: 22 78 99;
+      --cyan-text: 165 243 252;
+      --cyan-border: 6 182 212;
+      --slate-bg: 51 65 85;
+      --slate-text: 203 213 225;
+      --slate-border: 100 116 139;
+      --purple-bg: 76 29 149;
+      --purple-text: 221 214 254;
+      --purple-border: 109 40 217;
+      --emerald-bg: 6 78 59;
+      --emerald-text: 167 243 208;
+      --emerald-border: 5 150 105;
+      --sky-bg: 12 74 110;
+      --sky-text: 186 230 253;
+      --sky-border: 3 105 161;
+      --stone-bg: 68 64 60;
+      --stone-text: 214 211 209;
+      --stone-border: 120 113 108;
+
+      --map-tile-filter: invert(1) hue-rotate(180deg) brightness(80%) contrast(110%);
+    }
+
+    [data-theme="gruvbox"] {
+      color-scheme: dark;
+      --bg-primary: 40 40 40;
+      --bg-secondary: 32 32 32;
+      --bg-tertiary: 60 56 54;
+      --bg-quaternary: 80 73 69;
+
+      --text-primary: 251 241 199;
+      --text-secondary: 235 219 178;
+      --text-tertiary: 189 174 147;
+      --text-quaternary: 168 153 132;
+      --text-inverted: 40 40 40;
+
+      --border-primary: 102 92 84;
+      --border-secondary: 124 111 100;
+      --border-tertiary: 168 153 132;
+
+      --brand-primary: 131 165 152;
+      --brand-secondary: 142 192 124;
+      --brand-text-on-primary: 40 40 40;
+      --brand-bg-light: 60 56 54;
+      --brand-text-light: 131 165 152;
+
+      --amber-bg: 129 42 0;
+      --amber-text: 254 128 25;
+      --amber-border: 175 58 3;
+      --red-bg: 121 22 19;
+      --red-text: 251 73 52;
+      --red-border: 157 0 6;
+      --green-bg: 110 109 19;
+      --green-text: 184 187 38;
+      --green-border: 121 116 14;
+      --blue-bg: 7 82 99;
+      --blue-text: 131 165 152;
+      --blue-border: 7 102 120;
+      --blue-brand: 131 165 152;
+      --blue-brand-dark: 69 133 136;
+      --teal-bg: 46 103 68;
+      --teal-text: 142 192 124;
+      --teal-border: 66 123 88;
+      --orange-bg: 129 42 0;
+      --orange-text: 254 128 25;
+      --orange-border: 175 58 3;
+      --cyan-bg: 7 82 99;
+      --cyan-text: 131 165 152;
+      --cyan-border: 7 102 120;
+      --slate-bg: 80 73 69;
+      --slate-text: 189 174 147;
+      --slate-border: 124 111 100;
+      --purple-bg: 135 78 104;
+      --purple-text: 211 134 155;
+      --purple-border: 143 63 113;
+      --emerald-bg: 110 109 19;
+      --emerald-text: 184 187 38;
+      --emerald-border: 121 116 14;
+      --sky-bg: 7 82 99;
+      --sky-text: 131 165 152;
+      --sky-border: 7 102 120;
+      --stone-bg: 102 92 84;
+      --stone-text: 189 174 147;
+      --stone-border: 146 131 116;
+
+      --map-tile-filter: grayscale(0.2) sepia(0.5) hue-rotate(-15deg) saturate(0.9);
+    }
+
+    body {
+      background-color: rgb(var(--bg-secondary));
+      color: rgb(var(--text-secondary));
+    }
+
+    .leaflet-tile {
+      filter: var(--map-tile-filter);
+    }
+
+    /* Solid background for all popups / modals, bypassing Tailwind opacity issue */
+    .popup-surface {
+      background-color: rgb(var(--bg-primary));
+      color: rgb(var(--text-primary));
+      border: 1px solid rgb(var(--border-primary));
+      border-radius: 0.75rem;
+      /* rounded-xl */
+      box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+      /* shadow-2xl */
+    }
+
+    /* Custom Scrollbar */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgb(var(--bg-secondary));
+      border-radius: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background-color: rgb(var(--bg-quaternary));
+      border-radius: 4px;
+      border: 2px solid rgb(var(--bg-secondary));
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background-color: rgb(var(--border-tertiary));
+    }
+  </style>
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
-  </body>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/main.tsx"></script>
+</body>
+
 </html>

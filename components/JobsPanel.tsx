@@ -2,10 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import UnassignedJobs from './UnassignedJobs';
 import PasteJobsModal from './PasteJobsModal';
+import PasteWeekModal from './PasteWeekModal';
 import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, DragHandleIcon, XIcon, SettingsIcon } from './icons';
 import SettingsModal from './SettingsModal';
 import FilterTabs from './FilterTabs';
 import { Job } from '../types';
+import { DaySchedule } from '../services/weekScheduleParser';
 
 interface JobsPanelProps {
     onDragStart: () => void;
@@ -22,6 +24,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
     
     const [jobSearchTerm, setJobSearchTerm] = useState('');
     const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+    const [isPasteWeekModalOpen, setIsPasteWeekModalOpen] = useState(false);
     const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [jobsFilteredByTabs, setJobsFilteredByTabs] = useState<Job[]>(appState.unassignedJobs);
 
@@ -47,6 +50,26 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
     useEffect(() => {
         setFilteredUnassignedJobs(filteredUnassignedJobs);
     }, [filteredUnassignedJobs, setFilteredUnassignedJobs]);
+
+    const handleParseWeekSchedule = async (days: DaySchedule[], onComplete: () => void) => {
+        // Process each day sequentially
+        for (let i = 0; i < days.length; i++) {
+            const day = days[i];
+
+            // Wait for the current day to complete before moving to the next
+            await new Promise<void>((resolve) => {
+                handleParseJobs(day.content, () => {
+                    resolve();
+                });
+            });
+
+            // Small delay between days to ensure processing completes
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        // Call onComplete after all days are processed
+        onComplete();
+    };
 
     return (
         <>
@@ -104,10 +127,10 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 </div>
             </div>
             
-            <div className="grid grid-cols-2 gap-3 mb-4">
-                 <button 
-                    onClick={() => setIsPasteModalOpen(true)} 
-                    className="flex items-center justify-center gap-2 py-2.5 px-4 bg-primary border border-border-primary shadow-sm rounded-lg text-sm font-semibold text-secondary hover:bg-secondary hover:border-border-secondary hover:text-brand-primary transition-all group"
+            <div className="flex gap-2 mb-4">
+                 <button
+                    onClick={() => setIsPasteModalOpen(true)}
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 bg-primary border border-border-primary shadow-sm rounded-lg text-sm font-semibold text-secondary hover:bg-secondary hover:border-border-secondary hover:text-brand-primary transition-all group flex-1"
                 >
                     <div className="p-1 bg-brand-bg-light text-brand-primary rounded-md group-hover:bg-brand-primary/20 transition-colors">
                          <PasteIcon className="h-4 w-4" />
@@ -115,10 +138,10 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                     <span>Paste Jobs</span>
                 </button>
 
-                 <button 
-                    onClick={handleAutoAssign} 
-                    disabled={isLoadingReps || isAutoAssigning || isParsing || appState.unassignedJobs.length === 0} 
-                    className="flex items-center justify-center gap-2 py-2.5 px-4 bg-brand-primary shadow-sm rounded-lg text-sm font-semibold text-brand-text-on-primary hover:bg-brand-secondary hover:shadow-md disabled:bg-bg-quaternary disabled:text-text-tertiary disabled:cursor-not-allowed transition-all"
+                 <button
+                    onClick={handleAutoAssign}
+                    disabled={isLoadingReps || isAutoAssigning || isParsing || appState.unassignedJobs.length === 0}
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 bg-brand-primary shadow-sm rounded-lg text-sm font-semibold text-brand-text-on-primary hover:bg-brand-secondary hover:shadow-md disabled:bg-bg-quaternary disabled:text-text-tertiary disabled:cursor-not-allowed transition-all flex-1"
                     title={isLoadingReps ? "Waiting for rep data to load..." : appState.unassignedJobs.length === 0 ? "No unassigned jobs to assign" : "Automatically assign jobs to available reps"}
                 >
                      {isAutoAssigning ? <LoadingIcon /> : <AutoAssignIcon className="h-4 w-4" />}
@@ -150,6 +173,13 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 isOpen={isPasteModalOpen}
                 onClose={() => setIsPasteModalOpen(false)}
                 onParse={handleParseJobs}
+                isParsing={isParsing}
+            />
+
+            <PasteWeekModal
+                isOpen={isPasteWeekModalOpen}
+                onClose={() => setIsPasteWeekModalOpen(false)}
+                onParseDays={handleParseWeekSchedule}
                 isParsing={isParsing}
             />
 

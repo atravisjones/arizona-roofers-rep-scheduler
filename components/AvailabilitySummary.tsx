@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { TIME_SLOTS } from '../constants';
+import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
 import { ClipboardIcon, XIcon, ClockIcon, MapPinIcon } from './icons';
 
 interface CitySection {
@@ -245,7 +245,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     if (!availableReps || availableReps.length === 0) {
                                         return (
                                             <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg p-4 opacity-60">
-                                                <h3 className="text-lg font-bold text-text-quaternary mb-2">{slot.label}</h3>
+                                                <h3 className="text-lg font-bold text-text-quaternary mb-2">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</h3>
                                                 <p className="text-sm text-text-quaternary italic">No representatives available.</p>
                                             </div>
                                         );
@@ -254,7 +254,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     return (
                                         <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg shadow-sm overflow-hidden">
                                             <div className="bg-brand-bg-light px-4 py-3 border-b border-brand-primary/20 flex justify-between items-center">
-                                                <h3 className="text-lg font-bold text-brand-text-light">{slot.label}</h3>
+                                                <h3 className="text-lg font-bold text-brand-text-light">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</h3>
                                                 <span className="text-xs font-semibold bg-bg-primary text-brand-primary px-2 py-0.5 rounded-full border border-brand-primary/20">
                                                     {availableReps.length} Available
                                                 </span>
@@ -315,7 +315,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                                                     if (!reps || reps.length === 0) return null;
                                                                     return (
                                                                         <div key={slot.id} className="text-sm">
-                                                                            <span className="font-semibold text-brand-primary block text-xs">{slot.label}</span>
+                                                                            <span className="font-semibold text-brand-primary block text-xs">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</span>
                                                                             <span className="text-text-secondary leading-tight block">{reps.join(', ')}</span>
                                                                         </div>
                                                                     );

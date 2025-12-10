@@ -3,8 +3,9 @@ import { DisplayJob, RouteInfo, ItineraryItem } from '../types';
 import { geocodeAddresses, fetchRoute, Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
 import LeafletMap from './LeafletMap';
-import { LoadingIcon, ErrorIcon, OptimizeIcon, ClipboardIcon, ChevronDownIcon, ChevronUpIcon, MessageIcon } from './icons';
+import { LoadingIcon, ErrorIcon, OptimizeIcon, ClipboardIcon, ChevronDownIcon, ChevronUpIcon, MessageIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
+import { normalizeAddressForMatching } from '../services/googleSheetsService';
 
 interface RepRouteCardProps {
     repName: string;
@@ -15,7 +16,7 @@ const parseTimeRange = (timeStr: string | undefined): { start: number, end: numb
     if (!timeStr) return null;
     // Matches "7:30am", "10am", "7:30am - 9am"
     const parts = timeStr.split('-').map(s => s.trim());
-    
+
     const parseTime = (t: string) => {
         const match = t.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
         if (!match) return 0;
@@ -41,7 +42,7 @@ const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean
     const r1 = parseTimeRange(t1);
     const r2 = parseTimeRange(t2);
     if (!r1 || !r2) return true; // Cannot determine, assume valid/overlap to avoid false alarm
-    
+
     // Standard overlap check: StartA < EndB && StartB < EndA
     return r1.start < r2.end && r2.start < r1.end;
 };
@@ -64,7 +65,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
     useEffect(() => {
         setOrderedJobs(jobs);
         // Reset itinerary when jobs change
-        setItinerary([]); 
+        setItinerary([]);
     }, [jobs]);
 
     useEffect(() => {
@@ -79,7 +80,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
             setError(null);
             try {
                 const addresses = orderedJobs.map(j => j.address);
-                
+
                 // Add Home Zip to mapping if available to show start/end
                 if (homeZip) {
                     addresses.unshift(`${homeZip}, Arizona, USA`);
@@ -121,11 +122,11 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                         validCoords.push(result.coordinates);
                     }
                 });
-                
+
                 // 3. Handle End Location (Home - Round Trip)
                 if (homeZip && validCoords.length > 0) {
-                     const homeResult = coordsWithNulls[0]; // Re-use start coord
-                     if (homeResult?.coordinates) {
+                    const homeResult = coordsWithNulls[0]; // Re-use start coord
+                    if (homeResult?.coordinates) {
                         newMappableJobs.push({
                             id: `end-${repName}-${Date.now()}`,
                             address: `${homeZip}, Arizona, USA`,
@@ -138,9 +139,9 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                             timeSlotLabel: 'End'
                         });
                         validCoords.push(homeResult.coordinates);
-                     }
+                    }
                 }
-                
+
                 setMappableJobs(newMappableJobs);
 
                 if (validCoords.length < orderedJobs.length) {
@@ -221,17 +222,17 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
         });
 
         // Start from Home Base if available
-        let currentRefCoord: Coordinates | undefined = undefined; 
+        let currentRefCoord: Coordinates | undefined = undefined;
         if (homeZip) {
-             const homeResult = await geocodeAddresses([`${homeZip}, Arizona, USA`]);
-             if (homeResult[0]?.coordinates) {
-                 currentRefCoord = homeResult[0].coordinates;
-             }
+            const homeResult = await geocodeAddresses([`${homeZip}, Arizona, USA`]);
+            if (homeResult[0]?.coordinates) {
+                currentRefCoord = homeResult[0].coordinates;
+            }
         }
 
         for (const h of sortedHours) {
             let unvisited = [...buckets[h]];
-            
+
             while (unvisited.length > 0) {
                 let nearestIndex = 0; // Default to first
                 let minDistance = Infinity;
@@ -239,7 +240,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                 if (currentRefCoord) {
                     unvisited.forEach((job, index) => {
                         const coord = jobCoordMap.get(job.id);
-                        if(coord) {
+                        if (coord) {
                             const distance = haversineDistance(currentRefCoord!, coord);
                             if (distance < minDistance) {
                                 minDistance = distance;
@@ -251,7 +252,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
 
                 const [nextJob] = unvisited.splice(nearestIndex, 1);
                 optimizedJobs.push(nextJob);
-                
+
                 const nextCoord = jobCoordMap.get(nextJob.id);
                 if (nextCoord) currentRefCoord = nextCoord;
             }
@@ -271,16 +272,16 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
 
         // Update time labels for the map and ordered jobs list
         const jobsWithUpdatedTimes = optimizedJobs.map(job => {
-             const startStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s/g, '');
-             
-             const jobStart = new Date(currentTime);
-             currentTime.setMinutes(currentTime.getMinutes() + JOB_DURATION_MINUTES);
-             const jobEnd = new Date(currentTime);
-             
-             const endStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s/g, '');
-             const timeSlotLabel = `${startStr}-${endStr}`;
+            const startStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s/g, '');
 
-             generatedItinerary.push({
+            const jobStart = new Date(currentTime);
+            currentTime.setMinutes(currentTime.getMinutes() + JOB_DURATION_MINUTES);
+            const jobEnd = new Date(currentTime);
+
+            const endStr = currentTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(/\s/g, '');
+            const timeSlotLabel = `${startStr}-${endStr}`;
+
+            generatedItinerary.push({
                 type: 'job',
                 timeRange: `${formatTime(jobStart)} - ${formatTime(jobEnd)}`,
                 job: { ...job, timeSlotLabel }, // Use updated label in itinerary display
@@ -289,7 +290,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
 
             // Add Dynamic Drive Time
             currentTime.setMinutes(currentTime.getMinutes() + driveBufferMinutes);
-            
+
             // Add drive entry to itinerary
             generatedItinerary.push({
                 type: 'travel',
@@ -297,18 +298,18 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                 duration: `${driveBufferMinutes}m`
             });
 
-             return { ...job, timeSlotLabel };
+            return { ...job, timeSlotLabel };
         });
 
         setOrderedJobs(jobsWithUpdatedTimes);
         setItinerary(generatedItinerary);
         setIsLoading(false);
     };
-    
+
     const googleMapsUrl = useMemo(() => {
         if (orderedJobs.length === 0) return '#';
         const waypoints = orderedJobs.map(j => encodeURIComponent(j.address));
-        
+
         // Start and End at Home Zip if available
         if (homeZip) {
             const homeAddr = encodeURIComponent(`${homeZip}, Arizona`);
@@ -329,14 +330,14 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
             if (item.type === 'job' && item.job) {
                 // Use original timeframe if available for the display, otherwise the scheduled time
                 const timeDisplay = item.job.originalTimeframe || item.timeRange;
-                
+
                 text += `${timeDisplay}: ${item.job.city?.toUpperCase() || 'LOCATION'}`;
-                
+
                 // Check overlap between Original Request and Scheduled Slot
                 // If they do NOT overlap, show warning.
                 if (item.job.originalTimeframe && item.job.timeSlotLabel) {
                     const overlaps = doTimesOverlap(item.job.originalTimeframe, item.job.timeSlotLabel);
-                    
+
                     if (!overlaps) {
                         text += ` (Scheduled: ${item.timeRange})`;
                         text += ` - WARNING: POTENTIAL RESCHEDULE NECESSARY`;
@@ -349,12 +350,12 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                 if (item.job.customerName) text += `Customer: ${item.job.customerName}\n`;
                 text += `\n`;
             } else if (item.type === 'lunch') {
-               // No lunch block
+                // No lunch block
             } else if (item.type === 'travel') {
                 // Optional: Include drive times in text
             }
         });
-        
+
         text += `Google Maps Route:\n${googleMapsUrl}`;
 
         navigator.clipboard.writeText(text).then(() => {
@@ -363,6 +364,15 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
         }).catch(err => {
             alert('Failed to copy to clipboard');
         });
+    };
+
+    // Helper to generate Roofr Job Card URL
+    const getRoofrUrl = (address: string) => {
+        const normalized = normalizeAddressForMatching(address);
+        if (!normalized) return null;
+        const jobId = appState.roofrJobIdMap.get(normalized);
+        if (!jobId) return null;
+        return `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}`;
     };
 
     return (
@@ -376,7 +386,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <div className="flex items-center space-x-2 mb-2">
-                                <button onClick={handleOptimize} disabled={isLoading || orderedJobs.length <=1} className="flex-1 text-sm bg-brand-primary text-brand-text-on-primary py-1.5 px-3 rounded-md hover:bg-brand-secondary disabled:bg-brand-primary/50 flex items-center justify-center transition">
+                                <button onClick={handleOptimize} disabled={isLoading || orderedJobs.length <= 1} className="flex-1 text-sm bg-brand-primary text-brand-text-on-primary py-1.5 px-3 rounded-md hover:bg-brand-secondary disabled:bg-brand-primary/50 flex items-center justify-center transition">
                                     <OptimizeIcon className="h-4 w-4 mr-2" />
                                     <span>Optimize Order</span>
                                 </button>
@@ -385,9 +395,9 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                     <span>Google Maps</span>
                                 </a>
                             </div>
-                            
+
                             {itinerary.length > 0 && (
-                                <button 
+                                <button
                                     onClick={handleCopyItinerary}
                                     className={`w-full mb-2 text-sm flex items-center justify-center py-1.5 px-3 rounded-md transition border ${copySuccess ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border' : 'bg-bg-primary text-text-secondary border-border-secondary hover:bg-bg-tertiary'}`}
                                 >
@@ -402,14 +412,34 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                         {itinerary.map((item, idx) => (
                                             <li key={idx} className={`flex flex-col ${item.type === 'lunch' ? 'bg-tag-amber-bg p-2 rounded font-bold text-tag-amber-text border border-tag-amber-border' : item.type === 'travel' ? 'text-text-quaternary text-xs italic text-center' : ''}`}>
                                                 {item.type === 'job' && item.job ? (
-                                                    <div 
+                                                    <div
                                                         onMouseEnter={() => setHoveredJobId(item.job!.id)}
                                                         onMouseLeave={() => setHoveredJobId(null)}
                                                         className="bg-bg-primary p-2 rounded border border-border-primary shadow-sm hover:shadow-md transition-shadow"
                                                     >
                                                         <div className="flex justify-between text-xs font-bold text-brand-primary mb-1">
                                                             <span>{item.job.originalTimeframe || item.timeRange}</span>
-                                                            <span>{item.job.city}</span>
+                                                            <div className="flex items-center space-x-2">
+                                                                <span>{item.job.city}</span>
+                                                                {(() => {
+                                                                    const roofrUrl = getRoofrUrl(item.job.address);
+                                                                    if (roofrUrl) {
+                                                                        return (
+                                                                            <a
+                                                                                href={roofrUrl}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="text-brand-primary hover:text-brand-secondary"
+                                                                                title="Open Roofr Job Card"
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            >
+                                                                                <ExternalLinkIcon className="h-4 w-4" />
+                                                                            </a>
+                                                                        );
+                                                                    }
+                                                                    return null;
+                                                                })()}
+                                                            </div>
                                                         </div>
                                                         <div className="text-text-primary leading-tight mb-1">{item.job.address}</div>
                                                         {item.job.notes && <div className="text-text-tertiary text-xs truncate">{item.job.notes}</div>}
@@ -428,14 +458,34 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                 ) : (
                                     <ol className="list-decimal list-inside space-y-2 text-sm">
                                         {orderedJobs.map(job => (
-                                            <li 
+                                            <li
                                                 key={job.id}
                                                 onMouseEnter={() => setHoveredJobId(job.id)}
                                                 onMouseLeave={() => setHoveredJobId(null)}
                                                 className="hover:bg-bg-tertiary rounded px-1 py-0.5 transition-colors cursor-default text-text-primary"
                                             >
                                                 <span className="font-semibold">{job.timeSlotLabel}: </span>
-                                                <span className="text-text-secondary">{job.address}</span>
+                                                <span className="text-text-secondary">
+                                                    {job.address}
+                                                    {(() => {
+                                                        const roofrUrl = getRoofrUrl(job.address);
+                                                        if (roofrUrl) {
+                                                            return (
+                                                                <a
+                                                                    href={roofrUrl}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="ml-2 inline-block text-brand-primary hover:text-brand-secondary align-text-bottom"
+                                                                    title="Open Roofr Job Card"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <ExternalLinkIcon className="h-3.5 w-3.5" />
+                                                                </a>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </span>
                                             </li>
                                         ))}
                                     </ol>
@@ -443,7 +493,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                             </div>
                         </div>
                         <div className="h-80 relative">
-                             <LeafletMap jobs={mappableJobs} routeInfo={routeInfo} mapType="route" />
+                            <LeafletMap jobs={mappableJobs} routeInfo={routeInfo} mapType="route" />
                         </div>
                     </div>
                     {(isLoading || routeInfo) && (

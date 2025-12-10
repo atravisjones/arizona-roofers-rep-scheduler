@@ -2,47 +2,20 @@ import React, { useMemo, useState, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { XIcon, RescheduleIcon, ClipboardIcon } from './icons';
 import { Rep, DisplayJob } from '../types';
+import { doTimesOverlap } from '../utils/timeUtils';
 
 interface NeedsRescheduleModalProps {
     isOpen: boolean;
     onClose: () => void;
 }
 
-// Helper function to check for non-overlapping times
-const parseTimeRange = (timeStr: string | undefined): { start: number, end: number } | null => {
-    if (!timeStr) return null;
-    const parts = timeStr.split('-').map(s => s.trim());
-    
-    const parseTime = (t: string) => {
-        const match = t.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-        if (!match) return 0;
-        let h = parseInt(match[1]);
-        const m = parseInt(match[2] || '0');
-        const p = match[3]?.toLowerCase();
-        if (p === 'pm' && h < 12) h += 12;
-        if (p === 'am' && h === 12) h = 0;
-        if (!p && h >= 1 && h <= 6) h += 12;
-        return h * 60 + m;
-    };
-
-    if (parts.length >= 2) {
-        return { start: parseTime(parts[0]), end: parseTime(parts[1]) };
-    }
-    return null;
-};
-
-const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean => {
-    const r1 = parseTimeRange(t1);
-    const r2 = parseTimeRange(t2);
-    if (!r1 || !r2) return true; // Assume overlap if parsing fails to avoid false positives
-    return r1.start < r2.end && r2.start < r1.end;
-};
-
 
 const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onClose }) => {
     const { appState, handleUpdateJob } = useAppContext();
     const [selectSuccess, setSelectSuccess] = useState(false);
     const contentRef = useRef<HTMLDivElement>(null);
+    const [copiedJobId, setCopiedJobId] = useState<string | null>(null);
+    const [copiedType, setCopiedType] = useState<string | null>(null);
 
     const handleSelectAll = () => {
         if (contentRef.current) {
@@ -103,6 +76,30 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
         }
     };
 
+    const handleCopyToClipboard = (job: DisplayJob, type: 'text' | 'agreed' | 'voicemail') => {
+        let text = '';
+        const originalTime = job.originalTimeframe || 'N/A';
+        const scheduledTime = job.timeSlotLabel || 'N/A';
+        const customerName = job.customerName || job.city || 'Customer';
+
+        if (type === 'text') {
+            text = `Hi ${customerName},\n\nDue to a scheduling conflict, we've updated your arrival window for tomorrow to ${scheduledTime}. Your original request was for ${originalTime}. Please let us know if this new time works for you. Thank you!`;
+        } else if (type === 'agreed') {
+            text = `Called to reschedule from ${originalTime} to optimized time ${scheduledTime}. Customer agreed to reschedule.`;
+        } else if (type === 'voicemail') {
+            text = `Called to reschedule from ${originalTime} to optimized time ${scheduledTime}. Left voicemail about reschedule.`;
+        }
+
+        navigator.clipboard.writeText(text).then(() => {
+            setCopiedJobId(job.id);
+            setCopiedType(type);
+            setTimeout(() => {
+                setCopiedJobId(null);
+                setCopiedType(null);
+            }, 2000);
+        });
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -151,12 +148,12 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
                                     </h3>
                                     <ul className="divide-y divide-border-primary">
                                         {jobs.map(({ job, reason }) => (
-                                            <li key={job.id} className="p-3 flex items-start gap-3 hover:bg-bg-secondary/50 transition-colors">
-                                                <div className="flex-grow min-w-0 flex items-start gap-3">
+                                            <li key={job.id} className="p-3 hover:bg-bg-secondary/50 transition-colors">
+                                                <div className="flex items-start gap-3">
                                                     {/* Checkbox */}
                                                     <div>
-                                                        <input 
-                                                            type="checkbox" 
+                                                        <input
+                                                            type="checkbox"
                                                             className="h-5 w-5 mt-0.5 rounded border-border-secondary text-brand-primary focus:ring-brand-primary cursor-pointer"
                                                             title="Confirm reschedule. This will update the original time and remove this item from the list."
                                                             onChange={() => handleConfirmReschedule(job)}
@@ -175,6 +172,42 @@ const NeedsRescheduleModal: React.FC<NeedsRescheduleModalProps> = ({ isOpen, onC
                                                                 {reason}
                                                             </span>
                                                         </div>
+                                                    </div>
+                                                    {/* Copy Buttons */}
+                                                    <div className="flex flex-col gap-1.5 ml-auto">
+                                                        <button
+                                                            onClick={() => handleCopyToClipboard(job, 'text')}
+                                                            className={`px-3 py-1.5 text-[10px] font-semibold rounded border transition-all whitespace-nowrap ${
+                                                                copiedJobId === job.id && copiedType === 'text'
+                                                                    ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border'
+                                                                    : 'bg-bg-primary text-text-secondary border-border-secondary hover:bg-bg-tertiary hover:border-brand-primary hover:text-brand-primary'
+                                                            }`}
+                                                            title="Copy customer text/email message"
+                                                        >
+                                                            {copiedJobId === job.id && copiedType === 'text' ? '✓ Copied!' : 'Copy Text/Email'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleCopyToClipboard(job, 'agreed')}
+                                                            className={`px-3 py-1.5 text-[10px] font-semibold rounded border transition-all whitespace-nowrap ${
+                                                                copiedJobId === job.id && copiedType === 'agreed'
+                                                                    ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border'
+                                                                    : 'bg-bg-primary text-text-secondary border-border-secondary hover:bg-bg-tertiary hover:border-brand-primary hover:text-brand-primary'
+                                                            }`}
+                                                            title="Copy 'customer agreed' note"
+                                                        >
+                                                            {copiedJobId === job.id && copiedType === 'agreed' ? '✓ Copied!' : 'Copy "Agreed"'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleCopyToClipboard(job, 'voicemail')}
+                                                            className={`px-3 py-1.5 text-[10px] font-semibold rounded border transition-all whitespace-nowrap ${
+                                                                copiedJobId === job.id && copiedType === 'voicemail'
+                                                                    ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border'
+                                                                    : 'bg-bg-primary text-text-secondary border-border-secondary hover:bg-bg-tertiary hover:border-brand-primary hover:text-brand-primary'
+                                                            }`}
+                                                            title="Copy 'left voicemail' note"
+                                                        >
+                                                            {copiedJobId === job.id && copiedType === 'voicemail' ? '✓ Copied!' : 'Copy "Voicemail"'}
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </li>
