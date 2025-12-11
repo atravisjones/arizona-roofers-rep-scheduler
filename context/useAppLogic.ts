@@ -144,6 +144,8 @@ export const useAppLogic = () => {
     const cloudLoadedDaysRef = useRef<Set<string>>(new Set());
     // Flag to completely block loadReps during cloud load
     const [isCloudLoading, setIsCloudLoading] = useState(false);
+    // Ref to ensure cloud load only happens once on initial mount
+    const hasAutoLoadedRef = useRef(false);
 
     const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
         try {
@@ -497,7 +499,8 @@ export const useAppLogic = () => {
             const repsWithSchedule = repData.map(rep => ({
                 ...rep,
                 schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
-                isLocked: false
+                isLocked: false,
+                isOptimized: false
             }));
 
             const allRepZips = repsWithSchedule.flatMap(r => r.zipCodes || []).map(z => `${z}, Arizona, USA`);
@@ -1390,7 +1393,7 @@ export const useAppLogic = () => {
                     const { reps: repData, sheetName } = await fetchSheetData(targetDate);
                     setActiveSheetName(sheetName);
                     if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
-                    const repsWithSchedule = repData.map(rep => ({ ...rep, schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })), isLocked: false }));
+                    const repsWithSchedule = repData.map(rep => ({ ...rep, schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })), isLocked: false, isOptimized: false }));
                     baseState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
                 }
 
@@ -2622,6 +2625,14 @@ export const useAppLogic = () => {
             setIsCloudLoading(false);
         }
     }, [log]);
+
+    // Auto-load cloud data on initial mount
+    useEffect(() => {
+        if (!hasAutoLoadedRef.current) {
+            hasAutoLoadedRef.current = true;
+            handleLoadStateFromCloud();
+        }
+    }, [handleLoadStateFromCloud]);
 
     const handleSync = useCallback(async () => {
         log('ACTION: Sync started.');

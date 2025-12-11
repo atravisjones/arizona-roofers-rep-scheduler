@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -8,12 +8,14 @@ import RouteMapPanel from './RoutePanel';
 import DebugLog from './DebugLog';
 import DailySummaryModal from './DailySummary';
 import RepSummaryModal from './RepSummary';
+import PasteJobsModal from './PasteJobsModal';
 import AvailabilitySummaryModal from './AvailabilitySummary';
 import AiAssistantPopup from './AiAssistantPopup';
 import RepSettingsModal from './RepSettingsModal';
 import TrainingDataModal from './TrainingDataModal';
 import NeedsDetailsModal from './NeedsDetailsModal';
 import NeedsRescheduleModal from './NeedsRescheduleModal';
+import UnplottedJobsModal from './UnplottedJobsModal';
 import ChangeLogModal from './ChangeLogModal';
 import { TAG_KEYWORDS } from '../constants';
 import { Job } from '../types';
@@ -44,6 +46,8 @@ const MainLayout: React.FC = () => {
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [isThemeEditorOpen, setIsThemeEditorOpen] = useState(false);
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [isUnplottedModalOpen, setIsUnplottedModalOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -215,6 +219,8 @@ const MainLayout: React.FC = () => {
     return count;
   }, [context.appState.reps]);
 
+  const unplottedJobsCount = context.activeRoute?.unmappableJobs?.length ?? 0;
+
   const visibleColumnOrder = useMemo(() => {
     return columnOrder.filter(id => id !== 'jobs' || context.uiSettings.showUnassignedJobsColumn);
   }, [columnOrder, context.uiSettings.showUnassignedJobsColumn]);
@@ -270,7 +276,7 @@ const MainLayout: React.FC = () => {
       <header className="bg-bg-primary border-b border-border-primary flex-shrink-0 z-30 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
         {/* Top Bar: Reports, Alerts, Data Controls */}
         <div className="h-10 px-4 flex items-center justify-between border-b border-border-secondary/50 bg-bg-secondary/30">
-          {/* Left: Branding */}
+          {/* Left: Branding + Paste/Auto Assign */}
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
             <div className="flex items-center gap-1.5">
@@ -281,6 +287,30 @@ const MainLayout: React.FC = () => {
               <span className="text-[9px] font-semibold text-text-secondary truncate max-w-[150px]" title={context.activeSheetName}>
                 {context.activeSheetName || '...'}
               </span>
+            </div>
+
+            <div className="w-px h-4 bg-border-secondary"></div>
+
+            {/* Paste Jobs & Auto Assign Buttons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setIsPasteModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-bg-secondary/50 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary rounded-md transition-all border border-border-secondary/50"
+                title="Paste Jobs"
+              >
+                <PasteIcon className="h-3.5 w-3.5" />
+                <span>Paste</span>
+              </button>
+
+              <button
+                onClick={context.handleAutoAssign}
+                disabled={context.isLoadingReps || context.isAutoAssigning || context.isParsing || context.appState.unassignedJobs.length === 0}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-brand-primary text-brand-text-on-primary hover:bg-brand-secondary disabled:bg-bg-quaternary disabled:text-text-tertiary disabled:cursor-not-allowed rounded-md transition-all"
+                title={context.isLoadingReps ? "Waiting for rep data..." : context.appState.unassignedJobs.length === 0 ? "No unassigned jobs" : "Auto Assign Jobs"}
+              >
+                {context.isAutoAssigning ? <LoadingIcon /> : <AutoAssignIcon className="h-3.5 w-3.5" />}
+                <span>{context.isAutoAssigning ? 'Assigning...' : 'Auto Assign'}</span>
+              </button>
             </div>
           </div>
 
@@ -318,6 +348,23 @@ const MainLayout: React.FC = () => {
                 {needsDetailsCount > 0 && (
                   <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-tag-amber-text text-white">
                     {needsDetailsCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setIsUnplottedModalOpen(true)}
+                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${unplottedJobsCount > 0
+                  ? 'bg-tag-red-bg text-tag-red-text hover:bg-tag-red-bg/80'
+                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                  }`}
+                title="Review jobs that could not be plotted on the map"
+              >
+                <MapPinIcon className="h-3 w-3" />
+                <span>Unplotted</span>
+                {unplottedJobsCount > 0 && (
+                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-tag-red-text text-white">
+                    {unplottedJobsCount}
                   </span>
                 )}
               </button>
@@ -449,6 +496,13 @@ const MainLayout: React.FC = () => {
       <TrainingDataModal isOpen={isTrainingDataOpen} onClose={() => setIsTrainingDataOpen(false)} />
       <NeedsDetailsModal isOpen={isNeedsDetailsOpen} onClose={() => setIsNeedsDetailsOpen(false)} />
       <NeedsRescheduleModal isOpen={isNeedsRescheduleOpen} onClose={() => setIsNeedsRescheduleOpen(false)} />
+      <UnplottedJobsModal isOpen={isUnplottedModalOpen} onClose={() => setIsUnplottedModalOpen(false)} />
+      <PasteJobsModal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        onParse={context.handleParseJobs}
+        isParsing={context.isParsing}
+      />
       <ChangeLogModal isOpen={isChangeLogOpen} onClose={() => setIsChangeLogOpen(false)} changes={context.changeLog} />
 
       <AiAssistantPopup

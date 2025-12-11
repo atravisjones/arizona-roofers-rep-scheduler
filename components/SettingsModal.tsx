@@ -49,14 +49,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
     const handleChange = (key: keyof Settings, value: any) => {
         setLocalSettings(prev => ({ ...prev, [key]: value }));
     };
-    
+
     const handleScoringChange = (key: keyof Settings['scoringWeights'], value: number) => {
         setLocalSettings(prev => ({
             ...prev,
             scoringWeights: { ...prev.scoringWeights, [key]: value }
         }));
     };
-    
+
     if (!isOpen) return null;
 
     return (
@@ -79,7 +79,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <div className="h-6 w-1 bg-brand-primary rounded-full"></div>
                             <h3 className="text-lg font-bold text-text-primary">General Constraints</h3>
                         </div>
-                        
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                             <div className="bg-secondary p-4 rounded-lg border border-border-primary hover:border-brand-primary/20 transition-colors">
                                 <label htmlFor="maxJobsPerRep" className="block text-xs font-bold text-text-tertiary uppercase tracking-wider mb-2">Max Jobs / Rep</label>
@@ -131,7 +131,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                     />
                                 </div>
                             </div>
-                             {localSettings.allowDoubleBooking && (
+                            {localSettings.allowDoubleBooking && (
                                 <div className="p-4 bg-brand-bg-light/50 flex items-center justify-between">
                                     <label htmlFor="maxJobsPerSlot" className="text-sm font-medium text-brand-text-light">Max jobs per time slot</label>
                                     <input
@@ -141,13 +141,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                         className="w-20 p-1.5 border border-border-secondary bg-secondary text-primary rounded-md text-sm text-center shadow-sm focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary"
                                     />
                                 </div>
-                             )}
+                            )}
                         </div>
                     </section>
 
                     {/* Auto-Assignment Logic Section */}
                     <section>
-                         <div className="flex items-center gap-2 mb-4">
+                        <div className="flex items-center gap-2 mb-4">
                             <div className="h-6 w-1 bg-purple-500 rounded-full"></div>
                             <h3 className="text-lg font-bold text-text-primary">AI & Auto-Assignment Logic</h3>
                         </div>
@@ -242,10 +242,68 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             </div>
                         </div>
                     </section>
+
+                    {/* Scheduling Tools Links Section */}
+                    <section>
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="h-6 w-1 bg-teal-500 rounded-full"></div>
+                            <h3 className="text-lg font-bold text-text-primary">Scheduling Tools</h3>
+                        </div>
+                        <div className="bg-primary border border-border-primary rounded-lg p-4">
+                            <p className="text-xs text-text-tertiary mb-3">Quick access to external scheduling resources and data sources.</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g/edit?gid=1834112592#gid=1834112592"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 p-3 bg-secondary hover:bg-tertiary rounded-lg border border-border-primary hover:border-brand-primary/30 transition-all group"
+                                >
+                                    <span className="text-lg">📅</span>
+                                    <span className="text-sm font-medium text-text-secondary group-hover:text-brand-primary transition-colors">Rep Availability</span>
+                                </a>
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g/edit?gid=28876067#gid=28876067"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 p-3 bg-secondary hover:bg-tertiary rounded-lg border border-border-primary hover:border-brand-primary/30 transition-all group"
+                                >
+                                    <span className="text-lg">🔧</span>
+                                    <span className="text-sm font-medium text-text-secondary group-hover:text-brand-primary transition-colors">Rep Skillsets</span>
+                                </a>
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1Jn_7K25iMJ35h0FGtWaz4FS4u2bfiKzJQmFEPyA3hdk/edit?gid=0#gid=0"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 p-3 bg-secondary hover:bg-tertiary rounded-lg border border-border-primary hover:border-brand-primary/30 transition-all group"
+                                >
+                                    <span className="text-lg">☁️</span>
+                                    <span className="text-sm font-medium text-text-secondary group-hover:text-brand-primary transition-colors">Rep Cloud Storage</span>
+                                </a>
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1dwmWmMtXer4yOlY1QacqepCyQSe_5D84rzrLXYO2vTE/edit?gid=712107442#gid=712107442"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 p-3 bg-secondary hover:bg-tertiary rounded-lg border border-border-primary hover:border-brand-primary/30 transition-all group"
+                                >
+                                    <span className="text-lg">📊</span>
+                                    <span className="text-sm font-medium text-text-secondary group-hover:text-brand-primary transition-colors">Sales Tracker</span>
+                                </a>
+                                <a
+                                    href="https://docs.google.com/spreadsheets/d/1KadSyM67SOB6agq2YDHkZLYMXnn81Fna5jTWDBQQuog/edit?gid=2137549421#gid=2137549421"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-2 p-3 bg-secondary hover:bg-tertiary rounded-lg border border-border-primary hover:border-brand-primary/30 transition-all group sm:col-span-2"
+                                >
+                                    <span className="text-lg">🏠</span>
+                                    <span className="text-sm font-medium text-text-secondary group-hover:text-brand-primary transition-colors">Roofr Export</span>
+                                </a>
+                            </div>
+                        </div>
+                    </section>
                 </div>
 
                 <footer className="px-6 py-4 bg-bg-secondary border-t border-border-primary flex justify-between items-center flex-shrink-0 rounded-b-xl">
-                     <button onClick={onClose} className="text-sm font-medium text-text-tertiary hover:text-primary transition">
+                    <button onClick={onClose} className="text-sm font-medium text-text-tertiary hover:text-primary transition">
                         Cancel
                     </button>
                     <button onClick={handleSave} className="px-6 py-2.5 text-sm font-bold text-brand-text-on-primary bg-brand-primary rounded-lg hover:bg-brand-secondary shadow-md hover:shadow-lg transition-all active:scale-95">

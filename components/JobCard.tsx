@@ -333,17 +333,17 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             title={mismatchTitle}
         >
             {/* Header: City & Status */}
-            <div className={`px-2 pt-1 pb-0.5 flex justify-between items-start ${isCompact ? 'flex-col gap-1' : ''}`}>
-                <div className="min-w-0 flex-1 mr-2">
-                    <h3 className="font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-tight">
+            <div className={`px-1.5 py-0.5 flex justify-between items-start ${isCompact ? 'flex-col gap-0.5' : ''}`}>
+                <div className="min-w-0 flex-1 mr-1">
+                    <h3 className="font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-none">
                         {job.city || 'Unknown City'}
                     </h3>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-0.5 flex-shrink-0">
                     {priorityLevel > 0 && (
                         <div className="flex">
                             {[...Array(Math.min(priorityLevel, 3))].map((_, i) => (
-                                <StarIcon key={i} className={`h-3.5 w-3.5 drop-shadow-sm ${priorityLevel >= 3 ? 'text-tag-red-text' :
+                                <StarIcon key={i} className={`h-3 w-3 drop-shadow-sm ${priorityLevel >= 3 ? 'text-tag-red-text' :
                                     priorityLevel === 2 ? 'text-tag-orange-text' :
                                         'text-tag-amber-text'
                                     }`} />
@@ -352,12 +352,12 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     )}
 
                     {showOriginalTime && (
-                        <span className="text-[9px] text-text-quaternary font-mono mr-0.5 hidden sm:inline-block bg-bg-tertiary px-1 rounded border border-border-primary" title={`Original Request: ${job.originalTimeframe}`}>
+                        <span className="text-[9px] text-text-quaternary font-mono mr-0.5 hidden sm:inline-block bg-bg-tertiary px-1 rounded border border-border-primary leading-none" title={`Original Request: ${job.originalTimeframe}`}>
                             Req:{formattedOriginalTime}
                         </span>
                     )}
 
-                    <span className={`text-[10px] font-bold px-1.5 rounded-full border ${displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'
+                    <span className={`text-[9px] font-bold px-1 rounded-full border leading-none ${displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'
                         }`}>
                         {/* Use full label if it's a specific generated slot (contains hyphen), else short */}
                         {displayTimeLabel.includes('-') && displayTimeLabel.length < 20 ? displayTimeLabel : shortTimeLabel}
@@ -366,12 +366,12 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             </div>
 
             {/* Middle: Tags & Actions Grid */}
-            <div className="px-2 py-0.5 grid grid-cols-1 gap-1">
+            <div className="px-1.5 py-0.5 grid grid-cols-1 gap-0.5">
                 {/* Tags */}
                 {allTags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-0.5">
                         {allTags.map((tag, idx) => (
-                            <span key={`${tag.value}-${idx}`} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${tag.classes}`}>
+                            <span key={`${tag.value}-${idx}`} className={`text-[9px] font-bold px-1 py-0.5 rounded-full border whitespace-nowrap leading-none ${tag.classes}`}>
                                 {tag.value}
                             </span>
                         ))}
@@ -382,14 +382,14 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                 <div className="flex items-center justify-end gap-1">
                     {typeof assignmentScore === 'number' && !isCompact && (
                         <span
-                            className={`mr-auto text-[9px] font-bold px-1.5 py-0.5 rounded border cursor-help flex items-center gap-0.5
+                            className={`mr-auto text-[9px] font-bold px-1 py-0.5 rounded border cursor-help flex items-center gap-0.5 leading-none
                             ${isEliteMatch
                                     ? 'text-tag-amber-text bg-tag-amber-bg border-tag-amber-border shadow-sm ring-1 ring-tag-amber-border/30'
                                     : 'text-text-tertiary bg-bg-tertiary border-border-primary'
                                 }`}
                             title={getScoreTooltip(displayJob)}
                         >
-                            {isEliteMatch && <TrophyIcon className="h-2.5 w-2.5 text-tag-amber-text" />}
+                            {isEliteMatch && <TrophyIcon className="h-2 w-2 text-tag-amber-text" />}
                             {assignmentScore}
                         </span>
                     )}
@@ -402,7 +402,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                                 <ActionBtn
                                     onClick={(e) => { e.stopPropagation(); onPlaceOnMap(job.id); }}
                                     icon={MapPinIcon}
-                                    label="Place on Map"
+                                    label="Map"
                                     title="Click to manually place this job on the map"
                                 />
                             )}
@@ -423,7 +423,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         </>
                     ) : (
                         <div className="w-full flex justify-between items-center">
-                            <span className="text-[9px] text-brand-text-light font-semibold italic">Click card to edit</span>
+                            <span className="text-[9px] text-brand-text-light font-semibold italic leading-none">Click to edit</span>
                             <div className="flex items-center gap-1">
                                 <RoofrLink />
                                 <MapsLink />
@@ -434,8 +434,8 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             </div>
 
             {/* Footer: Address */}
-            <div className="px-2 pb-1 pt-0.5 border-t border-black/5">
-                <p className="text-[10px] text-text-tertiary truncate font-medium leading-tight" title={job.address}>
+            <div className="px-1.5 py-0.5 border-t border-black/5">
+                <p className="text-[9px] text-text-tertiary truncate font-medium leading-none" title={job.address}>
                     {job.address}
                 </p>
             </div>

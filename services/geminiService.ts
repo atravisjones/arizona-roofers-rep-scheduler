@@ -15,7 +15,7 @@ const getStartHour24 = (timeString: string): number | null => {
 
     let [_, hourStr, minuteStr, period] = match;
     let hour = parseInt(hourStr, 10);
-    
+
     period = period?.toLowerCase();
 
     if (period === 'pm' && hour < 12) {
@@ -40,7 +40,7 @@ export const mapTimeframeToSlotId = (timeframe: string): string | null => {
     if (jobStartHour >= 10 && jobStartHour < 13) return 'ts-2'; // 10am - 1pm
     if (jobStartHour >= 13 && jobStartHour < 16) return 'ts-3'; // 1pm - 4pm
     if (jobStartHour >= 16 && jobStartHour < 19) return 'ts-4'; // 4pm - 7pm
-    
+
     return null;
 };
 
@@ -61,20 +61,20 @@ const buildRepNameMatchers = (reps: Rep[]): { rep: Rep; searchTerms: string[] }[
             .replace(/\s+\(.*\)$/, '') // remove anything in parentheses (e.g., "(Sample)")
             .replace(/\s+(phoenix|tucson)$/i, '') // remove region tags
             .trim();
-        
+
         // The primary search term is the cleaned full name.
         // This is the most specific and safest match. It requires at least two names (e.g., "First Last").
         if (cleanedFullName && cleanedFullName.includes(' ')) {
             terms.add(cleanedFullName);
         }
-        
+
         const parts = cleanedFullName.split(' ').filter(p => p.length > 1);
-        
+
         // Add "First Last" as a variation if there's a middle name (more than 2 parts).
         if (parts.length > 2) {
-             terms.add(`${parts[0]} ${parts[parts.length - 1]}`);
+            terms.add(`${parts[0]} ${parts[parts.length - 1]}`);
         }
-        
+
         // Special case for names like "Lee Y" where it's already a distinct format.
         if (/^[a-zA-Z]+\s[a-zA-Z]$/.test(cleanedFullName)) {
             terms.add(cleanedFullName);
@@ -100,78 +100,89 @@ const buildRepNameMatchers = (reps: Rep[]): { rep: Rep; searchTerms: string[] }[
  * @returns An array of objects containing the date string and text for each day.
  */
 export function splitTextByDays(text: string): Array<{ dateString: string; text: string }> {
-  const dateRegex = /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]{3,9})\s+(\d{1,2}),\s+(\d{4})/i;
-  const monthMap: { [key: string]: number } = {
-    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-  };
+    const dateRegex = /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]{3,9})\s+(\d{1,2}),\s+(\d{4})/i;
+    const monthMap: { [key: string]: number } = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
 
-  const lines = text.split('\n');
-  const daysSections: Array<{ dateString: string; text: string }> = [];
-  let currentDayLines: string[] = [];
-  let currentDateString: string | null = null;
+    const lines = text.split('\n');
+    const daysSections: Array<{ dateString: string; text: string }> = [];
+    let currentDayLines: string[] = [];
+    let currentDateString: string | null = null;
 
-  for (const line of lines) {
-    const trimmedLine = line.trim();
+    for (const line of lines) {
+        const trimmedLine = line.trim();
 
-    // Check if this line matches the date pattern
-    const match = trimmedLine.match(dateRegex);
+        // Check if this line matches the date pattern
+        const match = trimmedLine.match(dateRegex);
 
-    // Only treat it as a day header if:
-    // 1. It matches the date pattern
-    // 2. It's a short line (day headers are typically < 6 words)
-    // 3. It doesn't contain " at XX:XX" which indicates a timestamp at the end
-    const isTimestamp = trimmedLine.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmedLine);
-    const isDayHeader = match && trimmedLine.split(' ').length < 6 && !isTimestamp;
+        // Only treat it as a day header if:
+        // 1. It matches the date pattern
+        // 2. It's a short line (day headers are typically < 6 words)
+        // 3. It doesn't contain " at XX:XX" which indicates a timestamp at the end
+        const isTimestamp = trimmedLine.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmedLine);
+        const isDayHeader = match && trimmedLine.split(' ').length < 6 && !isTimestamp;
 
-    if (isDayHeader) {
-      // Found a new date header
-      // Save the previous day's data if it exists
-      if (currentDateString && currentDayLines.length > 0) {
+        if (isDayHeader) {
+            // Found a new date header
+            // Save the previous day's data if it exists
+            if (currentDateString && currentDayLines.length > 0) {
+                daysSections.push({
+                    dateString: currentDateString,
+                    text: currentDayLines.join('\n')
+                });
+            }
+
+            // Start a new day
+            const [, monthName, day, year] = match!;
+            const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
+            const month = monthMap[normalizedMonthKey];
+
+            if (month !== undefined) {
+                const parsedDate = new Date(parseInt(year), month, parseInt(day));
+                const y = parsedDate.getFullYear();
+                const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                const d = String(parsedDate.getDate()).padStart(2, '0');
+                currentDateString = `${y}-${m}-${d}`;
+                currentDayLines = [line]; // Include the date header line
+            }
+        } else if (currentDateString) {
+            // Add line to current day
+            currentDayLines.push(line);
+        }
+    }
+
+    // Don't forget the last day
+    if (currentDateString && currentDayLines.length > 0) {
         daysSections.push({
-          dateString: currentDateString,
-          text: currentDayLines.join('\n')
+            dateString: currentDateString,
+            text: currentDayLines.join('\n')
         });
-      }
-
-      // Start a new day
-      const [, monthName, day, year] = match!;
-      const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
-      const month = monthMap[normalizedMonthKey];
-
-      if (month !== undefined) {
-        const parsedDate = new Date(parseInt(year), month, parseInt(day));
-        const y = parsedDate.getFullYear();
-        const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
-        const d = String(parsedDate.getDate()).padStart(2, '0');
-        currentDateString = `${y}-${m}-${d}`;
-        currentDayLines = [line]; // Include the date header line
-      }
-    } else if (currentDateString) {
-      // Add line to current day
-      currentDayLines.push(line);
     }
-  }
 
-  // Don't forget the last day
-  if (currentDateString && currentDayLines.length > 0) {
-    daysSections.push({
-      dateString: currentDateString,
-      text: currentDayLines.join('\n')
-    });
-  }
-
-  // Deduplicate by date - if multiple sections have the same date, merge their text
-  const uniqueSections = new Map<string, string>();
-  for (const section of daysSections) {
-    if (uniqueSections.has(section.dateString)) {
-      uniqueSections.set(section.dateString, uniqueSections.get(section.dateString) + '\n' + section.text);
-    } else {
-      uniqueSections.set(section.dateString, section.text);
+    // Deduplicate by date - if multiple sections have the same date, merge their text
+    const uniqueSections = new Map<string, string>();
+    for (const section of daysSections) {
+        if (uniqueSections.has(section.dateString)) {
+            uniqueSections.set(section.dateString, uniqueSections.get(section.dateString) + '\n' + section.text);
+        } else {
+            uniqueSections.set(section.dateString, section.text);
+        }
     }
-  }
 
-  return Array.from(uniqueSections.entries()).map(([dateString, text]) => ({ dateString, text }));
+    // Filter out past days - only keep today and future days
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const filteredSections = Array.from(uniqueSections.entries())
+        .map(([dateString, text]) => ({ dateString, text }))
+        .filter(section => {
+            const sectionDate = new Date(section.dateString + 'T00:00:00');
+            return sectionDate >= today;
+        });
+
+    return filteredSections;
 }
 
 /**
@@ -183,220 +194,220 @@ export function splitTextByDays(text: string): Array<{ dateString: string; text:
  * @returns A promise resolving to jobs, a detected date, and any pre-assignments.
  */
 export async function parseJobsFromText(
-  text: string,
-  reps: Rep[]
+    text: string,
+    reps: Rep[]
 ): Promise<ParsedJobsResult & { assignments: { jobId: string, repId: string, slotId: string }[] }> {
-  const jobs: Job[] = [];
-  const assignments: { jobId: string, repId: string, slotId: string }[] = [];
-  const repNameMatchers = buildRepNameMatchers(reps);
-  
-  const lines = text.split('\n');
-  
-  let detectedDate: string | null = null;
-  const dateRegex = /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]{3,9})\s+(\d{1,2}),\s+(\d{4})/i;
-  const monthMap: { [key: string]: number } = {
-    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-  };
+    const jobs: Job[] = [];
+    const assignments: { jobId: string, repId: string, slotId: string }[] = [];
+    const repNameMatchers = buildRepNameMatchers(reps);
 
-  // Search through the first 15 lines (or all lines if fewer) to find the date header
-  // Only accept date headers that appear at the start of a line (not timestamps at the end)
-  for (const line of lines.slice(0, Math.min(15, lines.length))) {
-    const trimmed = line.trim();
-    // Skip lines that have "at XX:XX" which indicates a timestamp, not a date header
-    if (trimmed.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmed)) continue;
+    const lines = text.split('\n');
 
-    const match = trimmed.match(dateRegex);
-    if (match && trimmed.split(' ').length < 6) { // Date headers are typically short
-        const [, monthName, day, year] = match;
-        const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
-        const month = monthMap[normalizedMonthKey];
-        if (month !== undefined) {
-          const parsedDate = new Date(parseInt(year), month, parseInt(day));
-          const y = parsedDate.getFullYear();
-          const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
-          const d = String(parsedDate.getDate()).padStart(2, '0');
-          detectedDate = `${y}-${m}-${d}`;
-          break;
-        }
-    }
-  }
+    let detectedDate: string | null = null;
+    const dateRegex = /(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),\s+([a-z]{3,9})\s+(\d{1,2}),\s+(\d{4})/i;
+    const monthMap: { [key: string]: number } = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
 
-  const timeSlotRegex = /(\d{1,2}(?::\d{2})?(?:am|pm)?\s*-\s*\d{1,2}(?::\d{2})?(?:am|pm)?)/i;
-  let currentTimeframe: string | undefined = undefined;
+    // Search through the first 15 lines (or all lines if fewer) to find the date header
+    // Only accept date headers that appear at the start of a line (not timestamps at the end)
+    for (const line of lines.slice(0, Math.min(15, lines.length))) {
+        const trimmed = line.trim();
+        // Skip lines that have "at XX:XX" which indicates a timestamp, not a date header
+        if (trimmed.includes(' at ') && /\d{1,2}:\d{2}/.test(trimmed)) continue;
 
-  const knownCitiesList = Array.from(ALL_KNOWN_CITIES).sort((a, b) => b.length - a.length);
-
-  for (const line of lines) {
-    let trimmedLine = line.trim();
-    if (!trimmedLine) continue;
-    if (dateRegex.test(trimmedLine) && trimmedLine.split(' ').length < 6) continue;
-
-    // Remove timestamp suffix (multiple formats):
-    // - "- Tuesday, December 9, 2025 at 9:17 AM MST"
-    // - "- Dec 8, 2025 4:12 PM"
-    // - "- Dec 9, 2025"
-    // This prevents the timestamp from being confused with the job date
-    const timestampRegex = /\s*-\s*(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
-    trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
-
-    const timeSlotMatch = trimmedLine.match(timeSlotRegex);
-    if (timeSlotMatch && /\(\d+\)$/.test(trimmedLine)) {
-      currentTimeframe = timeSlotMatch[1];
-      continue;
-    }
-
-    // New, more robust parsing logic: Find rep first, then parse the rest.
-    let assignedRep: Rep | null = null;
-    let lineWithoutRep = trimmedLine;
-    
-    // 1. Find and remove rep name from the entire line for cleaner parsing.
-    for (const matcher of repNameMatchers) {
-        for (const term of matcher.searchTerms) {
-            const escapedTerm = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-            const regex = new RegExp(`\\b${escapedTerm}\\b`, 'i');
-            if (regex.test(lineWithoutRep)) {
-                assignedRep = matcher.rep;
-                // Cleanly remove the rep name and any surrounding separators.
-                lineWithoutRep = lineWithoutRep.replace(regex, '')
-                    .replace(/\s*-\s*-\s*/, ' - ') // handle double hyphens from removal
-                    .replace(/\s*-\s*$/, '') // remove trailing hyphen
-                    .replace(/^\s*-\s*/, '') // remove leading hyphen
-                    .replace(/\s{2,}/g, ' ') // collapse multiple spaces
-                    .trim();
+        const match = trimmed.match(dateRegex);
+        if (match && trimmed.split(' ').length < 6) { // Date headers are typically short
+            const [, monthName, day, year] = match;
+            const normalizedMonthKey = monthName.toLowerCase().substring(0, 3);
+            const month = monthMap[normalizedMonthKey];
+            if (month !== undefined) {
+                const parsedDate = new Date(parseInt(year), month, parseInt(day));
+                const y = parsedDate.getFullYear();
+                const m = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                const d = String(parsedDate.getDate()).padStart(2, '0');
+                detectedDate = `${y}-${m}-${d}`;
                 break;
             }
         }
-        if (assignedRep) break;
     }
 
-    // 2. Now, identify the address from the line *without* the rep's name.
-    let address = '';
-    let nonAddressPart = lineWithoutRep;
-    
-    const addressStartRegex = /\b\d{1,}\s+[A-Z]/g;
-    let lastMatch;
-    let match;
-    while ((match = addressStartRegex.exec(lineWithoutRep)) !== null) {
-        lastMatch = match;
-    }
-    const addressStartIndex = lastMatch ? lastMatch.index : -1;
+    const timeSlotRegex = /(\d{1,2}(?::\d{2})?(?:am|pm)?\s*-\s*\d{1,2}(?::\d{2})?(?:am|pm)?)/i;
+    let currentTimeframe: string | undefined = undefined;
 
-    if (addressStartIndex > -1) {
-      address = lineWithoutRep.substring(addressStartIndex).trim();
-      nonAddressPart = lineWithoutRep.substring(0, addressStartIndex).trim();
-    }
-    
-    let notes = '';
-    let city = '';
-    let zipCode: string | undefined = undefined;
-    
-    // 3. Parse the remaining cityAndNotesPart.
-    let cityAndNotesPart = nonAddressPart.replace(/\s*-\s*$/, '').trim();
+    const knownCitiesList = Array.from(ALL_KNOWN_CITIES).sort((a, b) => b.length - a.length);
 
-    // Try to match the start of the line against known Arizona cities.
-    // This is the most reliable way to separate "City" from "Tags/Zip/Notes"
-    const lowerNonAddress = nonAddressPart.toLowerCase();
-    const matchedCity = knownCitiesList.find(c => lowerNonAddress.startsWith(c));
+    for (const line of lines) {
+        let trimmedLine = line.trim();
+        if (!trimmedLine) continue;
+        if (dateRegex.test(trimmedLine) && trimmedLine.split(' ').length < 6) continue;
 
-    if (matchedCity) {
-        city = matchedCity.toUpperCase(); // Standardize to the known city name
-        // Remove the city and any following separators from the start to get the notes
-        const cityRegex = new RegExp(`^${matchedCity}[,\\.\\s]*`, 'i');
-        notes = nonAddressPart.replace(cityRegex, '').trim();
-        cityAndNotesPart = notes; // Update for zip extraction
-    } else {
-        // Fallback: Try to find a tag to split
-        const tagKeywordsRegex = new RegExp(`\\b(${TAG_KEYWORDS.join('|')}|\\d+\\s*S|\\d+\\s*sq\\.?(?:ft)?|\\d+\\s*yrs)\\b|#`, 'i');
-        const firstTagMatch = cityAndNotesPart.match(tagKeywordsRegex);
-        if (firstTagMatch && firstTagMatch.index !== undefined) {
-            city = cityAndNotesPart.substring(0, firstTagMatch.index).trim();
-            notes = cityAndNotesPart.substring(firstTagMatch.index).trim();
-        } else {
-            city = cityAndNotesPart;
-            notes = '';
-        }
-    }
+        // Remove timestamp suffix (multiple formats):
+        // - "- Tuesday, December 9, 2025 at 9:17 AM MST"
+        // - "- Dec 8, 2025 4:12 PM"
+        // - "- Dec 9, 2025"
+        // This prevents the timestamp from being confused with the job date
+        const timestampRegex = /\s*-\s*(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
+        trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
 
-    // Extract zip code if present in the remaining part (notes) or at the end of city part if fallback used
-    const zipCodeRegex = /\b(\d{5})\b/;
-    const zipMatch = cityAndNotesPart.match(zipCodeRegex);
-    
-    if (zipMatch) {
-        zipCode = zipMatch[1];
-        // Remove zip from city if it leaked in (only happens in fallback path)
-        city = city.replace(zipCode, '').replace(/,$/, '').trim();
-        // Remove zip from notes if present
-        notes = notes.replace(zipCode, '').replace(/,,/g, ',').trim();
-    }
-    
-    // CLEANUP: Aggressively clean the city name of any remaining digits or messy punctuation
-    // This prevents "MESA, 85204" from becoming the city name if the parsing logic above was loose.
-    city = city.replace(/\d+/g, '').replace(/[,:.-]+$/, '').replace(/^[,:.-]+/, '').trim();
-
-    // 4. If we didn't find an address with the regex, use notes as a fallback,
-    // but only if 'notes' itself looks like a plausible address.
-    if (addressStartIndex === -1) {
-        // If 'notes' contains a number and a letter, it might be an address.
-        if (/\d/.test(notes) && /[a-zA-Z]/.test(notes)) {
-            address = notes;
-        } else {
+        const timeSlotMatch = trimmedLine.match(timeSlotRegex);
+        if (timeSlotMatch && /\(\d+\)$/.test(trimmedLine)) {
+            currentTimeframe = timeSlotMatch[1];
             continue;
         }
-    }
 
-    // If city still isn't found, try to parse from the full address string.
-    if (!city && address) {
-        const addressParts = address.split(',');
-        if (addressParts.length > 1) {
-            const potentialCityPart = addressParts.length > 2 ? addressParts[addressParts.length - 2] : addressParts[1];
-            const potentialCity = potentialCityPart.trim();
-            if (potentialCity && !/^[A-Z]{2}(\s\d{5})?$/i.test(potentialCity)) {
-                city = potentialCity;
+        // New, more robust parsing logic: Find rep first, then parse the rest.
+        let assignedRep: Rep | null = null;
+        let lineWithoutRep = trimmedLine;
+
+        // 1. Find and remove rep name from the entire line for cleaner parsing.
+        for (const matcher of repNameMatchers) {
+            for (const term of matcher.searchTerms) {
+                const escapedTerm = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const regex = new RegExp(`\\b${escapedTerm}\\b`, 'i');
+                if (regex.test(lineWithoutRep)) {
+                    assignedRep = matcher.rep;
+                    // Cleanly remove the rep name and any surrounding separators.
+                    lineWithoutRep = lineWithoutRep.replace(regex, '')
+                        .replace(/\s*-\s*-\s*/, ' - ') // handle double hyphens from removal
+                        .replace(/\s*-\s*$/, '') // remove trailing hyphen
+                        .replace(/^\s*-\s*/, '') // remove leading hyphen
+                        .replace(/\s{2,}/g, ' ') // collapse multiple spaces
+                        .trim();
+                    break;
+                }
+            }
+            if (assignedRep) break;
+        }
+
+        // 2. Now, identify the address from the line *without* the rep's name.
+        let address = '';
+        let nonAddressPart = lineWithoutRep;
+
+        const addressStartRegex = /\b\d{1,}\s+[A-Z]/g;
+        let lastMatch;
+        let match;
+        while ((match = addressStartRegex.exec(lineWithoutRep)) !== null) {
+            lastMatch = match;
+        }
+        const addressStartIndex = lastMatch ? lastMatch.index : -1;
+
+        if (addressStartIndex > -1) {
+            address = lineWithoutRep.substring(addressStartIndex).trim();
+            nonAddressPart = lineWithoutRep.substring(0, addressStartIndex).trim();
+        }
+
+        let notes = '';
+        let city = '';
+        let zipCode: string | undefined = undefined;
+
+        // 3. Parse the remaining cityAndNotesPart.
+        let cityAndNotesPart = nonAddressPart.replace(/\s*-\s*$/, '').trim();
+
+        // Try to match the start of the line against known Arizona cities.
+        // This is the most reliable way to separate "City" from "Tags/Zip/Notes"
+        const lowerNonAddress = nonAddressPart.toLowerCase();
+        const matchedCity = knownCitiesList.find(c => lowerNonAddress.startsWith(c));
+
+        if (matchedCity) {
+            city = matchedCity.toUpperCase(); // Standardize to the known city name
+            // Remove the city and any following separators from the start to get the notes
+            const cityRegex = new RegExp(`^${matchedCity}[,\\.\\s]*`, 'i');
+            notes = nonAddressPart.replace(cityRegex, '').trim();
+            cityAndNotesPart = notes; // Update for zip extraction
+        } else {
+            // Fallback: Try to find a tag to split
+            const tagKeywordsRegex = new RegExp(`\\b(${TAG_KEYWORDS.join('|')}|\\d+\\s*S|\\d+\\s*sq\\.?(?:ft)?|\\d+\\s*yrs)\\b|#`, 'i');
+            const firstTagMatch = cityAndNotesPart.match(tagKeywordsRegex);
+            if (firstTagMatch && firstTagMatch.index !== undefined) {
+                city = cityAndNotesPart.substring(0, firstTagMatch.index).trim();
+                notes = cityAndNotesPart.substring(firstTagMatch.index).trim();
+            } else {
+                city = cityAndNotesPart;
+                notes = '';
+            }
+        }
+
+        // Extract zip code if present in the remaining part (notes) or at the end of city part if fallback used
+        const zipCodeRegex = /\b(\d{5})\b/;
+        const zipMatch = cityAndNotesPart.match(zipCodeRegex);
+
+        if (zipMatch) {
+            zipCode = zipMatch[1];
+            // Remove zip from city if it leaked in (only happens in fallback path)
+            city = city.replace(zipCode, '').replace(/,$/, '').trim();
+            // Remove zip from notes if present
+            notes = notes.replace(zipCode, '').replace(/,,/g, ',').trim();
+        }
+
+        // CLEANUP: Aggressively clean the city name of any remaining digits or messy punctuation
+        // This prevents "MESA, 85204" from becoming the city name if the parsing logic above was loose.
+        city = city.replace(/\d+/g, '').replace(/[,:.-]+$/, '').replace(/^[,:.-]+/, '').trim();
+
+        // 4. If we didn't find an address with the regex, use notes as a fallback,
+        // but only if 'notes' itself looks like a plausible address.
+        if (addressStartIndex === -1) {
+            // If 'notes' contains a number and a letter, it might be an address.
+            if (/\d/.test(notes) && /[a-zA-Z]/.test(notes)) {
+                address = notes;
+            } else {
+                continue;
+            }
+        }
+
+        // If city still isn't found, try to parse from the full address string.
+        if (!city && address) {
+            const addressParts = address.split(',');
+            if (addressParts.length > 1) {
+                const potentialCityPart = addressParts.length > 2 ? addressParts[addressParts.length - 2] : addressParts[1];
+                const potentialCity = potentialCityPart.trim();
+                if (potentialCity && !/^[A-Z]{2}(\s\d{5})?$/i.test(potentialCity)) {
+                    city = potentialCity;
+                }
+            }
+        }
+
+        if (!city) {
+            continue;
+        }
+
+        city = city.replace(/[,:.-]\s*$/, '').trim();
+
+        // 5. Final cleanup to remove redundant city name from the start of notes.
+        const cityRegex = new RegExp(`^${city.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}[,:\\s]*`, 'i');
+        notes = notes.replace(cityRegex, '').trim();
+
+        // 6. Add the rep's name to the notes if one was detected.
+        if (assignedRep) {
+            notes = `${notes} (Rep: ${assignedRep.name})`.trim();
+        }
+
+        const hasNumber = /\d/.test(address);
+        const hasStreetName = /\b[a-zA-Z]{3,}\b/.test(address);
+        if (!address || !hasNumber || !hasStreetName) {
+            continue;
+        }
+
+        const newJob = {
+            id: `job-${Date.now()}-${jobs.length}-${Math.random().toString(36).substring(2, 9)}`,
+            customerName: city,
+            address, city, notes,
+            originalTimeframe: currentTimeframe,
+            zipCode,
+        };
+        jobs.push(newJob);
+
+        if (assignedRep && currentTimeframe) {
+            const slotId = mapTimeframeToSlotId(currentTimeframe);
+            if (slotId) {
+                assignments.push({ jobId: newJob.id, repId: assignedRep.id, slotId });
             }
         }
     }
 
-    if (!city) {
-      continue;
-    }
-    
-    city = city.replace(/[,:.-]\s*$/, '').trim();
-
-    // 5. Final cleanup to remove redundant city name from the start of notes.
-    const cityRegex = new RegExp(`^${city.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}[,:\\s]*`, 'i');
-    notes = notes.replace(cityRegex, '').trim();
-
-    // 6. Add the rep's name to the notes if one was detected.
-    if (assignedRep) {
-        notes = `${notes} (Rep: ${assignedRep.name})`.trim();
-    }
-
-    const hasNumber = /\d/.test(address);
-    const hasStreetName = /\b[a-zA-Z]{3,}\b/.test(address);
-    if (!address || !hasNumber || !hasStreetName) {
-        continue;
-    }
-
-    const newJob = {
-      id: `job-${Date.now()}-${jobs.length}-${Math.random().toString(36).substring(2, 9)}`,
-      customerName: city,
-      address, city, notes,
-      originalTimeframe: currentTimeframe,
-      zipCode,
-    };
-    jobs.push(newJob);
-
-    if (assignedRep && currentTimeframe) {
-        const slotId = mapTimeframeToSlotId(currentTimeframe);
-        if (slotId) {
-            assignments.push({ jobId: newJob.id, repId: assignedRep.id, slotId });
-        }
-    }
-  }
-
-  const result = { date: detectedDate, jobs, assignments };
-  return Promise.resolve(result);
+    const result = { date: detectedDate, jobs, assignments };
+    return Promise.resolve(result);
 }
 
 export async function assignJobsWithAi(
@@ -413,7 +424,7 @@ export async function assignJobsWithAi(
 
     onThought("Initializing AI assignment process...");
     onThought(`Analyzing ${reps.length} reps and ${unassignedJobs.length} unassigned jobs for ${selectedDay}.`);
-    
+
     const simplifiedReps = reps.map(rep => {
         const currentJobs = rep.schedule.flatMap(s => s.jobs);
         return {
@@ -440,11 +451,11 @@ export async function assignJobsWithAi(
         zipCode: job.zipCode,
         originalTimeframe: job.originalTimeframe,
     }));
-    
+
     onThought("Building a detailed prompt for the AI based on current settings...");
 
     const maxJobsInSlot = settings.allowDoubleBooking ? settings.maxJobsPerSlot : 1;
-    const slotCapacityDescription = settings.allowDoubleBooking 
+    const slotCapacityDescription = settings.allowDoubleBooking
         ? `Double booking is ALLOWED. A single time slot cannot have more than ${maxJobsInSlot} jobs.`
         : `Double booking is NOT ALLOWED. A single time slot can only have one job.`;
 
@@ -537,14 +548,14 @@ Return a JSON object with the following structure:
         });
 
         onThought("Received response from AI. Parsing assignments...");
-        
+
         const responseText = response.text;
         if (!responseText) {
             throw new Error("Empty response from AI");
         }
 
         const result = JSON.parse(responseText);
-        
+
         if (result.thoughts) {
             onThought(`AI Strategy: ${result.thoughts}`);
         }
@@ -562,7 +573,7 @@ export async function fixAddressesWithAi(jobs: DisplayJob[]): Promise<{ jobId: s
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const jobList = jobs.map(j => ({ id: j.id, address: j.address, city: j.city, zip: j.zipCode, notes: j.notes }));
-    
+
     const prompt = `
     You are a geo-location expert for Arizona.
     I have a list of addresses that failed to geocode. Please try to fix typos, format them correctly, or extract the street address from notes if present.
@@ -592,7 +603,7 @@ export async function fixAddressesWithAi(jobs: DisplayJob[]): Promise<{ jobId: s
                 }
             }
         });
-        
+
         return JSON.parse(response.text || '[]');
     } catch (error) {
         console.error("Gemini Address Fix Error:", error);

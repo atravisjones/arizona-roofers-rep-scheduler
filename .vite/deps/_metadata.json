@@ -1,8 +1,40 @@
 {
-  "hash": "07e92574",
+  "hash": "fb94f4e6",
   "configHash": "8f5d5171",
-  "lockfileHash": "e3b0c442",
-  "browserHash": "984c14da",
-  "optimized": {},
-  "chunks": {}
+  "lockfileHash": "c287f0dc",
+  "browserHash": "1b4c898a",
+  "optimized": {
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "22d3165e",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "377e9d0c",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "983985d8",
+      "needsInterop": true
+    },
+    "@google/genai": {
+      "src": "../../node_modules/@google/genai/dist/web/index.mjs",
+      "file": "@google_genai.js",
+      "fileHash": "cb9e605f",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-VVCL6MVM": {
+      "file": "chunk-VVCL6MVM.js"
+    },
+    "chunk-BUSYA2B4": {
+      "file": "chunk-BUSYA2B4.js"
+    }
+  }
 }
