@@ -192,6 +192,7 @@ export interface AppContextType {
   isTryingVariations: boolean;
   parsingError: string | null;
   selectedRepId: string | null;
+  setSelectedRepId: (id: string | null) => void;
   swapSourceRepId: string | null; // ID of the rep selected for swapping schedule (source)
   setSwapSourceRepId: (id: string | null) => void;
   usingMockData: boolean;
@@ -291,8 +292,25 @@ export interface AppContextType {
   setFilteredAssignedJobs: (jobs: DisplayJob[]) => void;
   setFilteredUnassignedJobs: (jobs: Job[]) => void;
 
-  // Manual Job Placement
   placementJobId: string | null;
   setPlacementJobId: (id: string | null) => void;
   handlePlaceJobOnMap: (jobId: string, lat: number, lon: number) => void;
+
+  // Auto-save state
+  isAutoSaving: boolean;
+  lastAutoSaveTime: Date | null;
+  markActivity: () => void;
+
+  // Confirmation Modal State
+  confirmationState: {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDangerous?: boolean;
+  };
+  requestConfirmation: (options: { title: string, message: string, onConfirm: () => void, confirmLabel?: string, cancelLabel?: string, isDangerous?: boolean }) => void;
+  closeConfirmation: () => void;
 }

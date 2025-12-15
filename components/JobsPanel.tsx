@@ -73,7 +73,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
 
     return (
         <>
-            <div className="flex justify-between items-center mb-3 border-b border-border-primary pb-2">
+            <div className="flex justify-between items-center mb-1 border-b border-border-primary pb-1">
                 <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
                     2. Unassigned Jobs
                     <span className="px-2 py-0.5 bg-tertiary text-secondary rounded-full text-xs font-medium">
@@ -86,7 +86,7 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                         <input
                             type="text"
                             className={`
-                                pl-8 pr-7 py-1.5 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary 
+                                pl-8 pr-7 py-1 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary 
                                 rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary 
                                 transition-all w-28 focus:w-48
                                 ${jobSearchTerm ? 'w-48' : ''}
@@ -132,9 +132,9 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 onFilterChange={setJobsFilteredByTabs}
             />
 
-            {parsingError && <p className="text-tag-red-text text-xs my-2 text-center bg-tag-red-bg p-2 rounded-md border border-tag-red-border">{parsingError}</p>}
+            {parsingError && <p className="text-tag-red-text text-xs my-1 text-center bg-tag-red-bg p-1.5 rounded-md border border-tag-red-border">{parsingError}</p>}
 
-            <div className="flex-grow overflow-y-auto min-h-0 pt-2 custom-scrollbar">
+            <div className="flex-grow overflow-y-auto min-h-0 pt-1 custom-scrollbar">
                 <UnassignedJobs
                     jobs={filteredUnassignedJobs}
                     onJobDrop={handleJobDrop}

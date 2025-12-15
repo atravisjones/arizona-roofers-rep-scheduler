@@ -87,7 +87,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         const roofTags = TAG_KEYWORDS.filter(keyword => new RegExp(`\\b${keyword.toLowerCase()}\\b`).test(notesLower))
             .map(tag => ({ type: 'roof', value: tag, classes: TAG_CLASSES[tag] }));
 
-        const sqftMatch = job.notes.match(/\b(\d+)\s*sq\.?\b/i);
+        const sqftMatch = job.notes.match(/\b([\d,]+)\s*sq\.?\b/i);
         const sqftTag = sqftMatch ? [{ type: 'sqft', value: `${sqftMatch[1]} sqft`, classes: TAG_CLASSES['sqft'] }] : [];
 
         const storiesMatch = job.notes.match(/\b(\d)S\b/i);

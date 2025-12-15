@@ -147,6 +147,16 @@ export const useAppLogic = () => {
     // Ref to ensure cloud load only happens once on initial mount
     const hasAutoLoadedRef = useRef(false);
 
+    // Auto-save configuration (2 minutes = 120000ms)
+    const AUTO_SAVE_INTERVAL_MS = 2 * 60 * 1000;
+    // Track last activity time and auto-save state
+    const lastActivityRef = useRef<number>(Date.now());
+    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const [isAutoSaving, setIsAutoSaving] = useState(false);
+    const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+    // Track if there are unsaved changes since last save
+    const hasUnsavedChangesRef = useRef(false);
+
     const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
         try {
             const stored = localStorage.getItem('ui-settings');
@@ -1057,15 +1067,14 @@ export const useAppLogic = () => {
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            if (activeRoute?.repName === 'Job Map') {
-                const combined = [...filteredAssignedJobs, ...filteredUnassignedJobs];
-                handleShowFilteredJobsOnMap(combined, 'Job Map');
-            } else if (activeRoute?.repName === 'Unassigned Jobs') {
+            // Note: "Job Map" now always shows ALL jobs - dimming is handled in RoutePanel based on selectedRepId
+            // We no longer filter the map content based on filteredAssignedJobs for "Job Map" view
+            if (activeRoute?.repName === 'Unassigned Jobs') {
                 handleShowFilteredJobsOnMap(filteredUnassignedJobs, 'Unassigned Jobs');
             }
         }, 300);
         return () => clearTimeout(timer);
-    }, [filteredAssignedJobs, filteredUnassignedJobs, activeRoute?.repName, handleShowFilteredJobsOnMap]);
+    }, [filteredUnassignedJobs, activeRoute?.repName, handleShowFilteredJobsOnMap]);
 
 
     const handleShowRoute = useCallback(async (repId: string, optimize: boolean) => {
@@ -1076,15 +1085,13 @@ export const useAppLogic = () => {
         log(`ACTION: ${optimize ? 'Optimize & Show' : 'Show'} Route for ${rep.name}`);
         setIsRouting(true);
 
+        // 1. Prepare Rep's Jobs (The "Route")
         let jobsForRoute: DisplayJob[] = rep.schedule.flatMap(slot => slot.jobs.map(job => ({ ...job, timeSlotLabel: slot.label, assignedRepName: rep.name })));
 
-        // CRITICAL FIX: If optimized, keep order from schedule. Do NOT re-sort by time string.
         if (!rep.isOptimized) {
             jobsForRoute.sort((a, b) => getSortableHour(a.originalTimeframe) - getSortableHour(b.originalTimeframe));
         }
 
-        // Assign explicit marker labels (1, 2, 3...) based on sorted order BEFORE adding Home Base
-        // This ensures map pins are numbered correctly corresponding to the list
         jobsForRoute.forEach((job, idx) => {
             job.markerLabel = String(idx + 1);
         });
@@ -1107,7 +1114,30 @@ export const useAppLogic = () => {
             jobsForRoute = [homeJob, ...jobsForRoute];
         }
 
-        if (jobsForRoute.length === 0) {
+        // 2. Prepare ALL OTHER Jobs (Context)
+        // We want to show these on the map but NOT include them in the route line
+        const otherJobs: DisplayJob[] = [];
+
+        // Add jobs from other reps
+        appState.reps.forEach(r => {
+            if (r.id !== repId) {
+                r.schedule.forEach(slot => {
+                    slot.jobs.forEach(job => {
+                        otherJobs.push({ ...job, timeSlotLabel: slot.label, assignedRepName: r.name });
+                    });
+                });
+            }
+        });
+
+        // Add unassigned jobs
+        appState.unassignedJobs.forEach(job => {
+            otherJobs.push({ ...job, assignedRepName: undefined, timeSlotLabel: job.originalTimeframe || 'Uncategorized' });
+        });
+
+        // Combine for geocoding: Rep's jobs FIRST, then others
+        const allJobsToMap = [...jobsForRoute, ...otherJobs];
+
+        if (allJobsToMap.length === 0) {
             if (mapRequestRef.current === requestId) {
                 setActiveRoute({ repName: rep.name, mappableJobs: [], unmappableJobs: [], routeInfo: null });
                 setIsRouting(false);
@@ -1115,64 +1145,49 @@ export const useAppLogic = () => {
             return;
         }
 
-        const addresses = jobsForRoute.map(j => j.address);
+        // 3. Geocode Everything
+        const addresses = allJobsToMap.map(j => j.address);
         const coordsResults = await geocodeAddresses(addresses);
         if (mapRequestRef.current !== requestId) return;
 
         const mappableJobs: DisplayJob[] = [];
         const unmappableJobs: DisplayJob[] = [];
+        const allCoords: Coordinates[] = [];
+
+        // Track coordinates specifically for the route calculation
         const routeCoords: Coordinates[] = [];
-        jobsForRoute.forEach((job, index) => {
+
+        allJobsToMap.forEach((job, index) => {
             const result = coordsResults[index];
             if (result.coordinates) {
                 mappableJobs.push(job);
-                routeCoords.push(result.coordinates);
+                allCoords.push(result.coordinates);
+
+                // If this job is part of the rep's route (it was in the first N items), add to routeCoords
+                if (index < jobsForRoute.length) {
+                    routeCoords.push(result.coordinates);
+                }
             } else {
                 unmappableJobs.push({ ...job, geocodeError: result.error || 'Unknown geocoding error' });
             }
         });
 
+        // 4. Calculate Route (ONLY for Rep's jobs)
+        // We only pass the coordinates belonging to the rep's schedule
         const route = await fetchRoute(routeCoords);
         if (mapRequestRef.current !== requestId) return;
 
         const finalMappableJobs = [...mappableJobs];
-        let finalUnmappableJobs = [...unmappableJobs];
-        const allCoordsForMap = [...(route?.coordinates || routeCoords)];
+        const finalUnmappableJobs = [...unmappableJobs];
 
-        if (unmappableJobs.length > 0) {
-            const fallbackQueries = unmappableJobs.map(job => {
-                if (job.zipCode) return `${job.zipCode}, AZ`;
-                if (job.city) return `${job.city}, AZ`;
-                return null;
-            });
-
-            const jobsToTry = unmappableJobs.filter((_, i) => fallbackQueries[i] !== null);
-            const queriesToRun = fallbackQueries.filter((q): q is string => q !== null);
-
-            if (queriesToRun.length > 0) {
-                const fallbackResults = await geocodeAddresses(queriesToRun);
-                if (mapRequestRef.current !== requestId) return;
-
-                const stillFailingJobs: DisplayJob[] = [];
-                jobsToTry.forEach((job, i) => {
-                    const result = fallbackResults[i];
-                    if (result.coordinates) {
-                        const estimatedJob = { ...job, isEstimatedLocation: true, geocodeError: `Estimated location for ${queriesToRun[i]}` };
-                        finalMappableJobs.push(estimatedJob);
-                        allCoordsForMap.push(result.coordinates);
-                    } else {
-                        stillFailingJobs.push(job);
-                    }
-                });
-                const jobsWithoutQuery = unmappableJobs.filter((_, i) => fallbackQueries[i] === null);
-                finalUnmappableJobs = [...stillFailingJobs, ...jobsWithoutQuery];
-            }
-        }
+        // We want markers for ALL mappable jobs
+        // Use allCoords for the coordinates property so markers are generated for everything
+        const allCoordsForMap = [...allCoords];
 
         const finalRouteInfo: RouteInfo | null = route ? {
             ...route,
-            coordinates: allCoordsForMap
-        } : allCoordsForMap.length > 0 ? {
+            coordinates: allCoordsForMap // Pass ALL coordinates so markers appear
+        } : routeCoords.length > 0 ? {
             distance: 0,
             duration: 0,
             geometry: null,
@@ -1181,7 +1196,7 @@ export const useAppLogic = () => {
 
         setActiveRoute({ repName: rep.name, mappableJobs: finalMappableJobs, unmappableJobs: finalUnmappableJobs, routeInfo: finalRouteInfo });
         setIsRouting(false);
-    }, [appState.reps, log]);
+    }, [appState.reps, log, allJobs]);
 
     const handleShowUnassignedJobsOnMap = useCallback(async (jobs?: Job[]) => {
         const requestId = ++mapRequestRef.current;
@@ -2346,6 +2361,15 @@ export const useAppLogic = () => {
                     // Start with a copy of existing state
                     const mergedState = JSON.parse(JSON.stringify(existingState)) as AppState;
 
+                    // Update rep properties (locked, optimized) from loaded state
+                    for (const loadedRep of loadedDayState.reps) {
+                        const mergedRep = mergedState.reps.find(r => r.id === loadedRep.id);
+                        if (mergedRep) {
+                            if (loadedRep.isLocked !== undefined) mergedRep.isLocked = loadedRep.isLocked;
+                            if (loadedRep.isOptimized !== undefined) mergedRep.isOptimized = loadedRep.isOptimized;
+                        }
+                    }
+
                     // Process each job from loaded state
                     const loadedJobs: Job[] = [
                         ...loadedDayState.unassignedJobs,
@@ -2505,6 +2529,8 @@ export const useAppLogic = () => {
                 const result = await saveStateToCloud(dateKey, state);
                 if (result.success) {
                     log(`- SUCCESS: Saved ${dateKey} to cloud at ${result.timestamp}`);
+                    hasUnsavedChangesRef.current = false;
+                    setLastAutoSaveTime(new Date());
                     alert(`Saved ${dateKey} to cloud successfully!`);
                 } else {
                     log(`- ERROR: ${result.error}`);
@@ -2535,6 +2561,9 @@ export const useAppLogic = () => {
                     });
 
                     log(`- SUCCESS: Saved ${successCount}/${states.length} days to cloud`);
+                    // Reset unsaved changes flag after manual save
+                    hasUnsavedChangesRef.current = false;
+                    setLastAutoSaveTime(new Date());
                     if (failedCount > 0) {
                         alert(`Saved ${successCount} day(s) to cloud. ${failedCount} failed - check console for details.`);
                     } else {
@@ -2559,20 +2588,21 @@ export const useAppLogic = () => {
         setIsCloudLoading(true);
 
         try {
-            // Generate next 7 days starting from today
+            // Generate rolling 7-day window: yesterday through 5 days from now
+            // This matches the ROLLING_DAYS_CONFIG in cloudStorageServiceSheets.ts
             const today = new Date();
-            const next7Days: string[] = [];
-            for (let i = 0; i < 7; i++) {
+            const rollingDays: string[] = [];
+            for (let i = -1; i <= 5; i++) {  // -1 = yesterday, 0 = today, 1-5 = next 5 days
                 const date = new Date(today);
                 date.setDate(today.getDate() + i);
                 const dateKey = date.toISOString().split('T')[0];
-                next7Days.push(dateKey);
+                rollingDays.push(dateKey);
             }
 
-            log(`Loading next 7 days: ${next7Days.join(', ')}`);
+            log(`Loading rolling 7-day window: ${rollingDays.join(', ')}`);
 
             // Load all 7 days
-            const result = await loadAllStatesFromCloud(next7Days);
+            const result = await loadAllStatesFromCloud(rollingDays);
             if (result.success && result.results) {
                 // Start fresh - don't merge with existing state, replace it entirely
                 // This ensures cloud data takes precedence over any locally initialized data
@@ -2589,8 +2619,8 @@ export const useAppLogic = () => {
                 }
 
                 if (loadedCount === 0) {
-                    log('- No data found in cloud for any of the 7 days');
-                    alert('No saved data found in cloud for the next 7 days.');
+                    log('- No data found in cloud for the rolling 7-day window (this is normal for first use)');
+                    alert('No saved data found in cloud. This is normal if you haven\'t saved yet - data will auto-save after 2 minutes of use.');
                     return;
                 }
 
@@ -2633,6 +2663,95 @@ export const useAppLogic = () => {
             handleLoadStateFromCloud();
         }
     }, [handleLoadStateFromCloud]);
+
+    // Function to mark activity (call this when user interacts)
+    const markActivity = useCallback(() => {
+        lastActivityRef.current = Date.now();
+        hasUnsavedChangesRef.current = true;
+    }, []);
+
+    // Auto-save function (silent, no alerts)
+    const performAutoSave = useCallback(async () => {
+        // Don't auto-save if:
+        // 1. No unsaved changes
+        // 2. Currently loading from cloud
+        // 3. No active days to save
+        if (!hasUnsavedChangesRef.current || isCloudLoading || activeDayKeys.length === 0) {
+            return;
+        }
+
+        const now = Date.now();
+        const timeSinceActivity = now - lastActivityRef.current;
+
+        // Only save if there was activity within the last 5 minutes (user is actively using)
+        // This prevents saving when user left the tab open but isn't using it
+        const ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
+        if (timeSinceActivity > ACTIVITY_THRESHOLD_MS) {
+            log('[AutoSave] Skipped - no recent activity');
+            return;
+        }
+
+        setIsAutoSaving(true);
+        log('[AutoSave] Starting auto-save...');
+
+        try {
+            const states = activeDayKeys.map(key => ({
+                dateKey: key,
+                data: dailyStates.get(key)!
+            })).filter(s => s.data);
+
+            if (states.length === 0) {
+                log('[AutoSave] No data to save');
+                return;
+            }
+
+            const result = await saveAllStatesToCloud(states);
+            if (result.success) {
+                const successCount = result.results?.filter(r => r.success).length || 0;
+                log(`[AutoSave] Saved ${successCount}/${states.length} days`);
+                hasUnsavedChangesRef.current = false;
+                setLastAutoSaveTime(new Date());
+            } else {
+                log(`[AutoSave] Error: ${result.error}`);
+            }
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            log(`[AutoSave] Error: ${msg}`);
+        } finally {
+            setIsAutoSaving(false);
+        }
+    }, [dailyStates, activeDayKeys, isCloudLoading, log]);
+
+    // Set up auto-save interval (every 2 minutes)
+    useEffect(() => {
+        // Clear any existing timer
+        if (autoSaveTimerRef.current) {
+            clearInterval(autoSaveTimerRef.current);
+        }
+
+        // Start new timer
+        autoSaveTimerRef.current = setInterval(() => {
+            performAutoSave();
+        }, AUTO_SAVE_INTERVAL_MS);
+
+        log(`[AutoSave] Timer started (every ${AUTO_SAVE_INTERVAL_MS / 1000}s)`);
+
+        // Cleanup on unmount
+        return () => {
+            if (autoSaveTimerRef.current) {
+                clearInterval(autoSaveTimerRef.current);
+                log('[AutoSave] Timer cleared');
+            }
+        };
+    }, [performAutoSave, AUTO_SAVE_INTERVAL_MS, log]);
+
+    // Mark activity on various state changes
+    useEffect(() => {
+        // When dailyStates changes (jobs assigned, moved, etc.), mark as activity
+        if (historyIndex > 0 || history.length > 1) {
+            markActivity();
+        }
+    }, [dailyStates, markActivity, historyIndex, history.length]);
 
     const handleSync = useCallback(async () => {
         log('ACTION: Sync started.');
@@ -2715,6 +2834,107 @@ export const useAppLogic = () => {
         log('Change log cleared');
     }, [log]);
 
+
+    // --- Confirmation Modal Logic ---
+    const [confirmationState, setConfirmationState] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        onConfirm: () => void;
+        confirmLabel?: string;
+        cancelLabel?: string;
+        isDangerous?: boolean;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: () => { },
+    });
+
+    const requestConfirmation = useCallback((options: { title: string, message: string, onConfirm: () => void, confirmLabel?: string, cancelLabel?: string, isDangerous?: boolean }) => {
+        setConfirmationState({
+            isOpen: true,
+            ...options
+        });
+    }, []);
+
+    const closeConfirmation = useCallback(() => {
+        setConfirmationState(prev => ({ ...prev, isOpen: false }));
+    }, []);
+
+    // Wrapped Handlers
+    const _handleSaveStateToFile = handleSaveStateToFile;
+    const confirmSaveStateToFile = useCallback(() => {
+        requestConfirmation({
+            title: "Save to Desktop",
+            message: "Are you sure you want to save the current schedule to your desktop?",
+            confirmLabel: "Yes, Save",
+            cancelLabel: "No",
+            onConfirm: () => {
+                _handleSaveStateToFile();
+                closeConfirmation();
+            }
+        });
+    }, [_handleSaveStateToFile, requestConfirmation, closeConfirmation]);
+
+    const _handleLoadStateFromFile = handleLoadStateFromFile;
+    const confirmLoadStateFromFile = useCallback((loadedState: any) => {
+        requestConfirmation({
+            title: "Load from Desktop",
+            message: "Are you sure you want to load this file? It will be merged with your current schedule.",
+            confirmLabel: "Yes, Load",
+            cancelLabel: "No",
+            onConfirm: () => {
+                _handleLoadStateFromFile(loadedState);
+                closeConfirmation();
+            }
+        });
+    }, [_handleLoadStateFromFile, requestConfirmation, closeConfirmation]);
+
+    const _handleSaveStateToCloud = handleSaveStateToCloud;
+    const confirmSaveStateToCloud = useCallback(() => {
+        requestConfirmation({
+            title: "Upload to Cloud",
+            message: "Are you sure you want to upload the current schedule to the cloud? This will overwrite the date on the server.",
+            confirmLabel: "Yes, Upload",
+            cancelLabel: "No",
+            isDangerous: true,
+            onConfirm: () => {
+                _handleSaveStateToCloud();
+                closeConfirmation();
+            }
+        });
+    }, [_handleSaveStateToCloud, requestConfirmation, closeConfirmation]);
+
+    const _handleLoadStateFromCloud = handleLoadStateFromCloud;
+    const confirmLoadStateFromCloud = useCallback(() => {
+        requestConfirmation({
+            title: "Load from Cloud",
+            message: "Are you sure you want to load the schedule from the cloud? This will merge with your local data.",
+            confirmLabel: "Yes, Load",
+            cancelLabel: "No",
+            onConfirm: () => {
+                _handleLoadStateFromCloud();
+                closeConfirmation();
+            }
+        });
+    }, [_handleLoadStateFromCloud, requestConfirmation, closeConfirmation]);
+
+    const _handleSync = handleSync;
+    const confirmSync = useCallback(() => {
+        requestConfirmation({
+            title: "Sync with Cloud",
+            message: "Are you sure you want to sync? This will merge local changes with the cloud.",
+            confirmLabel: "Yes, Sync",
+            cancelLabel: "No",
+            onConfirm: () => {
+                _handleSync();
+                closeConfirmation();
+            }
+        });
+    }, [_handleSync, requestConfirmation, closeConfirmation]);
+
+
     return {
         appState, setAppState, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
         selectedRepId, usingMockData, activeSheetName, selectedDate, activeDayKeys, addActiveDay, removeActiveDay, setSelectedDate, expandedRepIds, getJobCountsForDay,
@@ -2728,8 +2948,10 @@ export const useAppLogic = () => {
         assignedCities, assignedRepNames, filteredReps, handleShowUnassignedJobsOnMap, handleShowAllJobsOnMap, handleShowZipOnMap, handleShowAllRepLocations, handleShowFilteredJobsOnMap,
         isJobValidForRepRegion, checkCityRuleViolation,
         handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules,
-        handleSaveStateToFile, handleLoadStateFromFile,
-        handleSaveStateToCloud, handleLoadStateFromCloud,
+        handleSaveStateToFile: confirmSaveStateToFile,
+        handleLoadStateFromFile: confirmLoadStateFromFile,
+        handleSaveStateToCloud: confirmSaveStateToCloud,
+        handleLoadStateFromCloud: confirmLoadStateFromCloud,
         handleUndo, handleRedo, canUndo, canRedo,
         hoveredJobId, setHoveredJobId,
         repSettingsModalRepId, setRepSettingsModalRepId,
@@ -2743,9 +2965,18 @@ export const useAppLogic = () => {
         setSwapSourceRepId,
         changeLog,
         clearChangeLog,
-        handleSync,
+        handleSync: confirmSync,
         placementJobId,
         setPlacementJobId,
-        handlePlaceJobOnMap
+        handlePlaceJobOnMap,
+        setSelectedRepId,
+        // Auto-save state
+        isAutoSaving,
+        lastAutoSaveTime,
+        markActivity,
+
+        confirmationState,
+        requestConfirmation,
+        closeConfirmation
     };
 };

@@ -43,7 +43,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
         handleToggleRepExpansion, handleToggleAllReps, handleShowRoute,
         setDraggedOverRepId, handleJobDragEnd, setDraggedJob,
         sortConfig, setSortConfig, handleClearAllSchedules, assignedJobsCount, isOverrideActive,
-        setFilteredAssignedJobs, selectedRepId, selectedDate, checkCityRuleViolation,
+        setFilteredAssignedJobs, selectedRepId, setSelectedRepId, selectedDate, checkCityRuleViolation,
         swapSourceRepId, setSwapSourceRepId, handleSwapSchedules
     } = useAppContext();
 
@@ -185,7 +185,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                     </span>
                     {(selectedRepFilter || repSearchTerm) && (
                         <button
-                            onClick={() => { setSelectedRepFilter(null); setRepSearchTerm(''); }}
+                            onClick={() => { setSelectedRepFilter(null); setRepSearchTerm(''); setSelectedRepId(null); }}
                             className="text-[10px] font-bold text-tag-red-text hover:text-tag-red-text/80 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-tag-red-bg"
                         >
                             <XIcon className="h-3 w-3" /> Clear Filters
@@ -245,7 +245,10 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                                 }
                                             } else {
                                                 // Toggle selection: if this rep is already selected, deselect it
-                                                setSelectedRepFilter(prev => prev === rep.id ? null : rep.id);
+                                                const newSelection = selectedRepFilter === rep.id ? null : rep.id;
+                                                setSelectedRepFilter(newSelection);
+                                                // Also set selectedRepId to highlight this rep's jobs on the map
+                                                setSelectedRepId(newSelection);
                                             }
                                         }}
                                         disabled={!!isSwapDisabled}
@@ -360,7 +363,10 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                 onUpdateJob={handleUpdateJob}
                                 onRemoveJob={handleRemoveJob}
                                 isSelected={rep.id === selectedRepId}
-                                onSelectRep={(e) => { handleShowRoute(rep.id, false); }}
+                                onSelectRep={(e) => {
+                                    // Toggle rep selection - clicking again deselects
+                                    setSelectedRepId(selectedRepId === rep.id ? null : rep.id);
+                                }}
                                 isExpanded={expandedRepIds.has(rep.id)}
                                 onToggleExpansion={() => handleToggleRepExpansion(rep.id)}
                                 draggedOverRepId={draggedOverRepId}

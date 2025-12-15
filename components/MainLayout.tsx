@@ -21,6 +21,7 @@ import { TAG_KEYWORDS } from '../constants';
 import { Job } from '../types';
 import SettingsPanel from './SettingsPanel';
 import ThemeEditorModal from './ThemeEditorModal';
+import ConfirmationModal from './ConfirmationModal';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 
 const MIN_COLUMN_PERCENTAGE = 10;
@@ -407,6 +408,14 @@ const MainLayout: React.FC = () => {
             <button onClick={() => context.handleLoadStateFromCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
               <CloudDownloadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
+            {/* Auto-save indicator */}
+            {context.isAutoSaving ? (
+              <span className="text-xs text-yellow-500 ml-1 animate-pulse" title="Auto-saving...">saving...</span>
+            ) : context.lastAutoSaveTime ? (
+              <span className="text-xs text-text-quaternary ml-1" title={`Last auto-save: ${context.lastAutoSaveTime.toLocaleTimeString()}`}>
+                auto-saved
+              </span>
+            ) : null}
             <div className="w-px h-4 bg-border-secondary mx-1"></div>
             <div ref={settingsRef} className="relative">
               <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
@@ -522,6 +531,17 @@ const MainLayout: React.FC = () => {
       <ThemeEditorModal
         isOpen={isThemeEditorOpen}
         onClose={() => setIsThemeEditorOpen(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={context.confirmationState.isOpen}
+        title={context.confirmationState.title}
+        message={context.confirmationState.message}
+        onConfirm={context.confirmationState.onConfirm}
+        onCancel={context.closeConfirmation}
+        confirmLabel={context.confirmationState.confirmLabel}
+        cancelLabel={context.confirmationState.cancelLabel}
+        isDangerous={context.confirmationState.isDangerous}
       />
 
     </div>

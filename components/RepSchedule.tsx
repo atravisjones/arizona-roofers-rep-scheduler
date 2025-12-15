@@ -101,14 +101,14 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`mt-1 flex flex-col px-2 py-1 rounded-lg bg-bg-tertiary border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-tag-red-border bg-tag-red-bg' : hasJobs ? 'border-tag-red-border bg-tag-red-bg/50' : 'border-border-secondary'}`}>
+                className={`mt-0.5 flex flex-col px-1.5 py-0.5 rounded-lg bg-bg-tertiary border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-tag-red-border bg-tag-red-bg' : hasJobs ? 'border-tag-red-border bg-tag-red-bg/50' : 'border-border-secondary'}`}>
                 <div className="mb-0.5">
                     <h4 className={`font-bold text-[11px] uppercase ${isDoubleBooked ? 'text-tag-red-text' : hasJobs ? 'text-tag-red-text' : 'text-text-quaternary'}`}>
                         {displayLabel} <span className="font-normal text-text-quaternary ml-1">(Unavailable)</span>
                         {hasJobs && <span className="ml-1 font-bold text-tag-red-text text-[10px]">! Mismatch</span>}
                     </h4>
                 </div>
-                <div className={`flex-1 min-w-0 min-h-[24px] ${isDoubleBooked ? 'grid grid-cols-2 gap-2' : 'space-y-1'}`}>
+                <div className={`flex-1 min-w-0 min-h-[20px] ${isDoubleBooked ? 'grid grid-cols-2 gap-1' : 'space-y-0.5'}`}>
                     {jobs.map(job => {
                         const isTimeMismatch = checkTimeMismatch(job.originalTimeframe, label);
                         return <JobCard
@@ -134,14 +134,14 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`mt-1 flex flex-col px-2 py-1 rounded-lg border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-brand-primary bg-brand-bg-light' : 'border-border-secondary'}`}
+            className={`mt-0.5 flex flex-col px-1.5 py-0.5 rounded-lg border-2 border-dashed transition-colors min-w-0 ${isOver ? 'border-brand-primary bg-brand-bg-light' : 'border-border-secondary'}`}
         >
             <div className="mb-0.5 flex justify-between items-center">
                 <h4 className={`font-bold text-[11px] uppercase tracking-wide ${isDoubleBooked ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{displayLabel}</h4>
                 {hasJobs && isDoubleBooked && <span className="text-[9px] bg-tag-red-bg text-tag-red-text px-1.5 rounded font-bold">Double Booked</span>}
             </div>
 
-            <div className={`flex-1 min-w-0 min-h-[32px] ${isDoubleBooked ? 'grid grid-cols-1 sm:grid-cols-2 gap-1.5' : hasJobs ? 'space-y-1.5' : 'flex flex-col items-center justify-center'}`}>
+            <div className={`flex-1 min-w-0 min-h-[28px] ${isDoubleBooked ? 'grid grid-cols-1 sm:grid-cols-2 gap-1' : hasJobs ? 'space-y-1' : 'flex flex-col items-center justify-center'}`}>
                 {jobs.map(job => {
                     const isTimeMismatch = checkTimeMismatch(job.originalTimeframe, label);
                     return <JobCard
@@ -458,7 +458,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
     const isDoubleBooked = useMemo(() => { return rep.schedule.some(slot => slot.jobs.length > 1); }, [rep.schedule]);
 
     const containerClasses = useMemo(() => {
-        const base = 'p-2 rounded-lg transition-all duration-300 border-2 min-w-0';
+        const base = 'p-1.5 rounded-lg transition-all duration-300 border-2 min-w-0';
         let stateClasses = '';
 
         // Double-booked takes highest priority for visual warning
@@ -569,13 +569,13 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
             <div className="flex justify-between items-center cursor-pointer" onClick={onToggleExpansion}>
                 <div className="flex items-center min-w-0 flex-1 mr-2">
                     <div
-                        className="w-5 h-5 rounded-full mr-2 flex-shrink-0 ring-1 ring-inset ring-border-secondary"
+                        className="w-4 h-4 rounded-full mr-1.5 flex-shrink-0 ring-1 ring-inset ring-border-secondary"
                         style={{ backgroundColor: repColor }}
                         title={rep.name}
                     />
                     <h3 className="text-sm font-bold truncate text-text-primary">{rep.name}</h3>
                     {rep.isOptimized ? (
-                        <div className="ml-2 flex items-center bg-tag-teal-bg text-tag-teal-text border border-tag-teal-border rounded-full px-2 py-0.5">
+                        <div className="ml-1.5 flex items-center bg-tag-teal-bg text-tag-teal-text border border-tag-teal-border rounded-full px-1.5 py-0">
                             <span className="text-xs font-semibold mr-1">Optimized</span>
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleUnoptimizeRepRoute(rep.id); }}
@@ -740,11 +740,11 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
             </div>
 
             {/* Header */}
-            <div className="p-2 border-b border-border-secondary flex justify-between items-center bg-bg-secondary/50 rounded-t-lg select-none">
+            <div className="px-1.5 py-1 border-b border-border-secondary flex justify-between items-center bg-bg-secondary/50 rounded-t-lg select-none">
                 <div className="flex items-center space-x-1">
-                    <span className="text-xs text-text-tertiary mr-2 font-medium">{jobCount} job{jobCount !== 1 ? 's' : ''}</span>
+                    <span className="text-[10px] text-text-tertiary mr-1 font-medium leading-none">{jobCount} job{jobCount !== 1 ? 's' : ''}</span>
 
-                    {isExpanded ? <ChevronUpIcon className="h-4 w-4 text-text-quaternary ml-2" /> : <ChevronDownIcon className="h-4 w-4 text-text-quaternary ml-2" />}
+                    {isExpanded ? <ChevronUpIcon className="h-3.5 w-3.5 text-text-quaternary ml-1" /> : <ChevronDownIcon className="h-3.5 w-3.5 text-text-quaternary ml-1" />}
                 </div>
             </div>
 

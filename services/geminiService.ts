@@ -171,18 +171,12 @@ export function splitTextByDays(text: string): Array<{ dateString: string; text:
         }
     }
 
-    // Filter out past days - only keep today and future days
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Return all found sections without filtering by date
+    // This allows users to backfill or view past schedules if needed
+    const sections = Array.from(uniqueSections.entries())
+        .map(([dateString, text]) => ({ dateString, text }));
 
-    const filteredSections = Array.from(uniqueSections.entries())
-        .map(([dateString, text]) => ({ dateString, text }))
-        .filter(section => {
-            const sectionDate = new Date(section.dateString + 'T00:00:00');
-            return sectionDate >= today;
-        });
-
-    return filteredSections;
+    return sections;
 }
 
 /**
@@ -247,8 +241,9 @@ export async function parseJobsFromText(
         // - "- Tuesday, December 9, 2025 at 9:17 AM MST"
         // - "- Dec 8, 2025 4:12 PM"
         // - "- Dec 9, 2025"
-        // This prevents the timestamp from being confused with the job date
-        const timestampRegex = /\s*-\s*(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
+        // - "- 12/10/2025 09:51 AM" (Numeric date support added)
+        // This prevents the timestamp from being confused with the job date or address
+        const timestampRegex = /\s*-\s*(?:(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?|\d{1,2}\/\d{1,2}\/\d{4})\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
         trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
 
         const timeSlotMatch = trimmedLine.match(timeSlotRegex);
@@ -318,7 +313,7 @@ export async function parseJobsFromText(
             cityAndNotesPart = notes; // Update for zip extraction
         } else {
             // Fallback: Try to find a tag to split
-            const tagKeywordsRegex = new RegExp(`\\b(${TAG_KEYWORDS.join('|')}|\\d+\\s*S|\\d+\\s*sq\\.?(?:ft)?|\\d+\\s*yrs)\\b|#`, 'i');
+            const tagKeywordsRegex = new RegExp(`\\b(${TAG_KEYWORDS.join('|')}|\\d+\\s*S|[\\d,]+\\s*sq\\.?(?:ft)?|\\d+\\s*yrs)\\b|#`, 'i');
             const firstTagMatch = cityAndNotesPart.match(tagKeywordsRegex);
             if (firstTagMatch && firstTagMatch.index !== undefined) {
                 city = cityAndNotesPart.substring(0, firstTagMatch.index).trim();
@@ -384,7 +379,8 @@ export async function parseJobsFromText(
         }
 
         const hasNumber = /\d/.test(address);
-        const hasStreetName = /\b[a-zA-Z]{3,}\b/.test(address);
+        // Relaxed validation to allow 2-letter street types (Dr, St, Ct, Rd, Pl, Ln) and cardinal directions
+        const hasStreetName = /\b([a-zA-Z]{3,}|Dr|St|Ct|Rd|Pl|Ln|Blvd|Ave|Way|N|S|E|W|NE|NW|SE|SW)\b/i.test(address);
         if (!address || !hasNumber || !hasStreetName) {
             continue;
         }
