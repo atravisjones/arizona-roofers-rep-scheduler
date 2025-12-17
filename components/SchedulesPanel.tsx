@@ -202,6 +202,14 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                 const isFullyUnavailable = unavailableSlots.length === TIME_SLOTS.length && !rep.isOptimized;
                                 return jobCount > 0 || !isFullyUnavailable;
                             })
+                            .sort((a, b) => {
+                                // Sort by salesRank (lower rank = better = comes first)
+                                const aRank = a.salesRank ?? 999;
+                                const bRank = b.salesRank ?? 999;
+                                if (aRank !== bRank) return aRank - bRank;
+                                // Fallback to name if ranks are equal
+                                return a.name.localeCompare(b.name);
+                            })
                             .map(rep => {
                                 const isSelected = selectedRepFilter === rep.id;
                                 const jobCount = rep.schedule.flatMap(s => s.jobs).length;

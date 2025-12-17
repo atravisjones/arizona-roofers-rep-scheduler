@@ -1,10 +1,13 @@
 import React from 'react';
 import { useAppContext } from '../context/AppContext';
 import { UiSettings } from '../types';
-import { SunIcon, MoonIcon, DesktopIcon, PaletteIcon, EyeIcon, EyeOffIcon, ExternalLinkIcon } from './icons';
+import { SunIcon, MoonIcon, DesktopIcon, PaletteIcon, EyeIcon, EyeOffIcon, ExternalLinkIcon, BrainIcon, HistoryIcon, SettingsIcon } from './icons';
 
 interface SettingsPanelProps {
     onOpenThemeEditor: () => void;
+    onOpenTrainingData: () => void;
+    onOpenDebugLog: () => void;
+    onOpenAssignmentSettings: () => void;
 }
 
 const SCHEDULING_TOOL_LINKS = [
@@ -58,8 +61,8 @@ const ToggleSwitch: React.FC<{
     </div>
 );
 
-const SettingsPanel: React.FC<SettingsPanelProps> = ({ onOpenThemeEditor }) => {
-    const { uiSettings, updateUiSettings } = useAppContext();
+const SettingsPanel: React.FC<SettingsPanelProps> = ({ onOpenThemeEditor, onOpenTrainingData, onOpenDebugLog, onOpenAssignmentSettings }) => {
+    const { uiSettings, updateUiSettings, debugLogs } = useAppContext();
 
     const handleThemeChange = (theme: UiSettings['theme']) => {
         updateUiSettings({ theme });
@@ -110,6 +113,37 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onOpenThemeEditor }) => {
                         onChange={(val) => handleToggleChange('showUnassignedJobsColumn', val)}
                         icon={uiSettings.showUnassignedJobsColumn ? <EyeIcon className="h-5 w-5 text-text-tertiary" /> : <EyeOffIcon className="h-5 w-5 text-text-quaternary" />}
                     />
+                </div>
+            </div>
+            <div className="border-t border-border-primary p-3">
+                <h3 className="text-xs font-bold text-text-tertiary uppercase tracking-wider mb-2">Tools</h3>
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        onClick={onOpenAssignmentSettings}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary transition-colors text-sm font-semibold col-span-2"
+                    >
+                        <SettingsIcon className="h-4 w-4" />
+                        <span>Assignment Settings</span>
+                    </button>
+                    <button
+                        onClick={onOpenTrainingData}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20 transition-colors text-sm font-semibold"
+                    >
+                        <BrainIcon className="h-4 w-4" />
+                        <span>Training</span>
+                    </button>
+                    <button
+                        onClick={onOpenDebugLog}
+                        className="flex items-center gap-2 p-2 rounded-lg bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary transition-colors text-sm font-semibold"
+                    >
+                        <HistoryIcon className="h-4 w-4" />
+                        <span>Log</span>
+                        {debugLogs.length > 0 && (
+                            <span className="ml-auto px-1.5 py-0.5 bg-brand-primary text-brand-text-on-primary rounded-full text-[9px] font-bold">
+                                {debugLogs.length}
+                            </span>
+                        )}
+                    </button>
                 </div>
             </div>
             <div className="border-t border-border-primary p-3">

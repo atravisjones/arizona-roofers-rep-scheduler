@@ -32,7 +32,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const contextValueRef = useRef(contextValue);
   contextValueRef.current = contextValue;
 
-  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd, hoveredJobId } = contextValue;
+  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd } = contextValue;
 
   // Track React roots for cleanup to prevent memory leaks and hydration errors
   const popupRootsRef = useRef<ReactDOM.Root[]>([]);
@@ -263,29 +263,22 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
         let iconAnchor: [number, number];
         const color = getColorForRep(job.assignedRepName);
         const isPriority = job.notes.includes('#');
-        const isHovered = job.id === hoveredJobId;
 
         const dimFilter = job.isDimmed ? 'filter: grayscale(100%); opacity: 0.4;' : '';
         const dimZIndex = job.isDimmed ? 0 : (isPriority ? 1000 : 500);
-        const finalZIndex = isHovered ? 10000 : (job.isRepHome ? 900 : dimZIndex);
+        const finalZIndex = job.isRepHome ? 900 : dimZIndex;
 
-        let shadow = (isPriority && !job.isDimmed)
+        const shadow = (isPriority && !job.isDimmed)
           ? 'box-shadow: 0 0 0 2px #FFD700, 0 0 10px #FFD700, 0 4px 6px rgba(0,0,0,0.3);'
           : (!job.isDimmed ? 'box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);' : 'box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);');
-
-        if (isHovered) {
-          shadow = `box-shadow: 0 0 0 3px white, 0 0 15px ${color}, 0 4px 8px rgba(0,0,0,0.5);`;
-        }
 
         const border = isPriority
           ? 'border: 2px solid #FFF;'
           : 'border: 2px solid white;';
 
-        const transform = isHovered ? 'transform: scale(1.5); transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);' : '';
-
         if (job.isRepHome) {
           markerHtml = `
-                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; ${transform} ${dimFilter}">
+                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; ${dimFilter}">
                         <svg viewBox="0 0 24 24" fill="${color}" stroke="white" stroke-width="2" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); width: 100%; height: 100%;">
                             <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
                         </svg>
@@ -294,7 +287,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           iconAnchor = [12, 20];
         } else if (job.isStartLocation) {
           markerHtml = `
-                    <div style="background-color: ${color}; ${border} ${shadow} ${dimFilter} ${transform}" class="text-white w-7 h-7 rounded-md flex items-center justify-center">
+                    <div style="background-color: ${color}; ${border} ${shadow} ${dimFilter}" class="text-white w-7 h-7 rounded-md flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
                         </svg>
@@ -302,15 +295,15 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           iconSize = [28, 28];
           iconAnchor = [14, 14];
         } else if (job.isEstimatedLocation) {
-          markerHtml = `<div style="width: 16px; height: 16px; background-color: ${color}; border-radius: 50%; border: 2px dashed white; ${shadow} ${dimFilter} ${transform}"></div>`;
+          markerHtml = `<div style="width: 16px; height: 16px; background-color: ${color}; border-radius: 50%; border: 2px dashed white; ${shadow} ${dimFilter}"></div>`;
           iconSize = [20, 20];
           iconAnchor = [10, 10];
         } else if (mapType === 'unassigned') {
-          markerHtml = `<div style="width: 14px; height: 14px; background-color: ${color}; border-radius: 50%; ${border} ${shadow} ${dimFilter} ${transform}"></div>`;
+          markerHtml = `<div style="width: 14px; height: 14px; background-color: ${color}; border-radius: 50%; ${border} ${shadow} ${dimFilter}"></div>`;
           iconSize = [18, 18];
           iconAnchor = [9, 9];
         } else {
-          markerHtml = `<div style="background-color: ${color}; ${border} ${shadow} ${dimFilter} ${transform}" class="text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs">${job.markerLabel || index + 1}</div>`;
+          markerHtml = `<div style="background-color: ${color}; ${border} ${shadow} ${dimFilter}" class="text-white w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs">${job.markerLabel || index + 1}</div>`;
           iconSize = [28, 28];
           iconAnchor = [14, 14];
         }
@@ -347,21 +340,12 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
 
         const timeLabel = (job.timeSlotLabel as string) || 'Unscheduled';
 
-        let breakdownHtml = '';
-        if (job.scoreBreakdown) {
-          const b = job.scoreBreakdown;
-          const showType = b.skillType >= 0;
-          breakdownHtml = `
-                    <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgb(var(--border-primary)); font-size: 9px; color: rgb(var(--text-tertiary)); text-align: left;">
-                        <div style="display:flex; justify-content:space-between;"><span>Dist:</span> <b>${Math.round(b.distanceBase)}</b></div>
-                        <div style="display:flex; justify-content:space-between;"><span>Skill:</span> <b>${Math.round(b.skillRoofing)}</b></div>
-                        ${showType ? `<div style="display:flex; justify-content:space-between;"><span>Type:</span> <b>${Math.round(b.skillType)}</b></div>` : ''}
-                        <div style="display:flex; justify-content:space-between;"><span>Perf:</span> <b>${Math.round(b.performance)}</b></div>
-                        ${b.penalty > 0 ? `<div style="display:flex; justify-content:space-between; color: rgb(var(--red-text));"><span>Penalty:</span> <b>-${b.penalty}</b></div>` : ''}
-                        <div style="margin-top:2px; font-weight:bold; color:rgb(var(--amber-text)); text-align:right;">Score: ${job.assignmentScore}</div>
-                    </div>
-                  `;
-        }
+        // Show score badge if available
+        const scoreHtml = job.assignmentScore ? `
+          <div style="margin-top: 4px; font-weight: bold; font-size: 10px; color: rgb(var(--text-tertiary));">
+            Score: <span style="color: rgb(var(--amber-text));">${job.assignmentScore}</span>
+          </div>
+        ` : '';
 
         let toolTipContent = '';
         if (job.isRepHome) {
@@ -396,8 +380,8 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
                         </div>` : ''}
 
                         ${isPriority ? '<div style="color: rgb(var(--amber-text)); font-weight: bold; font-size: 10px; margin-top: 4px;">★ Priority Job</div>' : ''}
-                        
-                        ${breakdownHtml}
+
+                        ${scoreHtml}
                     </div>
                   `;
         }
@@ -406,7 +390,8 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           direction: 'top',
           offset: [0, -10],
           opacity: job.isDimmed ? 0.5 : 1,
-          className: 'job-tooltip'
+          className: 'job-tooltip',
+          sticky: false
         });
 
         // Prepare for React content inside popup
@@ -480,8 +465,8 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
 
     return () => clearTimeout(timer);
 
-  }, [effectiveRouteInfo, jobs, mapType, mappableJobs, preloadedRouteInfo, hoveredJobId]);
-  // Note: Removed handlers from dependency array as they are stable from contextRef
+  }, [effectiveRouteInfo, jobs, mapType, mappableJobs, preloadedRouteInfo]);
+  // Note: Removed handlers and hoveredJobId from dependency array - hoveredJobId causes full rebuild which creates stutter
 
   return (
     <div className="w-full h-full relative rounded-lg overflow-hidden bg-bg-tertiary">

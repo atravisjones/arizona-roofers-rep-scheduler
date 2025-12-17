@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Rep, DisplayJob } from '../types';
 import { XIcon, SwapIcon, UserIcon } from './icons';
 
@@ -19,7 +20,7 @@ export const SwapScheduleModal: React.FC<SwapScheduleModalProps> = ({ isOpen, on
 
     if (!isOpen) return null;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 bg-bg-secondary/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={onClose}>
             <div className="popup-surface w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-fade-in shadow-2xl rounded-lg border border-border-primary" onClick={e => e.stopPropagation()}>
 
@@ -120,6 +121,7 @@ export const SwapScheduleModal: React.FC<SwapScheduleModalProps> = ({ isOpen, on
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };

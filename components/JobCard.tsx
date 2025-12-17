@@ -29,10 +29,11 @@ interface JobCardProps {
     onPlaceOnMap?: (jobId: string) => void;
     isCompact?: boolean;
     isDraggable?: boolean;
+    showAssignment?: boolean;
 }
 
 export const JobCard: React.FC<JobCardProps> = ({
-    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true
+    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false
 }) => {
     const { setHoveredJobId, roofrJobIdMap } = useAppContext();
     const [isEditing, setIsEditing] = useState(false);
@@ -313,13 +314,11 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         )
     }
 
-    // Display Logic for Time Slot
+    // Display Logic for Time Slot - prefer the short label from time slot
     const displayTimeLabel = displayJob.timeSlotLabel || job.originalTimeframe || 'Anytime';
-    const shortTimeLabel = displayTimeLabel.split(' ')[0]; // Gets "7:30am" from "7:30am - 9:00am"
 
-    // Check if we should show the original request (if optimized and different)
+    // Check if original time differs from assigned (for tooltip)
     const showOriginalTime = job.originalTimeframe && displayJob.timeSlotLabel && job.originalTimeframe !== displayJob.timeSlotLabel;
-    const formattedOriginalTime = job.originalTimeframe ? job.originalTimeframe.replace(/\s/g, '').replace(/am/gi, 'a').replace(/pm/gi, 'p') : '';
 
     return (
         <div
@@ -351,16 +350,11 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         </div>
                     )}
 
-                    {showOriginalTime && (
-                        <span className="text-[9px] text-text-quaternary font-mono mr-0.5 hidden sm:inline-block bg-bg-tertiary px-1 rounded border border-border-primary leading-none" title={`Original Request: ${job.originalTimeframe}`}>
-                            Req:{formattedOriginalTime}
-                        </span>
-                    )}
-
-                    <span className={`text-[9px] font-bold px-1 rounded-full border leading-none ${displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'
-                        }`}>
-                        {/* Use full label if it's a specific generated slot (contains hyphen), else short */}
-                        {displayTimeLabel.includes('-') && displayTimeLabel.length < 20 ? displayTimeLabel : shortTimeLabel}
+                    <span
+                        className={`text-[9px] font-bold px-1 rounded-full border leading-none ${displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'}`}
+                        title={showOriginalTime ? `Original Request: ${job.originalTimeframe}` : undefined}
+                    >
+                        {displayTimeLabel}
                     </span>
                 </div>
             </div>
@@ -433,11 +427,26 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                 </div>
             </div>
 
-            {/* Footer: Address */}
+            {/* Footer: Address & Assignment */}
             <div className="px-1.5 py-0.5 border-t border-black/5">
                 <p className="text-[9px] text-text-tertiary truncate font-medium leading-none" title={job.address}>
                     {job.address}
                 </p>
+                {showAssignment && (job as any).assignedRepName && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                        <UserIcon className="h-2.5 w-2.5 text-brand-primary" />
+                        <span className="text-[9px] font-bold text-brand-primary truncate">
+                            {(job as any).assignedRepName}
+                        </span>
+                    </div>
+                )}
+                {showAssignment && !(job as any).assignedRepName && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[9px] font-medium text-text-quaternary italic">
+                            Unassigned
+                        </span>
+                    </div>
+                )}
             </div>
         </div>
     );

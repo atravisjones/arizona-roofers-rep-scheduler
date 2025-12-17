@@ -21,7 +21,7 @@ export const STORAGE_SHEET_NAME = "Sheet1";
 // Rep skillsets sheet details
 export const SKILLS_SHEET_TITLE = 'Appointment Blocks';
 export const SKILLS_DATA_RANGE = 'A19:H52';
-export const SALES_ORDER_DATA_RANGE = 'B44:B85'; // Fetching column B where names are listed in order
+export const SALES_ORDER_DATA_RANGE = 'A43:G85'; // Fetching header row + all month columns (Oct-Mar)
 
 // Job ID / Roofr URL sheet details
 export const ROOFR_JOBS_SPREADSHEET_ID = "1KadSyM67SOB6agq2YDHkZLYMXnn81Fna5jTWDBQQuog";

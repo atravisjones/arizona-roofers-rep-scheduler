@@ -3,11 +3,13 @@ import { useAppContext } from '../context/AppContext';
 import UnassignedJobs from './UnassignedJobs';
 import PasteJobsModal from './PasteJobsModal';
 import PasteWeekModal from './PasteWeekModal';
-import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, DragHandleIcon, XIcon, SettingsIcon } from './icons';
-import SettingsModal from './SettingsModal';
+import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, DragHandleIcon, XIcon, MapPinIcon } from './icons';
 import FilterTabs from './FilterTabs';
-import { Job } from '../types';
+import { JobCard } from './JobCard';
+import { Job, DisplayJob } from '../types';
 import { DaySchedule } from '../services/weekScheduleParser';
+
+type JobsViewTab = 'unassigned' | 'all';
 
 interface JobsPanelProps {
     onDragStart: () => void;
@@ -19,16 +21,39 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
         isParsing, parsingError, isAutoAssigning, appState,
         handleParseJobs, handleAutoAssign,
         handleUpdateJob, handleRemoveJob, isLoadingReps, handleShowUnassignedJobsOnMap, handleJobDrop,
-        setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs
+        setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs,
+        filteredAssignedJobs
     } = useAppContext();
 
     const [jobSearchTerm, setJobSearchTerm] = useState('');
     const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
     const [isPasteWeekModalOpen, setIsPasteWeekModalOpen] = useState(false);
-    const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
     const [jobsFilteredByTabs, setJobsFilteredByTabs] = useState<Job[]>(appState.unassignedJobs);
+    const [activeViewTab, setActiveViewTab] = useState<JobsViewTab>('unassigned');
 
-    const filteredUnassignedJobs = useMemo(() => {
+    // Get all jobs (unassigned + assigned)
+    const allJobs = useMemo(() => {
+        const assignedJobs: Job[] = filteredAssignedJobs.map(dj => ({
+            id: dj.id,
+            customerName: dj.customerName,
+            address: dj.address,
+            city: dj.city,
+            notes: dj.notes,
+            originalTimeframe: dj.originalTimeframe,
+            assignedRepName: dj.assignedRepName,
+            timeSlotLabel: dj.timeSlotLabel
+        }));
+        return [...appState.unassignedJobs, ...assignedJobs];
+    }, [appState.unassignedJobs, filteredAssignedJobs]);
+
+    // Filter jobs based on active view tab
+    const jobsForFilter = useMemo(() => {
+        return activeViewTab === 'unassigned' ? appState.unassignedJobs : allJobs;
+    }, [activeViewTab, appState.unassignedJobs, allJobs]);
+
+    // Apply search filter on top of tab-filtered jobs
+    const filteredJobs = useMemo(() => {
+        // jobsFilteredByTabs already contains the filter-tab filtered results
         let jobsToSearch = jobsFilteredByTabs;
 
         if (!jobSearchTerm.trim()) {
@@ -41,43 +66,42 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 job.customerName.toLowerCase().includes(lowercasedFilter) ||
                 job.address.toLowerCase().includes(lowercasedFilter) ||
                 (job.city || '').toLowerCase().includes(lowercasedFilter) ||
-                job.notes.toLowerCase().includes(lowercasedFilter)
+                job.notes.toLowerCase().includes(lowercasedFilter) ||
+                ((job as any).assignedRepName || '').toLowerCase().includes(lowercasedFilter)
             );
         });
     }, [jobsFilteredByTabs, jobSearchTerm]);
 
     // Push filtered unassigned jobs to context for synchronized map filtering
     useEffect(() => {
-        setFilteredUnassignedJobs(filteredUnassignedJobs);
-    }, [filteredUnassignedJobs, setFilteredUnassignedJobs]);
+        if (activeViewTab === 'unassigned') {
+            setFilteredUnassignedJobs(filteredJobs);
+        }
+    }, [filteredJobs, setFilteredUnassignedJobs, activeViewTab]);
 
     const handleParseWeekSchedule = async (days: DaySchedule[], onComplete: () => void) => {
-        // Process each day sequentially
         for (let i = 0; i < days.length; i++) {
             const day = days[i];
-
-            // Wait for the current day to complete before moving to the next
             await new Promise<void>((resolve) => {
                 handleParseJobs(day.content, () => {
                     resolve();
                 });
             });
-
-            // Small delay between days to ensure processing completes
             await new Promise(resolve => setTimeout(resolve, 500));
         }
-
-        // Call onComplete after all days are processed
         onComplete();
     };
+
+    const unassignedCount = appState.unassignedJobs.length;
+    const allJobsCount = allJobs.length;
 
     return (
         <>
             <div className="flex justify-between items-center mb-1 border-b border-border-primary pb-1">
                 <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
-                    2. Unassigned Jobs
+                    2. Jobs
                     <span className="px-2 py-0.5 bg-tertiary text-secondary rounded-full text-xs font-medium">
-                        {appState.unassignedJobs.length}
+                        {activeViewTab === 'unassigned' ? unassignedCount : allJobsCount}
                     </span>
                 </h2>
 
@@ -86,8 +110,8 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                         <input
                             type="text"
                             className={`
-                                pl-8 pr-7 py-1 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary 
-                                rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary 
+                                pl-8 pr-7 py-1 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary
+                                rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary
                                 transition-all w-28 focus:w-48
                                 ${jobSearchTerm ? 'w-48' : ''}
                             `}
@@ -105,16 +129,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                         )}
                     </div>
 
-                    <div className="w-px h-4 bg-border-primary mx-1"></div>
-
-                    <button
-                        onClick={() => setIsSettingsModalOpen(true)}
-                        className="p-1.5 text-text-quaternary hover:text-primary hover:bg-tertiary rounded-md transition-colors"
-                        title="Assignment Settings"
-                    >
-                        <SettingsIcon className="h-4 w-4" />
-                    </button>
-
                     <div
                         draggable
                         onDragStart={onDragStart}
@@ -127,24 +141,85 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 </div>
             </div>
 
+            {/* Unassigned / All Jobs Tabs */}
+            <div className="flex p-1 bg-bg-tertiary rounded-lg mb-2 gap-1 select-none">
+                <button
+                    onClick={() => setActiveViewTab('unassigned')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
+                        activeViewTab === 'unassigned'
+                            ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
+                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
+                    }`}
+                >
+                    Unassigned
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
+                        activeViewTab === 'unassigned'
+                            ? 'bg-brand-primary text-brand-text-on-primary'
+                            : 'bg-bg-quaternary text-text-tertiary'
+                    }`}>
+                        {unassignedCount}
+                    </span>
+                </button>
+                <button
+                    onClick={() => setActiveViewTab('all')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
+                        activeViewTab === 'all'
+                            ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
+                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
+                    }`}
+                >
+                    All Jobs
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
+                        activeViewTab === 'all'
+                            ? 'bg-brand-primary text-brand-text-on-primary'
+                            : 'bg-bg-quaternary text-text-tertiary'
+                    }`}>
+                        {allJobsCount}
+                    </span>
+                </button>
+            </div>
+
             <FilterTabs
-                unassignedJobs={appState.unassignedJobs}
+                unassignedJobs={jobsForFilter}
                 onFilterChange={setJobsFilteredByTabs}
             />
 
             {parsingError && <p className="text-tag-red-text text-xs my-1 text-center bg-tag-red-bg p-1.5 rounded-md border border-tag-red-border">{parsingError}</p>}
 
             <div className="flex-grow overflow-y-auto min-h-0 pt-1 custom-scrollbar">
-                <UnassignedJobs
-                    jobs={filteredUnassignedJobs}
-                    onJobDrop={handleJobDrop}
-                    onSetDraggedOverRepId={setDraggedOverRepId}
-                    onJobDragStart={setDraggedJob}
-                    onJobDragEnd={handleJobDragEnd}
-                    onUpdateJob={handleUpdateJob}
-                    onRemoveJob={handleRemoveJob}
-                    onShowOnMap={() => handleShowUnassignedJobsOnMap(filteredUnassignedJobs)}
-                />
+                {activeViewTab === 'unassigned' ? (
+                    <UnassignedJobs
+                        jobs={filteredJobs}
+                        onJobDrop={handleJobDrop}
+                        onSetDraggedOverRepId={setDraggedOverRepId}
+                        onJobDragStart={setDraggedJob}
+                        onJobDragEnd={handleJobDragEnd}
+                        onUpdateJob={handleUpdateJob}
+                        onRemoveJob={handleRemoveJob}
+                    />
+                ) : (
+                    <div className="h-full p-1.5 bg-bg-secondary rounded-lg border border-border-secondary overflow-y-auto custom-scrollbar">
+                        {filteredJobs.length > 0 ? (
+                            <div className="space-y-1.5">
+                                {filteredJobs.map(job => (
+                                    <JobCard
+                                        key={job.id}
+                                        job={job}
+                                        onDragStart={setDraggedJob}
+                                        onDragEnd={handleJobDragEnd}
+                                        onUpdateJob={handleUpdateJob}
+                                        onRemove={handleRemoveJob}
+                                        showAssignment={true}
+                                    />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="text-text-tertiary">No jobs found.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             <PasteJobsModal
@@ -159,11 +234,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                 onClose={() => setIsPasteWeekModalOpen(false)}
                 onParseDays={handleParseWeekSchedule}
                 isParsing={isParsing}
-            />
-
-            <SettingsModal
-                isOpen={isSettingsModalOpen}
-                onClose={() => setIsSettingsModalOpen(false)}
             />
         </>
     );

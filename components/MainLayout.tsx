@@ -1,11 +1,11 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, BrainIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
 import RouteMapPanel from './RoutePanel';
-import DebugLog from './DebugLog';
+import DebugLogModal from './DebugLog';
 import DailySummaryModal from './DailySummary';
 import RepSummaryModal from './RepSummary';
 import PasteJobsModal from './PasteJobsModal';
@@ -20,6 +20,7 @@ import ChangeLogModal from './ChangeLogModal';
 import { TAG_KEYWORDS } from '../constants';
 import { Job } from '../types';
 import SettingsPanel from './SettingsPanel';
+import AssignmentSettingsModal from './SettingsModal';
 import ThemeEditorModal from './ThemeEditorModal';
 import ConfirmationModal from './ConfirmationModal';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
@@ -49,6 +50,8 @@ const MainLayout: React.FC = () => {
   const [isChangeLogOpen, setIsChangeLogOpen] = useState(false);
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [isUnplottedModalOpen, setIsUnplottedModalOpen] = useState(false);
+  const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
+  const [isAssignmentSettingsOpen, setIsAssignmentSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -280,17 +283,6 @@ const MainLayout: React.FC = () => {
           {/* Left: Branding + Paste/Auto Assign */}
           <div className="flex items-center gap-3">
             <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
-            <div className="flex items-center gap-1.5">
-              <div className={`w-1.5 h-1.5 rounded-full ${context.usingMockData ? 'bg-yellow-400' : 'bg-green-500'} animate-pulse`}></div>
-              <span className="text-[9px] font-medium text-text-tertiary uppercase tracking-wide">
-                {context.usingMockData ? 'Mock' : 'Live'}
-              </span>
-              <span className="text-[9px] font-semibold text-text-secondary truncate max-w-[150px]" title={context.activeSheetName}>
-                {context.activeSheetName || '...'}
-              </span>
-            </div>
-
-            <div className="w-px h-4 bg-border-secondary"></div>
 
             {/* Paste Jobs & Auto Assign Buttons */}
             <div className="flex items-center gap-1.5">
@@ -387,10 +379,6 @@ const MainLayout: React.FC = () => {
                 <TagIcon className="h-3 w-3" />
                 <span>Slots</span>
               </button>
-              <button onClick={() => setIsTrainingDataOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-brand-text-light bg-brand-bg-light hover:bg-brand-primary/20 rounded transition-all" title="View Training Data">
-                <BrainIcon className="h-3 w-3" />
-                <span>Training</span>
-              </button>
             </div>
           </div>
 
@@ -421,13 +409,19 @@ const MainLayout: React.FC = () => {
               <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
                 <SettingsIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
               </button>
-              {isSettingsPanelOpen && <SettingsPanel onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }} />}
+              {isSettingsPanelOpen && (
+                <SettingsPanel
+                  onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }}
+                  onOpenTrainingData={() => { setIsTrainingDataOpen(true); setIsSettingsPanelOpen(false); }}
+                  onOpenDebugLog={() => { setIsDebugLogOpen(true); setIsSettingsPanelOpen(false); }}
+                  onOpenAssignmentSettings={() => { setIsAssignmentSettingsOpen(true); setIsSettingsPanelOpen(false); }}
+                />
+              )}
             </div>
-            <DebugLog logs={context.debugLogs} onClear={() => { context.log('Log cleared.'); }} />
           </div>
         </div>
 
-        {/* Bottom Bar: Navigation, Calendar, History */}
+        {/* Bottom Bar: History, Announcements, Calendar */}
         <div className="h-12 px-4 flex items-center justify-between">
           {/* Left: History Controls & Changes */}
           <div className="flex items-center gap-2">
@@ -456,24 +450,18 @@ const MainLayout: React.FC = () => {
                 </span>
               )}
             </button>
-          </div>
 
-          {/* Center: Date Navigation */}
-          <div className="flex-1 flex justify-center items-center gap-3">
-            <DayTabs />
             {context.announcement && (
-              <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-[10px] font-semibold px-2 py-1 rounded flex items-center gap-1.5 animate-fade-in max-w-xs truncate">
+              <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-[10px] font-semibold px-2 py-1 rounded flex items-center gap-1.5 animate-fade-in max-w-xs truncate ml-2">
                 <MegaphoneIcon className="h-3 w-3 text-brand-primary flex-shrink-0" />
                 <span className="truncate">{context.announcement}</span>
               </div>
             )}
           </div>
 
-          {/* Right: Quick Info */}
-          <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
-            <span className="px-2 py-1 bg-bg-secondary/50 rounded">
-              <span className="font-medium">SRA</span> {context.selectedDate?.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' }) || ''}
-            </span>
+          {/* Right: Date Navigation */}
+          <div className="flex items-center">
+            <DayTabs />
           </div>
         </div>
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
@@ -514,6 +502,13 @@ const MainLayout: React.FC = () => {
       />
       <ChangeLogModal isOpen={isChangeLogOpen} onClose={() => setIsChangeLogOpen(false)} changes={context.changeLog} />
 
+      <DebugLogModal
+        isOpen={isDebugLogOpen}
+        onClose={() => setIsDebugLogOpen(false)}
+        logs={context.debugLogs}
+        onClear={() => { context.log('Log cleared.'); }}
+      />
+
       <AiAssistantPopup
         isOpen={isAiPopupOpen}
         onClose={handleCloseAiPopup}
@@ -531,6 +526,11 @@ const MainLayout: React.FC = () => {
       <ThemeEditorModal
         isOpen={isThemeEditorOpen}
         onClose={() => setIsThemeEditorOpen(false)}
+      />
+
+      <AssignmentSettingsModal
+        isOpen={isAssignmentSettingsOpen}
+        onClose={() => setIsAssignmentSettingsOpen(false)}
       />
 
       <ConfirmationModal

@@ -227,9 +227,14 @@ const cleanDisplayName = (name: string): string => {
         .trim();
 };
 
-// Fetches the sales rankings from the 'Appointment Blocks' sheet.
-// The list is expected to be in order of highest sales to lowest.
-async function fetchSalesRankings(): Promise<Map<string, number>> {
+/**
+ * Fetches the sales rankings from the 'Appointment Blocks' sheet.
+ * Uses the previous month's rankings for the selected date.
+ * For example: December uses November's data, January uses December's data.
+ * Falls back to the previous available month if the current month's column is empty.
+ * @param selectedDate The date for which to fetch rankings.
+ */
+async function fetchSalesRankings(selectedDate: Date = new Date()): Promise<Map<string, number>> {
     const rankMap = new Map<string, number>();
     try {
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(SKILLS_SHEET_TITLE)}'!${SALES_ORDER_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
@@ -241,21 +246,101 @@ async function fetchSalesRankings(): Promise<Map<string, number>> {
         const data = await response.json();
         const values = data.values;
 
-        if (!values || values.length === 0) {
+        if (!values || values.length < 2) {
             return rankMap;
         }
 
-        // Iterate through the list. Index 0 is Rank 1.
-        values.forEach((row: any[], index: number) => {
-            if (row && row.length > 0 && row[0]) {
-                const name = String(row[0]);
-                // Skip header if it was included by accident (though range B44 should avoid it)
-                if (name.toLowerCase().includes('sales order')) return;
+        // Parse header row to find month columns
+        // Row format: ["Sales Order", "October", "November", "December", "January", "February", "March"]
+        const headerRow = values[0];
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                            'July', 'August', 'September', 'October', 'November', 'December'];
 
-                const normalized = normalizeName(name);
+        // Build a map of month name -> column index
+        const monthToColumn = new Map<string, number>();
+        headerRow.forEach((cell: string, index: number) => {
+            if (cell && index > 0) {
+                const monthName = String(cell).trim();
+                if (monthNames.includes(monthName)) {
+                    monthToColumn.set(monthName, index);
+                }
+            }
+        });
+
+        // Determine which month column to use (previous month relative to selected date)
+        const selectedMonth = selectedDate.getMonth(); // 0-11
+        const previousMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        const previousMonthName = monthNames[previousMonth];
+
+        // Try to find the column for the previous month, with fallback logic
+        let columnIndex = monthToColumn.get(previousMonthName);
+
+        // If not found or column is empty, try earlier months as fallback
+        if (columnIndex === undefined) {
+            // Try to find any available column, preferring most recent
+            const availableMonths = Array.from(monthToColumn.keys());
+            if (availableMonths.length > 0) {
+                // Find the closest previous month that has data
+                for (let offset = 1; offset <= 12; offset++) {
+                    const fallbackMonth = (previousMonth - offset + 12) % 12;
+                    const fallbackMonthName = monthNames[fallbackMonth];
+                    if (monthToColumn.has(fallbackMonthName)) {
+                        columnIndex = monthToColumn.get(fallbackMonthName);
+                        console.log(`Sales rankings: Using ${fallbackMonthName} as fallback for ${previousMonthName}`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // If still no column found, use the first available month column
+        if (columnIndex === undefined && monthToColumn.size > 0) {
+            columnIndex = Array.from(monthToColumn.values())[0];
+        }
+
+        if (columnIndex === undefined) {
+            console.warn('No valid month columns found in sales rankings sheet');
+            return rankMap;
+        }
+
+        // Check if the selected column has data, if not try previous months
+        const dataRows = values.slice(1);
+        let hasData = dataRows.some((row: any[]) => row[columnIndex!] && String(row[columnIndex!]).trim());
+
+        if (!hasData) {
+            // Try earlier months until we find data
+            const monthOrder = Array.from(monthToColumn.entries()).sort((a, b) => {
+                const aMonth = monthNames.indexOf(a[0]);
+                const bMonth = monthNames.indexOf(b[0]);
+                return bMonth - aMonth; // Sort descending (most recent first)
+            });
+
+            for (const [monthName, colIdx] of monthOrder) {
+                if (colIdx !== columnIndex) {
+                    hasData = dataRows.some((row: any[]) => row[colIdx] && String(row[colIdx]).trim());
+                    if (hasData) {
+                        columnIndex = colIdx;
+                        console.log(`Sales rankings: Using ${monthName} (has data) instead of empty column`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Iterate through data rows and build the rankings from the selected column
+        let rank = 1;
+        dataRows.forEach((row: any[]) => {
+            const name = row[columnIndex!];
+            if (name && String(name).trim()) {
+                const nameStr = String(name).trim();
+                // Skip header-like rows
+                if (nameStr.toLowerCase().includes('sales order')) return;
+
+                const normalized = normalizeName(nameStr);
                 // Only set if not already present (in case of duplicates, first one wins as higher rank)
-                if (!rankMap.has(normalized)) {
-                    rankMap.set(normalized, index + 1);
+                if (normalized && !rankMap.has(normalized)) {
+                    rankMap.set(normalized, rank);
+                    rank++;
                 }
             }
         });
@@ -383,7 +468,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
     try {
         // 0. Fetch skills and rankings data in parallel
         const skillsPromise = fetchRepSkills();
-        const ranksPromise = fetchSalesRankings();
+        const ranksPromise = fetchSalesRankings(date);
 
         // 1. Get spreadsheet metadata to find the current sheet name
         const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?key=${GOOGLE_API_KEY}`;

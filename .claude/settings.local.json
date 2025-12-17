@@ -17,7 +17,9 @@
       "Bash(timeout 30 echo:*)",
       "Bash(npm run build:*)",
       "Bash(start http://localhost:3004)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(npm install)",
+      "Bash(start:*)"
     ],
     "deny": [],
     "ask": []

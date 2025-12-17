@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DisplayJob, RouteInfo } from '../types';
 import LeafletMap from './LeafletMap';
-import { ClipboardIcon, LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon } from './icons';
+import { LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
 import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS, TAG_KEYWORDS } from '../constants';
@@ -209,16 +209,6 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         };
     }, [routeData, tagFilters, selectedTimeSlotId, jobTagsMap]);
 
-    const googleMapsUrl = useMemo(() => {
-        if (!routeData || routeData.mappableJobs.length === 0) return '#';
-        const addresses = routeData.mappableJobs.map(j => j.address);
-        if (addresses.length === 1) {
-            return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addresses[0])}`;
-        }
-        const encoded = addresses.map(addr => encodeURIComponent(addr));
-        return `https://www.google.com/maps/dir/${encoded.join('/')}`;
-    }, [routeData]);
-
     const handleCopyUnplotted = () => {
         if (!routeData || routeData.unmappableJobs.length === 0) return;
 
@@ -333,16 +323,6 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             <RefreshIcon />
                             <span>Refresh</span>
                         </button>
-                        <a
-                            href={googleMapsUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${routeData?.mappableJobs.length > 0 ? 'bg-brand-blue text-white hover:bg-brand-blue-dark' : 'bg-bg-quaternary text-text-quaternary cursor-not-allowed opacity-70'}`}
-                            onClick={(e) => (!routeData || routeData.mappableJobs.length === 0) && e.preventDefault()}
-                        >
-                            <ClipboardIcon />
-                            <span>Google Maps</span>
-                        </a>
                     </div>
 
                     <div className="border-t -mx-2 border-border-primary"></div>
