@@ -5,14 +5,15 @@ import { TimeSlot } from './types';
 // This is for demonstration purposes only. The API key is used for Google Maps and Google Sheets.
 export const GOOGLE_API_KEY = "AIzaSyAUU9vrRIAepLUJedcIrmmfJDyVKjGhINI";
 
-// Save/Load API - Web App URL
-// Constructed from Deployment ID: AKfycby8XaBHbmWlGzzBJpfxwWuO6dWNnJUi7v0zKaNxNDkb9iww6dXZ8R-Hv4gFNF3FcsXPfA
-export const SAVE_LOAD_API_URL = "https://script.google.com/macros/s/AKfycbzJWCZP9WorIa7RZKgLjiaE4nW56rdkGASF7GIcPH-SvhpHyZUO4Sbi0lvqQJ1RQG1JNQ/exec";
+// Save/Load API - Web App URL (Version 3 - 3-Tab Pipeline)
+// Deployed: Dec 17, 2025 - Import → Main → Backup pipeline
+export const SAVE_LOAD_API_URL = "https://script.google.com/a/macros/arizonaroofers.com/s/AKfycby-nAl9EFU5ktX0FIafzMCtxARgS6Xv0XaHIysirFpJOPcPYzXaItxqEKn4yawnzbSoQw/exec";
 
 // Google Sheets API connection details
 export const SPREADSHEET_ID = "1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g";
 export const SHEET_TITLE_PREFIX = "SRA";
-export const DATA_RANGE = 'A2:H200'; // Fetch data starting from row 2 to include the date headers.
+export const DATA_RANGE = 'A2:H175'; // Fetch data starting from row 2, stop at row 175 to exclude inactive reps below
+export const MAX_REP_ROW = 175; // Reps below this row in the sheet are excluded (inactive, etc.)
 
 // Cloud Storage spreadsheet (for saving/loading app state)
 export const STORAGE_SPREADSHEET_ID = "1Jn_7K25iMJ35h0FGtWaz4FS4u2bfiKzJQmFEPyA3hdk";

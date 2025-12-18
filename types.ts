@@ -121,6 +121,7 @@ export interface Rep {
   zipCodes?: string[];
   isLocked?: boolean;
   isOptimized?: boolean;
+  sourceRow?: number; // Row number in the source spreadsheet (for filtering inactive reps)
 
   // Gamification Properties
   salesRank?: number; // 1 = Top performer.

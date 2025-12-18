@@ -638,7 +638,8 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
                 skills,
                 zipCodes,
                 region,
-                salesRank // Added Rank
+                salesRank,
+                sourceRow: firstRowIndex // Track source row for filtering
             }
         });
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange } from '../types';
-import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS } from '../constants';
+import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, MAX_REP_ROW } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage } from '../services/googleSheetsService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
 import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES } from '../services/geography';
@@ -17,6 +17,19 @@ const norm = (city: string | null | undefined): string => (city || '').toLowerCa
 const isJoseph = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('joseph simms');
 const isRichard = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('richard hadsall');
 const isLondon = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('london smith');
+
+// Filter out reps from rows beyond MAX_REP_ROW (inactive reps at bottom of sheet)
+const filterExcludedReps = (state: AppState): AppState => {
+    return {
+        ...state,
+        reps: state.reps.filter(rep => {
+            // If no sourceRow, keep the rep (legacy data or mock data)
+            if (rep.sourceRow === undefined) return true;
+            // Only keep reps from rows at or before MAX_REP_ROW
+            return rep.sourceRow <= MAX_REP_ROW;
+        })
+    };
+};
 
 const formatDateToKey = (date: Date): string => {
     const y = date.getFullYear();
@@ -2612,7 +2625,8 @@ export const useAppLogic = () => {
 
                 for (const item of result.results) {
                     if (item.success && item.data) {
-                        newDailyStates.set(item.dateKey, item.data);
+                        // Filter out excluded reps from loaded state
+                        newDailyStates.set(item.dateKey, filterExcludedReps(item.data));
                         loadedCount++;
                         loadedDays.push(item.dateKey);
                     }
@@ -2772,13 +2786,15 @@ export const useAppLogic = () => {
                     if (item.success && item.data) {
                         const dateKey = item.dateKey;
                         const existingState = mergedDailyStates.get(dateKey);
+                        // Filter out excluded reps from loaded data
+                        const filteredData = filterExcludedReps(item.data);
 
                         if (existingState) {
                             // Merge logic
                             const mergedState = JSON.parse(JSON.stringify(existingState)) as AppState;
                             const loadedJobs = [
-                                ...item.data.unassignedJobs,
-                                ...item.data.reps.flatMap(rep => rep.schedule.flatMap(slot => slot.jobs))
+                                ...filteredData.unassignedJobs,
+                                ...filteredData.reps.flatMap(rep => rep.schedule.flatMap(slot => slot.jobs))
                             ];
 
                             for (const loadedJob of loadedJobs) {
@@ -2789,9 +2805,9 @@ export const useAppLogic = () => {
                                     mergedState.unassignedJobs.push(loadedJob);
                                 }
                             }
-                            mergedDailyStates.set(dateKey, mergedState);
+                            mergedDailyStates.set(dateKey, filterExcludedReps(mergedState));
                         } else {
-                            mergedDailyStates.set(dateKey, item.data);
+                            mergedDailyStates.set(dateKey, filteredData);
                         }
                         loadedCount++;
                     }

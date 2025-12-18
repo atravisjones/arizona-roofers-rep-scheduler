@@ -31,26 +31,7 @@ const UnplottedJobsModal: React.FC<UnplottedJobsModalProps> = ({ isOpen, onClose
     const [placedLocation, setPlacedLocation] = useState<{ jobId: string; lat: number; lon: number } | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    if (!isOpen) return null;
-
-    const unmappableJobs = activeRoute?.unmappableJobs || [];
-    const mappableJobs = activeRoute?.mappableJobs || [];
-
-    const handleCopyUnplotted = () => {
-        if (unmappableJobs.length === 0) return;
-
-        const addressesToCopy = unmappableJobs.map(job => job.address).join('\n');
-
-        navigator.clipboard.writeText(addressesToCopy).then(() => {
-            setCopySuccess(true);
-            setTimeout(() => setCopySuccess(false), 2500);
-        }).catch(err => {
-            console.error("Failed to copy unplotted addresses:", err);
-            alert("Could not copy addresses. Please check browser permissions.");
-        });
-    };
-
-    // Handle resize
+    // Handle resize - must be defined before early return
     const handleResizeStart = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         setIsResizing(true);
@@ -75,7 +56,7 @@ const UnplottedJobsModal: React.FC<UnplottedJobsModalProps> = ({ isOpen, onClose
         document.body.style.cursor = 'col-resize';
     }, [panelWidth]);
 
-    // Handle job update with auto-geocode
+    // Handle job update with auto-geocode - must be defined before early return
     const handleUpdateJobWithGeocode = useCallback(async (jobId: string, updates: Partial<DisplayJob>) => {
         // First update the job
         handleUpdateJob(jobId, updates);
@@ -95,7 +76,7 @@ const UnplottedJobsModal: React.FC<UnplottedJobsModalProps> = ({ isOpen, onClose
         }
     }, [handleUpdateJob, handlePlaceJobOnMap]);
 
-    // Handle custom placement with visual marker
+    // Handle custom placement with visual marker - must be defined before early return
     const handlePlaceWithMarker = useCallback((jobId: string, lat: number, lon: number) => {
         // Store the placed location to show marker
         setPlacedLocation({ jobId, lat, lon });
@@ -106,6 +87,29 @@ const UnplottedJobsModal: React.FC<UnplottedJobsModalProps> = ({ isOpen, onClose
         // Clear placement mode
         setPlacementJobId(null);
     }, [handlePlaceJobOnMap, setPlacementJobId]);
+
+    // Handle copy unplotted - must be defined before early return
+    const handleCopyUnplotted = useCallback(() => {
+        const jobs = activeRoute?.unmappableJobs || [];
+        if (jobs.length === 0) return;
+
+        const addressesToCopy = jobs.map(job => job.address).join('\n');
+
+        navigator.clipboard.writeText(addressesToCopy).then(() => {
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2500);
+        }).catch(err => {
+            console.error("Failed to copy unplotted addresses:", err);
+            alert("Could not copy addresses. Please check browser permissions.");
+        });
+    }, [activeRoute?.unmappableJobs]);
+
+    // Early return AFTER all hooks are defined
+    if (!isOpen) return null;
+
+    // These are derived values, not hooks, so they can be after the early return
+    const unmappableJobs = activeRoute?.unmappableJobs || [];
+    const mappableJobs = activeRoute?.mappableJobs || [];
 
     // Create jobs for map - include mappable jobs plus any placed location marker
     const jobsForMap: DisplayJob[] = [...mappableJobs];
