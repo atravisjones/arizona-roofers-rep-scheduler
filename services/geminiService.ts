@@ -242,8 +242,12 @@ export async function parseJobsFromText(
         // - "- Dec 8, 2025 4:12 PM"
         // - "- Dec 9, 2025"
         // - "- 12/10/2025 09:51 AM" (Numeric date support added)
+        // - "- 2025-12-18 11:08 AM" (ISO-ish date format)
+        // - "- 2025-12-19 07:16" (ISO-ish date without AM/PM)
+        // - "- Dec 18, 3:19 PM" (Short date without year)
+        // - "- Saturday, December 20, 2025 at 11:08:35 AM MST" (with seconds)
         // This prevents the timestamp from being confused with the job date or address
-        const timestampRegex = /\s*-\s*(?:(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?|\d{1,2}\/\d{1,2}\/\d{4})\s*(?:\d{1,2}:\d{2}\s*[AP]M)?(?:\s+[A-Z]{3,4})?\s*$/i;
+        const timestampRegex = /\s*-\s*(?:(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}|[a-z]{3,9}\s+\d{1,2},?)\s*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)?(?:\s+[A-Z]{3,4})?\s*$/i;
         trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
 
         const timeSlotMatch = trimmedLine.match(timeSlotRegex);
