@@ -1,8 +1,24 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { Rep, Job } from '../types';
-import { TAG_KEYWORDS, TIME_SLOTS } from '../constants';
+import { TAG_KEYWORDS } from '../constants';
 import { ClipboardIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
+
+// Helper to check if an address looks like coordinates (e.g., "33.123,-111.456")
+const isCoordinateAddress = (address: string): boolean => {
+    const coordPattern = /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/;
+    return coordPattern.test(address.trim());
+};
+
+// Helper to extract the original address from notes if available
+const extractOriginalAddress = (notes: string): string | null => {
+    // Try to match "(Original address: ...)" first (from manual placement)
+    const originalMatch = notes.match(/\(Original address:\s*([^)]+)\)/i);
+    if (originalMatch) return originalMatch[1].trim();
+    // Fall back to "(Address corrected from: ...)" (from AI correction)
+    const correctedMatch = notes.match(/\(Address corrected from:\s*([^)]+)\)/i);
+    return correctedMatch ? correctedMatch[1].trim() : null;
+};
 
 // Helper to extract job type and clean up notes for display
 const getJobDisplayDetails = (job: Job) => {
@@ -13,7 +29,7 @@ const getJobDisplayDetails = (job: Job) => {
     });
 
     const jobType = foundTags.length > 0 ? foundTags.join('/') : 'Inspection';
-    
+
     const priorityMatch = job.notes.match(/#+/);
     const priorityLevel = priorityMatch ? priorityMatch[0].length : 0;
     const priorityReasonMatch = job.notes.match(/#+\s*\(([^)]+)\)/);
@@ -54,9 +70,8 @@ interface RepSummaryModalProps {
 }
 
 const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) => {
-    const { appState, selectedDate } = useAppContext();
+    const { appState } = useAppContext();
     const reps = appState.reps;
-    const selectedDayString = selectedDate.toLocaleString('en-us', { weekday: 'long' });
 
     const summaryRef = useRef<HTMLDivElement>(null);
     const [selectSuccess, setSelectSuccess] = useState(false);
@@ -108,42 +123,25 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                     <div ref={summaryRef}>
                         {repsWithJobs.length > 0 ? (
                             repsWithJobs.map(rep => {
-                                const allJobsForRep = rep.schedule.flatMap(slot => 
+                                const allJobsForRep = rep.schedule.flatMap(slot =>
                                     slot.jobs.map(job => ({ ...job, timeSlotLabel: slot.label }))
                                 );
-                                
-                                const unavailableSlotIds = new Set(rep.unavailableSlots?.[selectedDayString] || []);
-                                
-                                // Only consider slots available if they are NOT unavailable AND have NO jobs assigned
-                                const availableSlots = rep.schedule
-                                    .filter(slot => {
-                                        const isUnavailable = unavailableSlotIds.has(slot.id);
-                                        const hasJobs = slot.jobs.length > 0;
-                                        return !isUnavailable && !hasJobs;
-                                    })
-                                    .map(slot => slot.label);
 
                                 return (
                                 <div key={rep.id} className="py-4 border-b border-border-primary last:border-b-0">
                                     <h3 className="text-xl font-bold text-text-primary mb-1">
                                         {rep.name} ({rep.totalJobs})
                                     </h3>
-                                    <div className="mb-3 flex flex-wrap items-center gap-1">
-                                        <span className="text-sm text-text-tertiary mr-1">Available:</span>
-                                        {availableSlots.length > 0 ? (
-                                            availableSlots.map(label => (
-                                                <span key={label} className="px-2 py-0.5 rounded text-xs font-bold bg-tag-green-bg text-tag-green-text border border-tag-green-border">
-                                                    {label}
-                                                </span>
-                                            ))
-                                        ) : (
-                                            <span className="text-sm text-text-quaternary italic">No free slots today</span>
-                                        )}
-                                    </div>
                                     <ul className="space-y-1">
                                         {allJobsForRep.map(job => {
                                             const { jobType, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
-                                            const fullAddress = [job.address, job.customerName, `AZ ${job.zipCode || ''}`].filter(Boolean).join(', ');
+                                            // Use originalAddress if available, otherwise fall back to extraction from notes or city
+                                            let displayAddress = job.originalAddress || job.address;
+                                            if (!job.originalAddress && isCoordinateAddress(job.address)) {
+                                                const originalAddr = extractOriginalAddress(job.notes);
+                                                displayAddress = originalAddr || job.city || 'Unknown location';
+                                            }
+                                            const fullAddress = [displayAddress, job.customerName, `AZ ${job.zipCode || ''}`].filter(Boolean).join(', ');
                                             const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
                                             // Priority: Original Timeframe, then Slot Label
                                             const timeDisplay = job.originalTimeframe || job.timeSlotLabel;

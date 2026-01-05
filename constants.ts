@@ -5,6 +5,10 @@ import { TimeSlot } from './types';
 // This is for demonstration purposes only. The API key is used for Google Maps and Google Sheets.
 export const GOOGLE_API_KEY = "AIzaSyAUU9vrRIAepLUJedcIrmmfJDyVKjGhINI";
 
+// Supabase Configuration
+export const SUPABASE_URL = "https://ttxcwtcnzakolijaulsc.supabase.co";
+export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0eGN3dGNuemFrb2xpamF1bHNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1NTM0MzMsImV4cCI6MjA4MzEyOTQzM30.pmFFWT2shbd2vP1Ph56IjE7LKlkvkWyFnRpZvlbPKcc";
+
 // Save/Load API - Web App URL (Version 3 - 3-Tab Pipeline)
 // Deployed: Dec 17, 2025 - Import → Main → Backup pipeline
 export const SAVE_LOAD_API_URL = "https://script.google.com/a/macros/arizonaroofers.com/s/AKfycby-nAl9EFU5ktX0FIafzMCtxARgS6Xv0XaHIysirFpJOPcPYzXaItxqEKn4yawnzbSoQw/exec";
@@ -51,3 +55,9 @@ export const ROOF_KEYWORDS: readonly ['Tile', 'Shingle', 'Flat', 'Metal'] = ['Ti
 export const TYPE_KEYWORDS: readonly ['Insurance', 'Commercial'] = ['Insurance', 'Commercial'];
 
 export const TAG_KEYWORDS: readonly string[] = [...ROOF_KEYWORDS, ...TYPE_KEYWORDS];
+
+// Day View Constants
+export const DAY_VIEW_CELL_HEIGHT = 40;  // pixels per 30-min slot
+export const DAY_VIEW_START_HOUR = 6;    // 6am
+export const DAY_VIEW_END_HOUR = 20;     // 8pm (exclusive, so last slot is 7:30pm)
+export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns

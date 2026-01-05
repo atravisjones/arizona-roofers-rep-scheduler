@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import UnassignedJobs from './UnassignedJobs';
 import PasteJobsModal from './PasteJobsModal';
 import PasteWeekModal from './PasteWeekModal';
-import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, DragHandleIcon, XIcon, MapPinIcon } from './icons';
+import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, XIcon, MapPinIcon } from './icons';
 import FilterTabs from './FilterTabs';
 import { JobCard } from './JobCard';
 import { Job, DisplayJob } from '../types';
@@ -11,12 +11,7 @@ import { DaySchedule } from '../services/weekScheduleParser';
 
 type JobsViewTab = 'unassigned' | 'all';
 
-interface JobsPanelProps {
-    onDragStart: () => void;
-    onDragEnd: () => void;
-}
-
-const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
+const JobsPanel: React.FC = () => {
     const {
         isParsing, parsingError, isAutoAssigning, appState,
         handleParseJobs, handleAutoAssign,
@@ -129,15 +124,6 @@ const JobsPanel: React.FC<JobsPanelProps> = ({ onDragStart, onDragEnd }) => {
                         )}
                     </div>
 
-                    <div
-                        draggable
-                        onDragStart={onDragStart}
-                        onDragEnd={onDragEnd}
-                        className="p-1.5 cursor-grab text-border-tertiary hover:text-secondary hover:bg-tertiary rounded-md transition-colors active:cursor-grabbing"
-                        title="Drag to reorder column"
-                    >
-                        <DragHandleIcon className="h-4 w-4" />
-                    </div>
                 </div>
             </div>
 

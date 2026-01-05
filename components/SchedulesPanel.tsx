@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import RepSchedule from './RepSchedule';
-import { LoadingIcon, ErrorIcon, SearchIcon, DragHandleIcon, ExpandAllIcon, CollapseAllIcon, UnassignAllIcon, LockIcon, UnlockIcon, XIcon, TrophyIcon } from './icons';
+import { DayViewPanel } from './DayView';
+import { LoadingIcon, ErrorIcon, SearchIcon, ExpandAllIcon, CollapseAllIcon, UnassignAllIcon, LockIcon, UnlockIcon, XIcon, TrophyIcon, ListIcon, GridIcon } from './icons';
 import { SortKey, Job, Rep, DisplayJob } from '../types';
 import { TIME_SLOTS } from '../constants';
 
@@ -30,12 +31,7 @@ const chipInactiveClass = "bg-bg-tertiary text-secondary border-border-primary h
 const chipOptimizedActiveClass = "bg-tag-teal-bg text-tag-teal-text border-tag-teal-border shadow-sm ring-1 ring-tag-teal-border";
 const chipOptimizedInactiveClass = "bg-tag-teal-bg/50 text-tag-teal-text border-tag-teal-border/50 hover:border-tag-teal-border hover:bg-tag-teal-bg hover:text-tag-teal-text";
 
-interface SchedulesPanelProps {
-    onDragStart: () => void;
-    onDragEnd: () => void;
-}
-
-const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd }) => {
+const SchedulesPanel: React.FC = () => {
     const {
         appState, isLoadingReps, repsError, filteredReps,
         expandedRepIds, draggedOverRepId, draggedJob,
@@ -44,14 +40,18 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
         setDraggedOverRepId, handleJobDragEnd, setDraggedJob,
         sortConfig, setSortConfig, handleClearAllSchedules, assignedJobsCount, isOverrideActive,
         setFilteredAssignedJobs, selectedRepId, setSelectedRepId, selectedDate, checkCityRuleViolation,
-        swapSourceRepId, setSwapSourceRepId, handleSwapSchedules
+        swapSourceRepId, setSwapSourceRepId, handleSwapSchedules,
+        uiSettings, updateUiSettings
     } = useAppContext();
+
+    // Get current view mode (default to 'list')
+    const viewMode = uiSettings.schedulesViewMode || 'list';
 
     // Filter States
     const [repSearchTerm, setRepSearchTerm] = useState('');
     const [cityFilters] = useState<Set<string>>(new Set());
     const [lockFilter] = useState<'all' | 'locked' | 'unlocked'>('all');
-    const [selectedRepFilter, setSelectedRepFilter] = useState<string | null>(null);
+    const [selectedRepFilters, setSelectedRepFilters] = useState<Set<string>>(new Set());
 
     // Determine the actual day name (e.g. "Monday") for the selected date to check availability correctly
     const selectedDay = useMemo(() => selectedDate.toLocaleDateString('en-US', { weekday: 'long' }), [selectedDate]);
@@ -60,9 +60,9 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
     const visibleReps = useMemo(() => {
         let reps = filteredReps('', cityFilters, lockFilter);
 
-        // Filter by selected rep (when clicking on a rep chip)
-        if (selectedRepFilter) {
-            reps = reps.filter(rep => rep.id === selectedRepFilter);
+        // Filter by selected reps (when clicking on rep chips)
+        if (selectedRepFilters.size > 0) {
+            reps = reps.filter(rep => selectedRepFilters.has(rep.id));
         }
 
         // Filter by search term - search across multiple fields
@@ -90,7 +90,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
         }
 
         return reps;
-    }, [filteredReps, cityFilters, lockFilter, selectedRepFilter, repSearchTerm]);
+    }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, repSearchTerm]);
 
     // Push visible jobs to context for synchronized map filtering.
     // Use a ref to prevent infinite loops by checking content equality (via IDs)
@@ -121,8 +121,8 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
     };
 
     return (
-        <>
-            <div className="flex justify-between items-center mb-3 border-b border-border-primary pb-2">
+        <div className="flex flex-col h-full min-h-0 overflow-hidden">
+            <div className="flex justify-between items-center mb-3 border-b border-border-primary pb-2 flex-shrink-0">
                 <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
                     1. Schedules
                     <div className="flex items-center px-2 py-0.5 bg-tag-amber-bg text-tag-amber-text rounded-full border border-tag-amber-border text-xs font-medium" title="Assigned Jobs">
@@ -142,12 +142,38 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                 </h2>
 
                 <div className="flex items-center gap-2">
+                    {/* View Toggle Buttons */}
+                    <div className="flex bg-bg-tertiary rounded-md p-0.5 border border-border-primary">
+                        <button
+                            onClick={() => updateUiSettings({ schedulesViewMode: 'list' })}
+                            className={`p-1.5 rounded transition-all ${
+                                viewMode === 'list'
+                                    ? 'bg-brand-primary text-brand-text-on-primary shadow-sm'
+                                    : 'text-text-tertiary hover:text-secondary hover:bg-bg-secondary'
+                            }`}
+                            title="List View"
+                        >
+                            <ListIcon className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                            onClick={() => updateUiSettings({ schedulesViewMode: 'day' })}
+                            className={`p-1.5 rounded transition-all ${
+                                viewMode === 'day'
+                                    ? 'bg-brand-primary text-brand-text-on-primary shadow-sm'
+                                    : 'text-text-tertiary hover:text-secondary hover:bg-bg-secondary'
+                            }`}
+                            title="Day View"
+                        >
+                            <GridIcon className="h-3.5 w-3.5" />
+                        </button>
+                    </div>
+
                     <div className="relative group">
                         <input
                             type="text"
                             className={`
-                        pl-8 pr-7 py-1.5 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary 
-                        rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary 
+                        pl-8 pr-7 py-1.5 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary
+                        rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary
                         transition-all w-32 focus:w-48
                         ${repSearchTerm ? 'w-48' : ''}
                     `}
@@ -165,30 +191,21 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                         )}
                     </div>
 
-                    <div
-                        draggable
-                        onDragStart={onDragStart}
-                        onDragEnd={onDragEnd}
-                        className="p-1.5 cursor-grab text-border-tertiary hover:text-secondary hover:bg-tertiary rounded-md transition-colors active:cursor-grabbing"
-                        title="Drag to reorder column"
-                    >
-                        <DragHandleIcon className="h-4 w-4" />
-                    </div>
                 </div>
             </div>
 
             {/* Rep Filter Buttons */}
-            <div className="bg-secondary rounded-lg p-2 mb-3 border border-border-primary">
+            <div className="bg-secondary rounded-lg p-2 mb-3 border border-border-primary flex-shrink-0">
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
                         Filter by Rep (Click to Select)
                     </span>
-                    {(selectedRepFilter || repSearchTerm) && (
+                    {(selectedRepFilters.size > 0 || repSearchTerm) && (
                         <button
-                            onClick={() => { setSelectedRepFilter(null); setRepSearchTerm(''); setSelectedRepId(null); }}
+                            onClick={() => { setSelectedRepFilters(new Set()); setRepSearchTerm(''); setSelectedRepId(null); }}
                             className="text-[10px] font-bold text-tag-red-text hover:text-tag-red-text/80 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-tag-red-bg"
                         >
-                            <XIcon className="h-3 w-3" /> Clear Filters
+                            <XIcon className="h-3 w-3" /> Clear Filters {selectedRepFilters.size > 0 && `(${selectedRepFilters.size})`}
                         </button>
                     )}
                 </div>
@@ -211,7 +228,7 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                 return a.name.localeCompare(b.name);
                             })
                             .map(rep => {
-                                const isSelected = selectedRepFilter === rep.id;
+                                const isSelected = selectedRepFilters.has(rep.id);
                                 const jobCount = rep.schedule.flatMap(s => s.jobs).length;
                                 const isOptimized = rep.isOptimized;
                                 const isDoubleBooked = rep.schedule.some(slot => slot.jobs.length > 1);
@@ -252,15 +269,36 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                                                     setSwapSourceRepId(null);
                                                 }
                                             } else {
-                                                // Toggle selection: if this rep is already selected, deselect it
-                                                const newSelection = selectedRepFilter === rep.id ? null : rep.id;
-                                                setSelectedRepFilter(newSelection);
-                                                // Also set selectedRepId to highlight this rep's jobs on the map
-                                                setSelectedRepId(newSelection);
+                                                // Left-click: single select (clears others) or deselect if already selected
+                                                if (isSelected && selectedRepFilters.size === 1) {
+                                                    // Only this one selected, clear selection
+                                                    setSelectedRepFilters(new Set());
+                                                    setSelectedRepId(null);
+                                                } else {
+                                                    // Select only this rep
+                                                    setSelectedRepFilters(new Set([rep.id]));
+                                                    setSelectedRepId(rep.id);
+                                                }
                                             }
                                         }}
+                                        onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            if (swapSourceRepId) return;
+                                            // Right-click: toggle this rep in multi-select
+                                            setSelectedRepFilters(prev => {
+                                                const newSet = new Set(prev);
+                                                if (newSet.has(rep.id)) {
+                                                    newSet.delete(rep.id);
+                                                } else {
+                                                    newSet.add(rep.id);
+                                                }
+                                                return newSet;
+                                            });
+                                            // Set map highlight to most recently added, or null if all removed
+                                            setSelectedRepId(isSelected ? null : rep.id);
+                                        }}
                                         disabled={!!isSwapDisabled}
-                                        title={isDoubleBooked ? `${rep.name} - Double Booked!` : rep.name}
+                                        title={isDoubleBooked ? `${rep.name} - Double Booked!` : `${rep.name} (Right-click to multi-select)`}
                                         className={`${chipClass} ${chipBaseClass}`}
                                     >
                                         {formatRepNameForFilter(rep.name)}
@@ -282,121 +320,133 @@ const SchedulesPanel: React.FC<SchedulesPanelProps> = ({ onDragStart, onDragEnd 
                 </div>
             </div>
 
-            <div className="flex flex-wrap gap-2 mb-3 items-center justify-between bg-primary p-1 rounded border border-border-primary">
-                <div className="flex items-center space-x-1">
-                    <button
-                        onClick={() => handleToggleAllReps(visibleReps)}
-                        className="p-1.5 rounded hover:bg-tertiary text-text-tertiary hover:text-brand-primary transition"
-                        title={expandedRepIds.size === visibleReps.length ? "Collapse All" : "Expand All"}
-                    >
-                        {expandedRepIds.size === visibleReps.length ? <CollapseAllIcon className="h-4 w-4" /> : <ExpandAllIcon className="h-4 w-4" />}
-                    </button>
+            {/* Conditional rendering based on view mode */}
+            {viewMode === 'list' ? (
+                <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                    {/* List View Controls */}
+                    <div className="flex flex-wrap gap-2 mb-3 items-center justify-between bg-primary p-1 rounded border border-border-primary flex-shrink-0">
+                        <div className="flex items-center space-x-1">
+                            <button
+                                onClick={() => handleToggleAllReps(visibleReps)}
+                                className="p-1.5 rounded hover:bg-tertiary text-text-tertiary hover:text-brand-primary transition"
+                                title={expandedRepIds.size === visibleReps.length ? "Collapse All" : "Expand All"}
+                            >
+                                {expandedRepIds.size === visibleReps.length ? <CollapseAllIcon className="h-4 w-4" /> : <ExpandAllIcon className="h-4 w-4" />}
+                            </button>
 
-                    <button
-                        onClick={handleClearAllSchedules}
-                        disabled={assignedJobsCount === 0}
-                        className="p-1.5 rounded hover:bg-tag-red-bg text-text-quaternary hover:text-tag-red-text transition disabled:opacity-30"
-                        title="Unassign All Jobs"
-                    >
-                        <UnassignAllIcon className="h-4 w-4" />
-                    </button>
+                            <button
+                                onClick={handleClearAllSchedules}
+                                disabled={assignedJobsCount === 0}
+                                className="p-1.5 rounded hover:bg-tag-red-bg text-text-quaternary hover:text-tag-red-text transition disabled:opacity-30"
+                                title="Unassign All Jobs"
+                            >
+                                <UnassignAllIcon className="h-4 w-4" />
+                            </button>
 
-                    <div className="h-4 w-px bg-border-primary mx-1"></div>
+                            <div className="h-4 w-px bg-border-primary mx-1"></div>
 
-                    <button
-                        onClick={() => setLockFilter(prev => prev === 'locked' ? 'all' : 'locked')}
-                        className={`p-1.5 rounded transition ${lockFilter === 'locked' ? 'bg-tag-amber-bg text-tag-amber-text' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
-                        title="Show Locked Only"
-                    >
-                        <LockIcon className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                        onClick={() => setLockFilter(prev => prev === 'unlocked' ? 'all' : 'unlocked')}
-                        className={`p-1.5 rounded transition ${lockFilter === 'unlocked' ? 'bg-brand-bg-light text-brand-text-light' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
-                        title="Show Unlocked Only"
-                    >
-                        <UnlockIcon className="h-3.5 w-3.5" />
-                    </button>
+                            <button
+                                onClick={() => setLockFilter(prev => prev === 'locked' ? 'all' : 'locked')}
+                                className={`p-1.5 rounded transition ${lockFilter === 'locked' ? 'bg-tag-amber-bg text-tag-amber-text' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
+                                title="Show Locked Only"
+                            >
+                                <LockIcon className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                                onClick={() => setLockFilter(prev => prev === 'unlocked' ? 'all' : 'unlocked')}
+                                className={`p-1.5 rounded transition ${lockFilter === 'unlocked' ? 'bg-brand-bg-light text-brand-text-light' : 'text-text-quaternary hover:bg-tertiary hover:text-secondary'}`}
+                                title="Show Unlocked Only"
+                            >
+                                <UnlockIcon className="h-3.5 w-3.5" />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                            <label htmlFor="sort-select" className="text-xs font-semibold text-text-tertiary">Sort:</label>
+                            <select
+                                id="sort-select"
+                                className="text-xs border border-primary rounded p-1 focus:ring-2 focus:ring-brand-primary focus:outline-none bg-secondary text-primary hover:bg-tertiary"
+                                value={sortConfig.key === 'Tile' || sortConfig.key === 'Shingle' || sortConfig.key === 'Flat' ? `skill-${sortConfig.key}` : sortConfig.key}
+                                onChange={handleSortChange}
+                            >
+                                <option value="name">Name (A-Z)</option>
+                                <option value="salesRank">Sales Rank (Best First)</option>
+                                <option value="jobCount">Most Jobs</option>
+                                <option value="cityCount">City Spread</option>
+                                <option value="availability">Availability</option>
+                                <option value="skillCount">Total Skill Level</option>
+                                <optgroup label="By Skill Level">
+                                    <option value="skill-Tile">Best Tile</option>
+                                    <option value="skill-Shingle">Best Shingle</option>
+                                    <option value="skill-Flat">Best Flat</option>
+                                    <option value="skill-Metal">Best Metal</option>
+                                    <option value="skill-Insurance">Best Insurance</option>
+                                    <option value="skill-Commercial">Best Commercial</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* List View Content */}
+                    <div className="flex-grow overflow-y-auto min-h-0 space-y-2 pr-1 custom-scrollbar">
+                        {isLoadingReps ? (
+                            <div className="flex flex-col items-center justify-center h-32 text-text-tertiary">
+                                <LoadingIcon className="text-brand-primary h-8 w-8 mb-2" />
+                                <p className="text-sm font-medium">Loading Reps...</p>
+                            </div>
+                        ) : repsError ? (
+                            <div className="flex flex-col items-center justify-center h-32 text-tag-red-text bg-tag-red-bg rounded-lg p-4 border border-tag-red-border">
+                                <ErrorIcon className="h-8 w-8 mb-2" />
+                                <p className="text-sm text-center">{repsError}</p>
+                            </div>
+                        ) : visibleReps.length > 0 ? (
+                            visibleReps.map(rep => {
+                                // Highlight rep if search term matches rep name OR if rep is explicitly selected
+                                const isHighlighted = (repSearchTerm && rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) || selectedRepFilters.has(rep.id);
+                                return (
+                                    <RepSchedule
+                                        key={rep.id}
+                                        rep={rep}
+                                        selectedDay={selectedDay}
+                                        onJobDrop={handleJobDrop}
+                                        onUnassign={handleUnassignJob}
+                                        onToggleLock={handleToggleRepLock}
+                                        onUpdateJob={handleUpdateJob}
+                                        onRemoveJob={handleRemoveJob}
+                                        isSelected={rep.id === selectedRepId}
+                                        onSelectRep={(e) => {
+                                            // Toggle rep selection - clicking again deselects
+                                            setSelectedRepId(selectedRepId === rep.id ? null : rep.id);
+                                        }}
+                                        isExpanded={expandedRepIds.has(rep.id)}
+                                        onToggleExpansion={() => handleToggleRepExpansion(rep.id)}
+                                        draggedOverRepId={draggedOverRepId}
+                                        onSetDraggedOverRepId={setDraggedOverRepId}
+                                        onJobDragStart={setDraggedJob}
+                                        onJobDragEnd={handleJobDragEnd}
+                                        draggedJob={draggedJob}
+                                        isInvalidDropTarget={draggedJob ? checkCityRuleViolation(rep, draggedJob.city).violated : false}
+                                        invalidReason="Max Cities Reached"
+                                        isOverrideActive={isOverrideActive}
+                                        isHighlighted={isHighlighted}
+                                        selectedRepName={repSearchTerm || undefined}
+                                    />
+                                );
+                            })
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-32 text-text-quaternary">
+                                <p className="text-sm italic">No reps match your filter.</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-                <div className="flex items-center space-x-2">
-                    <label htmlFor="sort-select" className="text-xs font-semibold text-text-tertiary">Sort:</label>
-                    <select
-                        id="sort-select"
-                        className="text-xs border border-primary rounded p-1 focus:ring-2 focus:ring-brand-primary focus:outline-none bg-secondary text-primary hover:bg-tertiary"
-                        value={sortConfig.key === 'Tile' || sortConfig.key === 'Shingle' || sortConfig.key === 'Flat' ? `skill-${sortConfig.key}` : sortConfig.key}
-                        onChange={handleSortChange}
-                    >
-                        <option value="name">Name (A-Z)</option>
-                        <option value="salesRank">Sales Rank (Best First)</option>
-                        <option value="jobCount">Most Jobs</option>
-                        <option value="cityCount">City Spread</option>
-                        <option value="availability">Availability</option>
-                        <option value="skillCount">Total Skill Level</option>
-                        <optgroup label="By Skill Level">
-                            <option value="skill-Tile">Best Tile</option>
-                            <option value="skill-Shingle">Best Shingle</option>
-                            <option value="skill-Flat">Best Flat</option>
-                            <option value="skill-Metal">Best Metal</option>
-                            <option value="skill-Insurance">Best Insurance</option>
-                            <option value="skill-Commercial">Best Commercial</option>
-                        </optgroup>
-                    </select>
+            ) : (
+                /* Day View */
+                <div className="flex-1 min-h-0 flex flex-col">
+                    <DayViewPanel reps={visibleReps} />
                 </div>
-            </div>
-
-            <div className="flex-grow overflow-y-auto min-h-0 space-y-2 pr-1 custom-scrollbar">
-                {isLoadingReps ? (
-                    <div className="flex flex-col items-center justify-center h-32 text-text-tertiary">
-                        <LoadingIcon className="text-brand-primary h-8 w-8 mb-2" />
-                        <p className="text-sm font-medium">Loading Reps...</p>
-                    </div>
-                ) : repsError ? (
-                    <div className="flex flex-col items-center justify-center h-32 text-tag-red-text bg-tag-red-bg rounded-lg p-4 border border-tag-red-border">
-                        <ErrorIcon className="h-8 w-8 mb-2" />
-                        <p className="text-sm text-center">{repsError}</p>
-                    </div>
-                ) : visibleReps.length > 0 ? (
-                    visibleReps.map(rep => {
-                        // Highlight rep if search term matches rep name OR if rep is explicitly selected
-                        const isHighlighted = (repSearchTerm && rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) || rep.id === selectedRepFilter;
-                        return (
-                            <RepSchedule
-                                key={rep.id}
-                                rep={rep}
-                                selectedDay={selectedDay}
-                                onJobDrop={handleJobDrop}
-                                onUnassign={handleUnassignJob}
-                                onToggleLock={handleToggleRepLock}
-                                onUpdateJob={handleUpdateJob}
-                                onRemoveJob={handleRemoveJob}
-                                isSelected={rep.id === selectedRepId}
-                                onSelectRep={(e) => {
-                                    // Toggle rep selection - clicking again deselects
-                                    setSelectedRepId(selectedRepId === rep.id ? null : rep.id);
-                                }}
-                                isExpanded={expandedRepIds.has(rep.id)}
-                                onToggleExpansion={() => handleToggleRepExpansion(rep.id)}
-                                draggedOverRepId={draggedOverRepId}
-                                onSetDraggedOverRepId={setDraggedOverRepId}
-                                onJobDragStart={setDraggedJob}
-                                onJobDragEnd={handleJobDragEnd}
-                                draggedJob={draggedJob}
-                                isInvalidDropTarget={draggedJob ? checkCityRuleViolation(rep, draggedJob.city).violated : false}
-                                invalidReason="Max Cities Reached"
-                                isOverrideActive={isOverrideActive}
-                                isHighlighted={isHighlighted}
-                                selectedRepName={repSearchTerm || undefined}
-                            />
-                        );
-                    })
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-32 text-text-quaternary">
-                        <p className="text-sm italic">No reps match your filter.</p>
-                    </div>
-                )}
-            </div>
-        </>
+            )}
+        </div>
     );
 };
 

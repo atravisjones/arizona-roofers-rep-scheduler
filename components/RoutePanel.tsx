@@ -372,18 +372,24 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                             {availablePriorityLevels.map(level => (
                                                 <button
                                                     key={level}
-                                                    onClick={(e) => setTagFilters(f => {
+                                                    onClick={() => setTagFilters(f => {
+                                                        // Left-click: single select
                                                         const n = new Set(f.priorityLevels);
-                                                        if (e.altKey) {
-                                                            n.has(level) ? n.delete(level) : n.add(level);
-                                                        } else {
-                                                            const wasSelected = n.has(level);
-                                                            const manySelected = n.size > 1;
-                                                            n.clear();
-                                                            if (!wasSelected || manySelected) n.add(level);
-                                                        }
+                                                        const wasSelected = n.has(level);
+                                                        const manySelected = n.size > 1;
+                                                        n.clear();
+                                                        if (!wasSelected || manySelected) n.add(level);
                                                         return { ...f, priorityLevels: n };
                                                     })}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        // Right-click: multi-select
+                                                        setTagFilters(f => {
+                                                            const n = new Set(f.priorityLevels);
+                                                            n.has(level) ? n.delete(level) : n.add(level);
+                                                            return { ...f, priorityLevels: n };
+                                                        });
+                                                    }}
                                                     className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all flex items-center gap-1 ${tagFilters.priorityLevels.has(level) ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
                                                 >
                                                     <StarIcon className={`h-3 w-3 ${tagFilters.priorityLevels.has(level) ? 'text-tag-amber-text' : 'text-text-quaternary'}`} />
@@ -398,18 +404,27 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Roof</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.roofTypes.map(tag => (
-                                                <button key={tag} onClick={(e) => setTagFilters(f => {
-                                                    const n = new Set(f.roofTypes);
-                                                    if (e.altKey) {
-                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
-                                                    } else {
+                                                <button key={tag}
+                                                    onClick={() => setTagFilters(f => {
+                                                        // Left-click: single select
+                                                        const n = new Set(f.roofTypes);
                                                         const wasSelected = n.has(tag);
                                                         const manySelected = n.size > 1;
                                                         n.clear();
                                                         if (!wasSelected || manySelected) n.add(tag);
-                                                    }
-                                                    return { ...f, roofTypes: n };
-                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.roofTypes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                                        return { ...f, roofTypes: n };
+                                                    })}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        // Right-click: multi-select
+                                                        setTagFilters(f => {
+                                                            const n = new Set(f.roofTypes);
+                                                            n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                            return { ...f, roofTypes: n };
+                                                        });
+                                                    }}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.roofTypes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                >{tag}</button>
                                             ))}
                                         </div>
                                     </div>
@@ -419,18 +434,27 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Height</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.stories.map(tag => (
-                                                <button key={tag} onClick={(e) => setTagFilters(f => {
-                                                    const n = new Set(f.stories);
-                                                    if (e.altKey) {
-                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
-                                                    } else {
+                                                <button key={tag}
+                                                    onClick={() => setTagFilters(f => {
+                                                        // Left-click: single select
+                                                        const n = new Set(f.stories);
                                                         const wasSelected = n.has(tag);
                                                         const manySelected = n.size > 1;
                                                         n.clear();
                                                         if (!wasSelected || manySelected) n.add(tag);
-                                                    }
-                                                    return { ...f, stories: n };
-                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.stories.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag} Story</button>
+                                                        return { ...f, stories: n };
+                                                    })}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        // Right-click: multi-select
+                                                        setTagFilters(f => {
+                                                            const n = new Set(f.stories);
+                                                            n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                            return { ...f, stories: n };
+                                                        });
+                                                    }}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.stories.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                >{tag} Story</button>
                                             ))}
                                         </div>
                                     </div>
@@ -440,18 +464,27 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Age</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.ages.map(tag => (
-                                                <button key={tag} onClick={(e) => setTagFilters(f => {
-                                                    const n = new Set(f.ages);
-                                                    if (e.altKey) {
-                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
-                                                    } else {
+                                                <button key={tag}
+                                                    onClick={() => setTagFilters(f => {
+                                                        // Left-click: single select
+                                                        const n = new Set(f.ages);
                                                         const wasSelected = n.has(tag);
                                                         const manySelected = n.size > 1;
                                                         n.clear();
                                                         if (!wasSelected || manySelected) n.add(tag);
-                                                    }
-                                                    return { ...f, ages: n };
-                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.ages.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                                        return { ...f, ages: n };
+                                                    })}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        // Right-click: multi-select
+                                                        setTagFilters(f => {
+                                                            const n = new Set(f.ages);
+                                                            n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                            return { ...f, ages: n };
+                                                        });
+                                                    }}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.ages.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                >{tag}</button>
                                             ))}
                                         </div>
                                     </div>
@@ -461,18 +494,27 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                         <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Size</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.sizes.map(tag => (
-                                                <button key={tag} onClick={(e) => setTagFilters(f => {
-                                                    const n = new Set(f.sizes);
-                                                    if (e.altKey) {
-                                                        n.has(tag) ? n.delete(tag) : n.add(tag);
-                                                    } else {
+                                                <button key={tag}
+                                                    onClick={() => setTagFilters(f => {
+                                                        // Left-click: single select
+                                                        const n = new Set(f.sizes);
                                                         const wasSelected = n.has(tag);
                                                         const manySelected = n.size > 1;
                                                         n.clear();
                                                         if (!wasSelected || manySelected) n.add(tag);
-                                                    }
-                                                    return { ...f, sizes: n };
-                                                })} className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.sizes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}>{tag}</button>
+                                                        return { ...f, sizes: n };
+                                                    })}
+                                                    onContextMenu={(e) => {
+                                                        e.preventDefault();
+                                                        // Right-click: multi-select
+                                                        setTagFilters(f => {
+                                                            const n = new Set(f.sizes);
+                                                            n.has(tag) ? n.delete(tag) : n.add(tag);
+                                                            return { ...f, sizes: n };
+                                                        });
+                                                    }}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.sizes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                >{tag}</button>
                                             ))}
                                         </div>
                                     </div>

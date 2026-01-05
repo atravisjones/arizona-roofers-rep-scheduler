@@ -263,11 +263,13 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                             <button key={city}
                                 onClick={(e) => {
                                     e.preventDefault();
-                                    if (e.altKey) {
-                                        setCityFilters(prev => { const n = new Set(prev); n.has(city) ? n.delete(city) : n.add(city); return n; });
-                                    } else {
-                                        setCityFilters(prev => { if (prev.has(city) && prev.size === 1) return new Set(); return new Set([city]); });
-                                    }
+                                    // Left-click: single select (toggle if already selected alone)
+                                    setCityFilters(prev => { if (prev.has(city) && prev.size === 1) return new Set(); return new Set([city]); });
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    // Right-click: multi-select (toggle in set)
+                                    setCityFilters(prev => { const n = new Set(prev); n.has(city) ? n.delete(city) : n.add(city); return n; });
                                 }}
                                 className={`${cityFilters.has(city) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>
                                 {city}
@@ -284,11 +286,13 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                             <button key={slot}
                                 onClick={(e) => {
                                     e.preventDefault();
-                                    if (e.altKey) {
-                                        setTimeFilters(prev => { const n = new Set(prev); n.has(slot) ? n.delete(slot) : n.add(slot); return n; });
-                                    } else {
-                                        setTimeFilters(prev => { if (prev.has(slot) && prev.size === 1) return new Set(); return new Set([slot]); });
-                                    }
+                                    // Left-click: single select (toggle if already selected alone)
+                                    setTimeFilters(prev => { if (prev.has(slot) && prev.size === 1) return new Set(); return new Set([slot]); });
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    // Right-click: multi-select (toggle in set)
+                                    setTimeFilters(prev => { const n = new Set(prev); n.has(slot) ? n.delete(slot) : n.add(slot); return n; });
                                 }}
                                 className={`${timeFilters.has(slot) ? chipActiveClass : chipInactiveClass} ${chipBaseClass}`}>
                                 {slot}
@@ -421,7 +425,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
             </div>
             <div className="flex items-center justify-between px-1 mb-1">
                 <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
-                    {activeTab === 'city' ? 'Filter by City (Alt+Click for Multi)' : activeTab === 'time' ? 'Filter by Time Slot (Alt+Click for Multi)' : 'Filter by Attributes'}
+                    {activeTab === 'city' ? 'Filter by City (Right-Click for Multi)' : activeTab === 'time' ? 'Filter by Time Slot (Right-Click for Multi)' : 'Filter by Attributes (Right-Click for Multi)'}
                 </span>
                 {hasActiveFilters && (
                     <button onClick={handleClearFilters} className="text-[10px] font-bold text-tag-red-text hover:text-tag-red-text/80 flex items-center gap-1 transition-colors px-2 py-0.5 rounded hover:bg-tag-red-bg">

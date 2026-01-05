@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -23,20 +23,79 @@ import SettingsPanel from './SettingsPanel';
 import AssignmentSettingsModal from './SettingsModal';
 import ThemeEditorModal from './ThemeEditorModal';
 import ConfirmationModal from './ConfirmationModal';
+import LoadOptionsModal from './LoadOptionsModal';
+import { ToastContainer } from './Toast';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 
-const MIN_COLUMN_PERCENTAGE = 10;
 type ColumnId = 'schedules' | 'jobs' | 'routes';
 
+type DropPosition = 'left' | 'right' | 'stack';
+type DropTarget = {
+  targetId: ColumnId;
+  position: DropPosition;
+} | null;
+
+const COLUMN_LABELS: Record<ColumnId, string> = {
+  schedules: 'Schedules',
+  jobs: 'Jobs',
+  routes: 'Map',
+};
+
+// Column configuration for dynamic flex-based layout (no limits - user can resize freely)
+const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flexGrow: number; flexBasis: string }> = {
+  schedules: { minWidth: 100, maxWidth: 9999, flexGrow: 1, flexBasis: '300px' },
+  jobs: { minWidth: 100, maxWidth: 9999, flexGrow: 1, flexBasis: '280px' },
+  routes: { minWidth: 100, maxWidth: 9999, flexGrow: 2, flexBasis: '400px' }, // Map is primary flex-grow
+};
 
 const MainLayout: React.FC = () => {
   const context = useAppContext();
-  // Removed 'details' from default order
+  const { uiSettings, updateUiSettings } = context;
+
+  // Column order for drag-drop reordering
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(['schedules', 'jobs', 'routes']);
-  // Adjusted widths for 3 columns
-  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>({ schedules: 35, jobs: 30, routes: 35 });
-  const draggedItem = useRef<ColumnId | null>(null);
-  const dragOverItem = useRef<ColumnId | null>(null);
+  // Column widths as pixel values for flex-basis (user-adjustable)
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>({ schedules: 350, jobs: 320, routes: 450 });
+  // Stack heights as percentages (parent column gets remaining space)
+  const [stackHeights, setStackHeights] = useState<Record<ColumnId, number>>({ schedules: 50, jobs: 50, routes: 50 });
+
+  // Get collapsed columns and stacking from uiSettings
+  const collapsedColumns = useMemo(() =>
+    new Set<ColumnId>(uiSettings.collapsedColumns as ColumnId[] || []),
+    [uiSettings.collapsedColumns]
+  );
+
+  const columnStack = useMemo(() =>
+    (uiSettings.columnStack || {}) as Record<ColumnId, ColumnId | null>,
+    [uiSettings.columnStack]
+  );
+
+  // Toggle column collapse
+  const toggleCollapse = useCallback((colId: ColumnId) => {
+    const currentCollapsed = uiSettings.collapsedColumns || [];
+    let newCollapsed: string[];
+    if (currentCollapsed.includes(colId)) {
+      newCollapsed = currentCollapsed.filter(c => c !== colId);
+    } else {
+      newCollapsed = [...currentCollapsed, colId];
+    }
+    updateUiSettings({ collapsedColumns: newCollapsed });
+  }, [uiSettings.collapsedColumns, updateUiSettings]);
+
+  // Set column stack (stack colId under parentId)
+  const setColumnStacking = useCallback((colId: ColumnId, parentId: ColumnId | null) => {
+    const newStack = { ...(uiSettings.columnStack || {}), [colId]: parentId };
+    // Remove null values for cleaner state
+    Object.keys(newStack).forEach(key => {
+      if (newStack[key] === null) delete newStack[key];
+    });
+    updateUiSettings({ columnStack: newStack });
+  }, [uiSettings.columnStack, updateUiSettings]);
+
+  // Drag and drop state for column reordering/stacking
+  const [draggedColumnId, setDraggedColumnId] = useState<ColumnId | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget>(null);
+  const columnRefs = useRef<Map<ColumnId, HTMLDivElement>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
   const [isRepSummaryOpen, setIsRepSummaryOpen] = useState(false);
@@ -98,47 +157,143 @@ const MainLayout: React.FC = () => {
     }
   };
 
-  const handleDragStart = (id: ColumnId) => { draggedItem.current = id; };
-  const handleDragEnter = (id: ColumnId) => { dragOverItem.current = id; };
-  const handleDragEnd = () => {
-    if (draggedItem.current && dragOverItem.current && draggedItem.current !== dragOverItem.current) {
-      const newColumnOrder = [...columnOrder];
-      const draggedIndex = newColumnOrder.indexOf(draggedItem.current);
-      const targetIndex = newColumnOrder.indexOf(dragOverItem.current);
-      if (draggedIndex > -1 && targetIndex > -1) {
-        const [removed] = newColumnOrder.splice(draggedIndex, 1);
-        newColumnOrder.splice(targetIndex, 0, removed);
-        setColumnOrder(newColumnOrder);
+  // Column drag handlers
+  const handleColumnDragStart = useCallback((e: React.DragEvent, id: ColumnId) => {
+    setDraggedColumnId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+    // Add a slight delay to prevent immediate visual glitch
+    requestAnimationFrame(() => {
+      const el = columnRefs.current.get(id);
+      if (el) el.style.opacity = '0.5';
+    });
+  }, []);
+
+  const handleColumnDragOver = useCallback((e: React.DragEvent, targetId: ColumnId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    if (!draggedColumnId || draggedColumnId === targetId) {
+      setDropTarget(null);
+      return;
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const width = rect.width;
+    const relativeX = x / width;
+
+    // Determine drop position based on mouse position
+    // Left 25% = insert before, Right 25% = insert after, Middle 50% = stack
+    let position: DropPosition;
+    if (relativeX < 0.25) {
+      position = 'left';
+    } else if (relativeX > 0.75) {
+      position = 'right';
+    } else {
+      position = 'stack';
+    }
+
+    setDropTarget({ targetId, position });
+  }, [draggedColumnId]);
+
+  const handleColumnDragLeave = useCallback((e: React.DragEvent) => {
+    // Only clear if leaving the container entirely
+    const relatedTarget = e.relatedTarget as Node | null;
+    if (!e.currentTarget.contains(relatedTarget)) {
+      setDropTarget(null);
+    }
+  }, []);
+
+  const handleColumnDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+
+    if (!draggedColumnId || !dropTarget) {
+      setDraggedColumnId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    const { targetId, position } = dropTarget;
+
+    if (position === 'stack') {
+      // Stack the dragged column under the target
+      setColumnStacking(draggedColumnId, targetId);
+    } else {
+      // Reorder columns
+      const newOrder = [...columnOrder];
+      const draggedIndex = newOrder.indexOf(draggedColumnId);
+      const targetIndex = newOrder.indexOf(targetId);
+
+      if (draggedIndex > -1) {
+        // Remove from current position
+        newOrder.splice(draggedIndex, 1);
+
+        // Calculate new index
+        let insertIndex = newOrder.indexOf(targetId);
+        if (insertIndex === -1) insertIndex = 0;
+
+        if (position === 'right') {
+          insertIndex += 1;
+        }
+
+        newOrder.splice(insertIndex, 0, draggedColumnId);
+        setColumnOrder(newOrder);
+
+        // If the column was previously stacked, unstack it
+        if (columnStack[draggedColumnId]) {
+          setColumnStacking(draggedColumnId, null);
+        }
       }
     }
-    draggedItem.current = null;
-    dragOverItem.current = null;
-  };
 
+    setDraggedColumnId(null);
+    setDropTarget(null);
+  }, [draggedColumnId, dropTarget, columnOrder, columnStack, setColumnStacking]);
+
+  const handleColumnDragEnd = useCallback(() => {
+    // Reset opacity on all columns
+    columnRefs.current.forEach((el) => {
+      if (el) el.style.opacity = '1';
+    });
+    setDraggedColumnId(null);
+    setDropTarget(null);
+  }, []);
+
+  // Horizontal resize handler for columns (pixel-based)
   const handleResizeStart = useCallback((e: React.MouseEvent, leftColId: ColumnId, rightColId: ColumnId) => {
     e.preventDefault();
     const startX = e.clientX;
-    const containerNode = containerRef.current;
-    if (!containerNode) return;
-    const initialLeftPercent = columnWidths[leftColId];
-    const initialRightPercent = columnWidths[rightColId];
+    const initialLeftWidth = columnWidths[leftColId];
+    const initialRightWidth = columnWidths[rightColId];
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
-      const containerWidth = containerNode.getBoundingClientRect().width;
-      if (!containerWidth) return;
-      const dxPercent = (dx / containerWidth) * 100;
-      let newLeftPercent = initialLeftPercent + dxPercent;
-      let newRightPercent = initialRightPercent - dxPercent;
-      if (newLeftPercent < MIN_COLUMN_PERCENTAGE) {
-        newRightPercent += newLeftPercent - MIN_COLUMN_PERCENTAGE;
-        newLeftPercent = MIN_COLUMN_PERCENTAGE;
+      let newLeftWidth = initialLeftWidth + dx;
+      let newRightWidth = initialRightWidth - dx;
+
+      // Apply min/max constraints
+      const leftConfig = COLUMN_CONFIG[leftColId];
+      const rightConfig = COLUMN_CONFIG[rightColId];
+
+      if (newLeftWidth < leftConfig.minWidth) {
+        newRightWidth += newLeftWidth - leftConfig.minWidth;
+        newLeftWidth = leftConfig.minWidth;
       }
-      if (newRightPercent < MIN_COLUMN_PERCENTAGE) {
-        newLeftPercent += newRightPercent - MIN_COLUMN_PERCENTAGE;
-        newRightPercent = MIN_COLUMN_PERCENTAGE;
+      if (newRightWidth < rightConfig.minWidth) {
+        newLeftWidth += newRightWidth - rightConfig.minWidth;
+        newRightWidth = rightConfig.minWidth;
       }
-      setColumnWidths(prev => ({ ...prev, [leftColId]: newLeftPercent, [rightColId]: newRightPercent }));
+      if (newLeftWidth > leftConfig.maxWidth) {
+        newRightWidth += newLeftWidth - leftConfig.maxWidth;
+        newLeftWidth = leftConfig.maxWidth;
+      }
+      if (newRightWidth > rightConfig.maxWidth) {
+        newLeftWidth += newRightWidth - rightConfig.maxWidth;
+        newRightWidth = rightConfig.maxWidth;
+      }
+
+      setColumnWidths(prev => ({ ...prev, [leftColId]: newLeftWidth, [rightColId]: newRightWidth }));
     };
 
     const handleMouseUp = () => {
@@ -151,6 +306,37 @@ const MainLayout: React.FC = () => {
     document.addEventListener('mouseup', handleMouseUp);
     document.body.style.cursor = 'col-resize';
   }, [columnWidths]);
+
+  // Vertical resize handler for stacked columns
+  const handleStackResizeStart = useCallback((e: React.MouseEvent, parentId: ColumnId, stackedId: ColumnId) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const parentElement = columnRefs.current.get(parentId);
+    if (!parentElement) return;
+    const containerHeight = parentElement.getBoundingClientRect().height;
+    const initialStackHeight = stackHeights[stackedId];
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const dy = moveEvent.clientY - startY;
+      if (!containerHeight) return;
+      // Moving down = more space for parent (less for stacked), moving up = less for parent
+      const dyPercent = (dy / containerHeight) * 100;
+      let newStackHeight = initialStackHeight - dyPercent;
+      // Clamp between 15% and 85%
+      newStackHeight = Math.max(15, Math.min(85, newStackHeight));
+      setStackHeights(prev => ({ ...prev, [stackedId]: newStackHeight }));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'row-resize';
+  }, [stackHeights]);
 
   const handleLoadClick = () => {
     fileInputRef.current?.click();
@@ -225,46 +411,97 @@ const MainLayout: React.FC = () => {
 
   const unplottedJobsCount = context.activeRoute?.unmappableJobs?.length ?? 0;
 
+  // Get columns that are stacked under a parent (not shown as primary columns)
+  const stackedColumns = useMemo(() =>
+    new Set(Object.keys(columnStack).filter(id => columnStack[id as ColumnId])),
+    [columnStack]
+  );
+
+  // Get columns stacked under a specific parent
+  const getStackedUnder = useCallback((parentId: ColumnId): ColumnId[] => {
+    return columnOrder.filter(id => columnStack[id] === parentId);
+  }, [columnOrder, columnStack]);
+
   const visibleColumnOrder = useMemo(() => {
-    return columnOrder.filter(id => id !== 'jobs' || context.uiSettings.showUnassignedJobsColumn);
-  }, [columnOrder, context.uiSettings.showUnassignedJobsColumn]);
-
-  const visibleColumnWidths = useMemo(() => {
-    if (context.uiSettings.showUnassignedJobsColumn) {
-      return columnWidths;
-    }
-    const hiddenWidth = columnWidths.jobs;
-    const remainingCols = visibleColumnOrder;
-    const remainingTotalWidth = remainingCols.reduce((acc, id) => acc + columnWidths[id], 0);
-
-    const newWidths: Record<string, number> = {};
-    remainingCols.forEach(id => {
-      newWidths[id] = columnWidths[id] + hiddenWidth * (columnWidths[id] / remainingTotalWidth);
+    const filtered = columnOrder.filter(id => {
+      // Hide jobs column if setting is off
+      if (id === 'jobs' && !context.uiSettings.showUnassignedJobsColumn) return false;
+      // Hide stacked columns from primary display
+      if (stackedColumns.has(id)) return false;
+      return true;
     });
-    return newWidths;
-  }, [columnWidths, context.uiSettings.showUnassignedJobsColumn, visibleColumnOrder]);
+    return filtered;
+  }, [columnOrder, context.uiSettings.showUnassignedJobsColumn, stackedColumns]);
 
+  // Check if layout is broken (no visible non-collapsed columns)
+  const isLayoutBroken = useMemo(() => {
+    const visibleNonCollapsed = visibleColumnOrder.filter(id => !collapsedColumns.has(id));
+    return visibleNonCollapsed.length === 0;
+  }, [visibleColumnOrder, collapsedColumns]);
 
-  const renderPanelContent = (id: ColumnId) => {
+  // Reset column layout to defaults
+  const handleResetLayout = useCallback(() => {
+    updateUiSettings({
+      collapsedColumns: [],
+      columnStack: {}
+    });
+  }, [updateUiSettings]);
+
+  // Render column header with controls
+  const renderColumnHeader = (id: ColumnId, title: string, showControls: boolean = true) => {
+    return (
+      <div
+        className="flex justify-between items-center mb-2 border-b pb-1 gap-2 cursor-move select-none"
+        draggable
+        onDragStart={(e) => handleColumnDragStart(e, id)}
+        onDragEnd={handleColumnDragEnd}
+      >
+        <div className="flex items-center gap-2">
+          <DragHandleIcon className="h-4 w-4 text-text-quaternary" />
+          <h2 className="text-lg font-semibold truncate">{title}</h2>
+        </div>
+        <div className="flex items-center gap-1">
+          {/* Collapse button */}
+          {showControls && (
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleCollapse(id); }}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="p-1 rounded hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+              title="Collapse column"
+            >
+              <MinimizeIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPanelContent = (id: ColumnId, isStacked: boolean = false) => {
     switch (id) {
       case 'schedules':
-        return <SchedulesPanel onDragStart={() => handleDragStart('schedules')} onDragEnd={handleDragEnd} />;
+        return (
+          <>
+            {!isStacked && renderColumnHeader('schedules', '1. Rep Schedules')}
+            <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
+              <SchedulesPanel />
+            </div>
+          </>
+        );
       case 'jobs':
-        return <JobsPanel onDragStart={() => handleDragStart('jobs')} onDragEnd={handleDragEnd} />;
+        return (
+          <>
+            {!isStacked && renderColumnHeader('jobs', '2. Jobs')}
+            <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
+              <JobsPanel />
+            </div>
+          </>
+        );
       case 'routes':
         return (
           <>
-            <div className="flex justify-between items-center mb-2 border-b pb-1">
-              <h2 className="text-lg font-semibold">3. Route Map</h2>
-              <div
-                draggable
-                onDragStart={() => handleDragStart('routes')}
-                onDragEnd={handleDragEnd}
-                className="cursor-move text-text-quaternary hover:text-text-secondary" title="Drag to reorder column">
-                <DragHandleIcon />
-              </div>
-            </div>
-            <div className="flex-grow min-h-0">
+            {!isStacked && renderColumnHeader('routes', '3. Route Map')}
+            <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
               <RouteMapPanel routeData={context.activeRoute} isLoading={context.isRouting} />
             </div>
           </>
@@ -272,6 +509,106 @@ const MainLayout: React.FC = () => {
       default:
         return null;
     }
+  };
+
+  // Render a collapsed column bar
+  const renderCollapsedColumn = (id: ColumnId) => (
+    <div
+      key={id}
+      className="flex-shrink-0 w-8 bg-bg-primary border border-border-primary/50 rounded-lg flex flex-col items-center py-2 gap-2 shadow-lg"
+    >
+      <button
+        onClick={() => toggleCollapse(id)}
+        className="p-1 hover:bg-bg-tertiary rounded transition"
+        title={`Expand ${COLUMN_LABELS[id]}`}
+      >
+        <ChevronRightIcon className="h-4 w-4 text-text-secondary" />
+      </button>
+      <div className="flex-1 flex items-center justify-center">
+        <span
+          className="text-xs font-semibold text-text-secondary transform -rotate-90 whitespace-nowrap origin-center"
+          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+        >
+          {COLUMN_LABELS[id]}
+        </span>
+      </div>
+    </div>
+  );
+
+  // Render stacked column within parent
+  const renderStackedColumn = (id: ColumnId, parentId: ColumnId) => {
+    const stackHeight = stackHeights[id];
+
+    if (collapsedColumns.has(id)) {
+      return (
+        <React.Fragment key={id}>
+          {/* Collapsed stacked panel */}
+          <div className="flex-shrink-0 h-10 bg-bg-primary rounded-xl border border-border-primary/50 shadow-md flex items-center px-3 gap-2 mt-3">
+            <button
+              onClick={() => toggleCollapse(id)}
+              className="p-1 hover:bg-bg-tertiary rounded transition"
+              title={`Expand ${COLUMN_LABELS[id]}`}
+            >
+              <ChevronRightIcon className="h-3.5 w-3.5 text-text-secondary" />
+            </button>
+            <span className="text-sm font-semibold text-text-secondary">{COLUMN_LABELS[id]}</span>
+            <button
+              onClick={() => setColumnStacking(id, null)}
+              className="ml-auto p-1 hover:bg-bg-tertiary rounded text-text-tertiary hover:text-text-secondary transition"
+              title="Unstack"
+            >
+              <MaximizeIcon className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    return (
+      <React.Fragment key={id}>
+        {/* Resize handle between stacked panels */}
+        <div
+          className="h-3 flex items-center justify-center cursor-row-resize group flex-shrink-0"
+          onMouseDown={e => handleStackResizeStart(e, parentId, id)}
+        >
+          <div className="w-12 h-1 bg-border-secondary/50 group-hover:bg-brand-primary rounded-full transition-colors" />
+        </div>
+
+        {/* Stacked panel - dashboard widget style */}
+        <div
+          className="flex flex-col min-h-0 overflow-hidden bg-bg-primary rounded-xl border border-border-primary/50 shadow-lg"
+          style={{ flex: `0 0 ${stackHeight}%` }}
+        >
+          {/* Widget header */}
+          <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
+              <span className="text-sm font-semibold text-text-primary">{COLUMN_LABELS[id]}</span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => toggleCollapse(id)}
+                className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                title="Collapse"
+              >
+                <MinimizeIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={() => setColumnStacking(id, null)}
+                className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                title="Unstack - restore as separate column"
+              >
+                <MaximizeIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+          {/* Widget content */}
+          <div className="flex-1 min-h-0 overflow-auto p-3">
+            {renderPanelContent(id, true)}
+          </div>
+        </div>
+      </React.Fragment>
+    );
   };
 
   return (
@@ -393,7 +730,7 @@ const MainLayout: React.FC = () => {
             <button onClick={() => context.handleSaveStateToCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Save to Cloud">
               <CloudUploadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
-            <button onClick={() => context.handleLoadStateFromCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
+            <button onClick={() => context.showLoadOptionsModal()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
               <CloudDownloadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
             {/* Auto-save indicator */}
@@ -468,20 +805,126 @@ const MainLayout: React.FC = () => {
       </header>
 
       <div ref={containerRef} className="flex w-full flex-grow min-h-0 relative z-10 p-4 gap-4 overflow-hidden">
-        {visibleColumnOrder.map((id, i) => {
-          const rightColId = i < visibleColumnOrder.length - 1 ? visibleColumnOrder[i + 1] : null;
+        {/* Recovery UI when all columns are hidden */}
+        {isLayoutBroken && (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="bg-bg-primary border border-border-primary rounded-lg shadow-lg p-6 text-center max-w-md">
+              <h3 className="text-lg font-semibold text-text-primary mb-2">Layout Reset Required</h3>
+              <p className="text-sm text-text-secondary mb-4">
+                All columns are currently hidden or stacked in a way that makes them invisible.
+              </p>
+              <button
+                onClick={handleResetLayout}
+                className="px-4 py-2 bg-brand-primary text-brand-text-on-primary rounded-md font-semibold hover:bg-brand-secondary transition"
+              >
+                Reset Column Layout
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Render collapsed columns first as thin bars */}
+        {!isLayoutBroken && columnOrder.filter(id => collapsedColumns.has(id) && !stackedColumns.has(id)).map(id =>
+          renderCollapsedColumn(id)
+        )}
+
+        {/* Render visible (non-collapsed, non-stacked) columns */}
+        {!isLayoutBroken && visibleColumnOrder.filter(id => !collapsedColumns.has(id)).map((id, idx, arr) => {
+          const stackedUnder = getStackedUnder(id);
+          const isDropTarget = dropTarget?.targetId === id;
+          const showLeftIndicator = isDropTarget && dropTarget.position === 'left';
+          const showRightIndicator = isDropTarget && dropTarget.position === 'right';
+          const showStackIndicator = isDropTarget && dropTarget.position === 'stack';
+          const nextColId = idx < arr.length - 1 ? arr[idx + 1] : null;
+
           return (
             <React.Fragment key={id}>
+              {/* Left drop indicator */}
+              {showLeftIndicator && (
+                <div className="w-1 bg-brand-primary rounded-full flex-shrink-0 animate-pulse" />
+              )}
+
               <div
+                ref={(el) => { if (el) columnRefs.current.set(id, el); }}
                 data-col-id={id}
-                className="bg-bg-primary p-4 rounded-lg shadow-lg border border-border-primary/50 flex flex-col min-w-0 h-full"
-                style={{ flexBasis: `${visibleColumnWidths[id]}%` }}
-                onDragEnter={() => handleDragEnter(id)}
-                onDragOver={(e) => e.preventDefault()}
+                className={`
+                  relative flex flex-col min-w-0 h-full overflow-hidden
+                  transition-all duration-300 ease-in-out
+                  ${stackedUnder.length > 0
+                    ? 'bg-bg-secondary/50 p-2 rounded-xl gap-0'
+                    : 'bg-bg-primary p-4 rounded-lg shadow-lg border border-border-primary/50'
+                  }
+                  ${showStackIndicator
+                    ? 'border-brand-primary border-2 ring-4 ring-brand-primary/20'
+                    : ''
+                  }
+                  ${draggedColumnId === id ? 'opacity-50' : ''}
+                `}
+                style={{
+                  flex: `${COLUMN_CONFIG[id].flexGrow} 1 ${columnWidths[id]}px`,
+                  minWidth: COLUMN_CONFIG[id].minWidth,
+                  maxWidth: COLUMN_CONFIG[id].maxWidth,
+                }}
+                onDragOver={(e) => handleColumnDragOver(e, id)}
+                onDragLeave={handleColumnDragLeave}
+                onDrop={handleColumnDrop}
               >
-                {renderPanelContent(id)}
+                {/* Stack indicator overlay */}
+                {showStackIndicator && (
+                  <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none z-10 flex items-center justify-center">
+                    <div className="bg-brand-primary text-brand-text-on-primary px-3 py-1.5 rounded-md text-sm font-semibold shadow-lg">
+                      Stack below {COLUMN_LABELS[id]}
+                    </div>
+                  </div>
+                )}
+
+                {/* Parent column content - sized based on whether there are stacked children */}
+                {stackedUnder.length > 0 ? (
+                  <div
+                    className="flex flex-col min-h-0 overflow-hidden bg-bg-primary rounded-xl border border-border-primary/50 shadow-lg"
+                    style={{ flex: `1 1 ${100 - stackedUnder.reduce((sum, sid) => sum + (collapsedColumns.has(sid) ? 0 : stackHeights[sid]), 0)}%` }}
+                  >
+                    {/* Widget header for parent when stacked */}
+                    <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0 rounded-t-xl">
+                      <div className="flex items-center gap-2">
+                        <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
+                        <span className="text-sm font-semibold text-text-primary">{COLUMN_LABELS[id]}</span>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleCollapse(id); }}
+                        className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                        title="Collapse column"
+                      >
+                        <MinimizeIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {/* Widget content */}
+                    <div className="flex-1 min-h-0 overflow-auto p-3">
+                      {renderPanelContent(id, true)}
+                    </div>
+                  </div>
+                ) : (
+                  renderPanelContent(id)
+                )}
+
+                {/* Render stacked columns under this one */}
+                {stackedUnder.map(stackedId => renderStackedColumn(stackedId, id))}
               </div>
-              {rightColId && (<div className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0" onMouseDown={e => handleResizeStart(e, id, rightColId)}> <div className="w-1 h-16 bg-border-secondary group-hover:bg-brand-primary rounded-full transition-colors" /> </div>)}
+
+              {/* Right drop indicator */}
+              {showRightIndicator && (
+                <div className="w-1 bg-brand-primary rounded-full flex-shrink-0 animate-pulse" />
+              )}
+
+              {/* Resize bar between columns */}
+              {nextColId && !showRightIndicator && (
+                <div
+                  className="w-4 flex items-center justify-center cursor-col-resize group flex-shrink-0"
+                  onMouseDown={e => handleResizeStart(e, id, nextColId)}
+                >
+                  <div className="w-1 h-16 bg-border-secondary group-hover:bg-brand-primary rounded-full transition-colors" />
+                </div>
+              )}
             </React.Fragment>
           );
         })}
@@ -542,6 +985,21 @@ const MainLayout: React.FC = () => {
         confirmLabel={context.confirmationState.confirmLabel}
         cancelLabel={context.confirmationState.cancelLabel}
         isDangerous={context.confirmationState.isDangerous}
+      />
+
+      <LoadOptionsModal
+        isOpen={context.loadOptionsModal.isOpen}
+        isLoading={context.loadOptionsModal.isLoading}
+        manualBackups={context.loadOptionsModal.manualBackups}
+        autoBackup={context.loadOptionsModal.autoBackup}
+        onLoadBackup={context.loadSelectedBackup}
+        onStartFresh={context.closeLoadOptionsModal}
+        onClose={context.closeLoadOptionsModal}
+      />
+
+      <ToastContainer
+        toasts={context.toasts}
+        onDismiss={context.dismissToast}
       />
 
     </div>

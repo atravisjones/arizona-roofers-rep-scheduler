@@ -392,7 +392,9 @@ export async function parseJobsFromText(
         const newJob = {
             id: `job-${Date.now()}-${jobs.length}-${Math.random().toString(36).substring(2, 9)}`,
             customerName: city,
-            address, city, notes,
+            address,
+            originalAddress: address, // Preserve the original address as first pasted
+            city, notes,
             originalTimeframe: currentTimeframe,
             zipCode,
         };

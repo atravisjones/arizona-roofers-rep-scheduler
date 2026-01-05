@@ -25,6 +25,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const featureGroupRef = useRef<any>(null);
+  const markersRef = useRef<Map<string, { marker: any; baseIcon: any; highlightIcon: any }>>(new Map());
 
   // Get current context to bridge into Leaflet popups
   const contextValue = useAppContext();
@@ -32,11 +33,23 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const contextValueRef = useRef(contextValue);
   contextValueRef.current = contextValue;
 
-  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd } = contextValue;
+  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd, hoveredJobId, hoveredRepId, appState } = contextValue;
+
+  // Create a lookup from repId to repName for hover filtering
+  const repIdToNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    appState.reps.forEach(rep => {
+      map.set(rep.id, rep.name);
+    });
+    return map;
+  }, [appState.reps]);
 
   // Track React roots for cleanup to prevent memory leaks and hydration errors
   const popupRootsRef = useRef<ReactDOM.Root[]>([]);
   const dataIdentityRef = useRef<string>('');
+  const previousHoveredIdRef = useRef<string | null>(null);
+  const previousHoveredRepIdRef = useRef<string | null>(null);
+  const jobRepNameMapRef = useRef<Map<string, string | undefined>>(new Map()); // Map jobId to assignedRepName
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +154,69 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
     };
   }, []);
 
+  // Handle hover highlighting without rebuilding all markers
+  useEffect(() => {
+    // Reset the previously hovered marker to its base icon
+    if (previousHoveredIdRef.current && previousHoveredIdRef.current !== hoveredJobId) {
+      const prevMarkerData = markersRef.current.get(previousHoveredIdRef.current);
+      if (prevMarkerData) {
+        prevMarkerData.marker.setIcon(prevMarkerData.baseIcon);
+        prevMarkerData.marker.setZIndexOffset(500);
+      }
+    }
+
+    // Highlight the newly hovered marker
+    if (hoveredJobId) {
+      const markerData = markersRef.current.get(hoveredJobId);
+      if (markerData) {
+        markerData.marker.setIcon(markerData.highlightIcon);
+        markerData.marker.setZIndexOffset(2000); // Bring to front
+      }
+    }
+
+    previousHoveredIdRef.current = hoveredJobId;
+  }, [hoveredJobId]);
+
+  // Handle rep hover - dim all jobs not belonging to the hovered rep
+  useEffect(() => {
+    if (previousHoveredRepIdRef.current === hoveredRepId) return;
+
+    // Get the rep name for the hovered rep ID
+    const hoveredRepName = hoveredRepId ? repIdToNameMap.get(hoveredRepId) : null;
+
+    markersRef.current.forEach((markerData, jobId) => {
+      const jobRepName = jobRepNameMapRef.current.get(jobId);
+
+      if (hoveredRepId && hoveredRepName) {
+        // A rep is being hovered - dim markers not belonging to that rep
+        const belongsToRep = jobRepName === hoveredRepName;
+        markerData.marker.setOpacity(belongsToRep ? 1 : 0.3);
+        // Apply grayscale via icon update if not belonging to rep
+        if (!belongsToRep) {
+          const currentIcon = markerData.marker.getIcon();
+          if (currentIcon && currentIcon.options) {
+            const dimmedHtml = `<div style="filter: grayscale(100%); opacity: 0.4;">${currentIcon.options.html || ''}</div>`;
+            const dimmedIcon = L.divIcon({
+              ...currentIcon.options,
+              html: dimmedHtml,
+              className: 'dimmed-marker',
+            });
+            markerData.marker.setIcon(dimmedIcon);
+          }
+        } else {
+          // Restore the base icon for markers that belong to the hovered rep
+          markerData.marker.setIcon(markerData.baseIcon);
+        }
+      } else {
+        // No rep is hovered - restore all markers to normal
+        markerData.marker.setOpacity(1);
+        markerData.marker.setIcon(markerData.baseIcon);
+      }
+    });
+
+    previousHoveredRepIdRef.current = hoveredRepId;
+  }, [hoveredRepId, repIdToNameMap]);
+
   useEffect(() => {
     if (!mapRef.current || !featureGroupRef.current) return;
 
@@ -216,6 +292,8 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
 
     const map = mapRef.current;
     featureGroupRef.current.clearLayers();
+    markersRef.current.clear();
+    jobRepNameMapRef.current.clear();
 
     // Clear old React roots when creating new markers
     popupRootsRef.current.forEach(root => {
@@ -315,8 +393,26 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           iconAnchor,
         });
 
+        // Create highlighted version of the icon (larger with glow)
+        const highlightScale = 1.5;
+        const highlightSize: [number, number] = [Math.round(iconSize[0] * highlightScale), Math.round(iconSize[1] * highlightScale)];
+        const highlightAnchor: [number, number] = [Math.round(iconAnchor[0] * highlightScale), Math.round(iconAnchor[1] * highlightScale)];
+        const highlightHtml = `<div style="transform: scale(${highlightScale}); transform-origin: center; filter: drop-shadow(0 0 8px ${color}) drop-shadow(0 0 16px ${color}); z-index: 9999;">${markerHtml}</div>`;
+
+        const highlightIcon = L.divIcon({
+          html: highlightHtml,
+          className: 'highlighted-marker',
+          iconSize: highlightSize,
+          iconAnchor: highlightAnchor,
+        });
+
         const marker = L.marker([coord.lat, coord.lon], { icon, zIndexOffset: finalZIndex })
           .addTo(featureGroupRef.current);
+
+        // Store marker with both icons for hover highlighting
+        markersRef.current.set(job.id, { marker, baseIcon: icon, highlightIcon });
+        // Store job's assigned rep name for rep hover filtering
+        jobRepNameMapRef.current.set(job.id, job.assignedRepName);
 
         const notesLower = (job.notes || '').toLowerCase();
         const tagsList: string[] = [];

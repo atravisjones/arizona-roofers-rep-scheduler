@@ -106,6 +106,11 @@ export interface UiSettings {
   showUnplottedJobs: boolean;
   showUnassignedJobsColumn: boolean;
   customTheme?: Record<string, string>;
+  schedulesViewMode?: 'list' | 'day';
+  dayViewCellHeight?: number;    // Default: 40 (pixels per 30-min row)
+  dayViewColumnWidth?: number;   // Default: 150 (pixels per rep column)
+  columnStack?: Record<string, string | null>;  // Which column is stacked under which
+  collapsedColumns?: string[];   // Which columns are collapsed/minimized
 }
 
 
@@ -132,10 +137,13 @@ export interface Job {
   id: string;
   customerName: string;
   address: string;
+  originalAddress?: string; // The original address as first pasted, never modified
   notes: string;
   city?: string; // Added city to the job type
   originalTimeframe?: string; // Added original timeframe from pasted text
   zipCode?: string;
+  originalRepId?: string; // The rep ID from auto-assignment when job was pasted
+  originalRepName?: string; // The rep name from auto-assignment when job was pasted
 }
 
 export interface DisplayJob extends Job {
@@ -165,6 +173,51 @@ export interface AppState {
   unassignedJobs: Job[];
   settings: Settings;
 }
+
+// ============================================================================
+// Backup/Version Types
+// ============================================================================
+
+export type SaveType = 'manual' | 'auto';
+
+export interface BackupVersion {
+  id: string;
+  dateKey: string;
+  saveType: SaveType;
+  versionNumber: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BackupListItem {
+  id: string;
+  dateKey: string;
+  saveType: SaveType;
+  versionNumber: number;
+  createdAt: string;
+  jobCount?: number;
+  repCount?: number;
+}
+
+export interface BackupSnapshot {
+  version: BackupVersion;
+  data: AppState;
+}
+
+export interface LoadOptionsModalState {
+  isOpen: boolean;
+  manualBackups: BackupListItem[];
+  autoBackup: BackupListItem | null;
+  selectedBackupId: string | null;
+  isLoading: boolean;
+}
+
+export const BACKUP_CONFIG = {
+  MIN_MANUAL_VERSIONS: 3,
+  MAX_MANUAL_VERSIONS: 6,
+  AUTO_DEBOUNCE_MS: 5000,
+  AUTO_FALLBACK_MS: 60000,
+} as const;
 
 export interface RouteInfo {
   distance: number; // in miles
@@ -314,4 +367,15 @@ export interface AppContextType {
   };
   requestConfirmation: (options: { title: string, message: string, onConfirm: () => void, confirmLabel?: string, cancelLabel?: string, isDangerous?: boolean }) => void;
   closeConfirmation: () => void;
+
+  // Toast notifications
+  toasts: Array<{ id: string; message: string; type: 'success' | 'error' | 'info' | 'warning'; duration?: number }>;
+  showToast: (message: string, type?: 'success' | 'error' | 'info' | 'warning', duration?: number) => void;
+  dismissToast: (id: string) => void;
+
+  // Load Options Modal State
+  loadOptionsModal: LoadOptionsModalState;
+  showLoadOptionsModal: () => void;
+  loadSelectedBackup: (backupId: string) => Promise<void>;
+  closeLoadOptionsModal: () => void;
 }

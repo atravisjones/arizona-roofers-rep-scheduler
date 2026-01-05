@@ -1,7 +1,8 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG } from '../types';
+import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, MAX_REP_ROW } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage } from '../services/googleSheetsService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
@@ -9,6 +10,7 @@ import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOU
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
 import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStatesFromCloud } from '../services/cloudStorageServiceSheets';
+import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup } from '../services/backupService';
 import { saveState, loadState } from '../services/saveLoadService';
 import { doTimesOverlap } from '../utils/timeUtils';
 
@@ -95,6 +97,11 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
     theme: 'light',
     showUnplottedJobs: true,
     showUnassignedJobsColumn: true,
+    schedulesViewMode: 'list',
+    dayViewCellHeight: 40,
+    dayViewColumnWidth: 150,
+    columnStack: {},
+    collapsedColumns: [],
 };
 
 const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS };
@@ -135,6 +142,7 @@ export const useAppLogic = () => {
     const [draggedJob, setDraggedJob] = useState<Job | null>(null);
     const [draggedOverRepId, setDraggedOverRepId] = useState<string | null>(null);
     const [hoveredJobId, setHoveredJobId] = useState<string | null>(null);
+    const [hoveredRepId, setHoveredRepId] = useState<string | null>(null);
     const [repSettingsModalRepId, setRepSettingsModalRepId] = useState<string | null>(null);
     const [placementJobId, setPlacementJobId] = useState<string | null>(null);
     const [mapRefreshTrigger, setMapRefreshTrigger] = useState(0); // Trigger to refresh map after assignments
@@ -160,15 +168,39 @@ export const useAppLogic = () => {
     // Ref to ensure cloud load only happens once on initial mount
     const hasAutoLoadedRef = useRef(false);
 
-    // Auto-save configuration (2 minutes = 120000ms)
-    const AUTO_SAVE_INTERVAL_MS = 2 * 60 * 1000;
-    // Track last activity time and auto-save state
+    // Auto-save configuration - now uses debounce + fallback timer
+    // Debounce: 5 seconds after user stops making changes
+    // Fallback: 60 seconds max between saves
     const lastActivityRef = useRef<number>(Date.now());
-    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [isAutoSaving, setIsAutoSaving] = useState(false);
     const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+
+    // Toast notification state
+    const [toasts, setToasts] = useState<ToastData[]>([]);
+
+    // Toast notification functions (defined early so they can be used by other callbacks)
+    const showToast = useCallback((message: string, type: ToastType = 'info', duration?: number) => {
+        const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        setToasts(prev => [...prev, { id, message, type, duration }]);
+    }, []);
+
+    const dismissToast = useCallback((id: string) => {
+        setToasts(prev => prev.filter(t => t.id !== id));
+    }, []);
+
     // Track if there are unsaved changes since last save
     const hasUnsavedChangesRef = useRef(false);
+
+    // Load options modal state
+    const [loadOptionsModal, setLoadOptionsModal] = useState<LoadOptionsModalState>({
+        isOpen: false,
+        manualBackups: [],
+        autoBackup: null,
+        selectedBackupId: null,
+        isLoading: false,
+    });
 
     const [uiSettings, setUiSettings] = useState<UiSettings>(() => {
         try {
@@ -976,7 +1008,7 @@ export const useAppLogic = () => {
         if (target === 'unassigned') { handleUnassignJob(jobId); return; }
 
         const targetRepInfo = appState.reps.find(r => r.id === target.repId);
-        if (targetRepInfo?.isOptimized) { alert("Cannot modify an optimized schedule."); return; }
+        if (targetRepInfo?.isOptimized) { showToast("Cannot modify an optimized schedule.", 'warning'); return; }
 
         const dateKey = formatDateToKey(selectedDate);
         const jobToDrop = appState.unassignedJobs.find(j => j.id === jobId) || appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
@@ -1664,6 +1696,7 @@ export const useAppLogic = () => {
 
     const handlePlaceJobOnMap = useCallback((jobId: string, lat: number, lon: number) => {
         // Update the job's address to the coordinate format
+        // The originalAddress field preserves the original pasted address
         handleUpdateJob(jobId, { address: `${lat},${lon}` });
         setPlacementJobId(null);
         setMapRefreshTrigger(prev => prev + 1);
@@ -2010,11 +2043,19 @@ export const useAppLogic = () => {
                     let assigned = false;
                     const availableSlots = rep.schedule.filter(s => !(rep.unavailableSlots?.[selectedDayString] || []).includes(s.id));
                     const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 };
+                    // Set original rep info if not already set (first assignment)
+                    const jobWithOriginal = {
+                        ...job,
+                        assignmentScore: 50,
+                        scoreBreakdown: dummyBreakdown,
+                        originalRepId: job.originalRepId || rep.id,
+                        originalRepName: job.originalRepName || rep.name,
+                    };
                     if (targetSlotId) {
                         const targetSlot = availableSlots.find(s => s.id === targetSlotId);
-                        if (targetSlot) { targetSlot.jobs.push({ ...job, assignmentScore: 50, scoreBreakdown: dummyBreakdown }); assigned = true; }
+                        if (targetSlot) { targetSlot.jobs.push(jobWithOriginal); assigned = true; }
                     }
-                    if (!assigned && availableSlots.length > 0) { availableSlots[0].jobs.push({ ...job, assignmentScore: 50, scoreBreakdown: dummyBreakdown }); assigned = true; }
+                    if (!assigned && availableSlots.length > 0) { availableSlots[0].jobs.push(jobWithOriginal); assigned = true; }
                     if (assigned) { assignedCount++; } else { jobsToAssign.unshift(job); }
                 }
                 newState.unassignedJobs = jobsToAssign;
@@ -2119,7 +2160,14 @@ export const useAppLogic = () => {
 
                         const displayScore = bestAssignment.score > 1000 ? bestAssignment.score - 10000 : bestAssignment.score;
 
-                        const jobWithScore: DisplayJob = { ...job, assignmentScore: displayScore, scoreBreakdown: bestAssignment.breakdown };
+                        // Set original rep info if not already set (first assignment)
+                        const jobWithScore: DisplayJob = {
+                            ...job,
+                            assignmentScore: displayScore,
+                            scoreBreakdown: bestAssignment.breakdown,
+                            originalRepId: job.originalRepId || targetRep.id,
+                            originalRepName: job.originalRepName || targetRep.name,
+                        };
                         targetSlot.jobs.push(jobWithScore);
                         assignedCount++;
                     } else {
@@ -2227,7 +2275,14 @@ export const useAppLogic = () => {
 
                     if (bestSlot) {
                         const targetSlot = targetRep.schedule.find(s => s.id === bestSlot!.slotId)!;
-                        targetSlot.jobs.push({ ...job, assignmentScore: bestSlot.score, scoreBreakdown: bestSlot.breakdown });
+                        // Set original rep info if not already set (first assignment)
+                        targetSlot.jobs.push({
+                            ...job,
+                            assignmentScore: bestSlot.score,
+                            scoreBreakdown: bestSlot.breakdown,
+                            originalRepId: job.originalRepId || targetRep.id,
+                            originalRepName: job.originalRepName || targetRep.name,
+                        });
                         assignedCount++;
                     } else {
                         newState.unassignedJobs.push(job);
@@ -2339,7 +2394,7 @@ export const useAppLogic = () => {
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
             log('- SUCCESS: State saved to file with changelog.');
-        } catch (error) { console.error("Save state error:", error); alert("Error saving file."); }
+        } catch (error) { console.error("Save state error:", error); showToast("Error saving file.", 'error'); }
     }, [dailyStates, activeDayKeys, changeLog, log]);
 
     const handleLoadStateFromFile = useCallback((loadedState: any) => {
@@ -2474,8 +2529,8 @@ export const useAppLogic = () => {
             setActiveRoute(null);
             setSelectedRepId(null);
             log(`- SUCCESS: Merged loaded state with existing data.`);
-            alert("Schedule loaded and merged successfully!");
-        } catch (error) { const msg = error instanceof Error ? error.message : "Unknown error"; log(`- ERROR: ${msg}`); alert(`Error loading file: ${msg}`); }
+            showToast("Schedule loaded and merged successfully!", 'success');
+        } catch (error) { const msg = error instanceof Error ? error.message : "Unknown error"; log(`- ERROR: ${msg}`); showToast(`Error loading file: ${msg}`, 'error'); }
     }, [log, dailyStates, activeDayKeys, selectedDate]);
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
@@ -2530,69 +2585,53 @@ export const useAppLogic = () => {
     }, [autoMapAction, handleShowAllJobsOnMap, handleShowRoute]);
 
     const handleSaveStateToCloud = useCallback(async (dateKey?: string) => {
-        log('ACTION: Save state to cloud.');
+        log('ACTION: Manual save to cloud (versioned backup).');
         try {
-            if (dateKey) {
-                // Save single day
-                const state = dailyStates.get(dateKey);
-                if (!state) {
-                    alert(`No data found for ${dateKey}`);
-                    return;
-                }
-                const result = await saveStateToCloud(dateKey, state);
-                if (result.success) {
-                    log(`- SUCCESS: Saved ${dateKey} to cloud at ${result.timestamp}`);
-                    hasUnsavedChangesRef.current = false;
-                    setLastAutoSaveTime(new Date());
-                    alert(`Saved ${dateKey} to cloud successfully!`);
+            const keysToSave = dateKey ? [dateKey] : activeDayKeys;
+
+            if (keysToSave.length === 0) {
+                showToast('No data to save', 'info');
+                return;
+            }
+
+            let successCount = 0;
+            let failedCount = 0;
+            let lastVersion = 0;
+
+            for (const key of keysToSave) {
+                const state = dailyStates.get(key);
+                if (!state) continue;
+
+                const result = await createManualBackup(key, state);
+                if (result.success && result.version) {
+                    log(`- SUCCESS: Created backup v${result.version.versionNumber} for ${key}`);
+                    successCount++;
+                    lastVersion = result.version.versionNumber;
                 } else {
-                    log(`- ERROR: ${result.error}`);
-                    alert(`Error saving to cloud: ${result.error}`);
+                    log(`- ERROR saving ${key}: ${result.error}`);
+                    failedCount++;
+                }
+            }
+
+            if (successCount > 0) {
+                hasUnsavedChangesRef.current = false;
+                setLastAutoSaveTime(new Date());
+                if (keysToSave.length === 1) {
+                    showToast(`Saved ${keysToSave[0]} (version ${lastVersion})`, 'success');
+                } else if (failedCount > 0) {
+                    showToast(`Saved ${successCount} day(s). ${failedCount} failed.`, 'warning');
+                } else {
+                    showToast(`Saved ${successCount} day(s) successfully!`, 'success');
                 }
             } else {
-                // Save all active days
-                const states = activeDayKeys.map(key => ({
-                    dateKey: key,
-                    data: dailyStates.get(key)!
-                })).filter(s => s.data);
-
-                if (states.length === 0) {
-                    alert('No data to save');
-                    return;
-                }
-
-                const result = await saveAllStatesToCloud(states);
-                if (result.success) {
-                    const successCount = result.results?.filter(r => r.success).length || 0;
-                    const failedCount = result.results?.filter(r => !r.success).length || 0;
-
-                    // Log any errors
-                    result.results?.forEach(r => {
-                        if (!r.success) {
-                            log(`- ERROR saving ${r.dateKey}: ${r.error}`);
-                        }
-                    });
-
-                    log(`- SUCCESS: Saved ${successCount}/${states.length} days to cloud`);
-                    // Reset unsaved changes flag after manual save
-                    hasUnsavedChangesRef.current = false;
-                    setLastAutoSaveTime(new Date());
-                    if (failedCount > 0) {
-                        alert(`Saved ${successCount} day(s) to cloud. ${failedCount} failed - check console for details.`);
-                    } else {
-                        alert(`Saved ${successCount} day(s) to cloud successfully!`);
-                    }
-                } else {
-                    log(`- ERROR: ${result.error}`);
-                    alert(`Error saving to cloud: ${result.error}`);
-                }
+                showToast('Failed to save any days', 'error');
             }
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Unknown error';
             log(`- ERROR: ${msg}`);
-            alert(`Error saving to cloud: ${msg}`);
+            showToast(`Error saving to cloud: ${msg}`, 'error');
         }
-    }, [dailyStates, activeDayKeys, log]);
+    }, [dailyStates, activeDayKeys, log, showToast]);
 
     const handleLoadStateFromCloud = useCallback(async (dateKey?: string) => {
         log('ACTION: Load state from cloud.');
@@ -2634,7 +2673,7 @@ export const useAppLogic = () => {
 
                 if (loadedCount === 0) {
                     log('- No data found in cloud for the rolling 7-day window (this is normal for first use)');
-                    alert('No saved data found in cloud. This is normal if you haven\'t saved yet - data will auto-save after 2 minutes of use.');
+                    showToast('No saved data found in cloud. Data will auto-save after 2 minutes of use.', 'info');
                     return;
                 }
 
@@ -2655,28 +2694,20 @@ export const useAppLogic = () => {
                 }
 
                 log(`- SUCCESS: Loaded ${loadedCount}/7 days from cloud`);
-                alert(`Loaded ${loadedCount} day(s) from cloud successfully!`);
+                showToast(`Loaded ${loadedCount} day(s) from cloud successfully!`, 'success');
             } else {
                 log(`- ERROR: ${result.error}`);
-                alert(`Error loading from cloud: ${result.error}`);
+                showToast(`Error loading from cloud: ${result.error}`, 'error');
             }
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Unknown error';
             log(`- ERROR: ${msg}`);
-            alert(`Error loading from cloud: ${msg}`);
+            showToast(`Error loading from cloud: ${msg}`, 'error');
         } finally {
             // Re-enable loadReps after cloud load completes
             setIsCloudLoading(false);
         }
     }, [log]);
-
-    // Auto-load cloud data on initial mount
-    useEffect(() => {
-        if (!hasAutoLoadedRef.current) {
-            hasAutoLoadedRef.current = true;
-            handleLoadStateFromCloud();
-        }
-    }, [handleLoadStateFromCloud]);
 
     // Function to mark activity (call this when user interacts)
     const markActivity = useCallback(() => {
@@ -2684,8 +2715,18 @@ export const useAppLogic = () => {
         hasUnsavedChangesRef.current = true;
     }, []);
 
-    // Auto-save function (silent, no alerts)
+    // Auto-save function - saves to single auto-save slot per day (debounced)
     const performAutoSave = useCallback(async () => {
+        // Clear timers
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+            debounceTimerRef.current = null;
+        }
+        if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+        }
+
         // Don't auto-save if:
         // 1. No unsaved changes
         // 2. Currently loading from cloud
@@ -2694,39 +2735,27 @@ export const useAppLogic = () => {
             return;
         }
 
-        const now = Date.now();
-        const timeSinceActivity = now - lastActivityRef.current;
-
-        // Only save if there was activity within the last 5 minutes (user is actively using)
-        // This prevents saving when user left the tab open but isn't using it
-        const ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
-        if (timeSinceActivity > ACTIVITY_THRESHOLD_MS) {
-            log('[AutoSave] Skipped - no recent activity');
-            return;
-        }
-
         setIsAutoSaving(true);
-        log('[AutoSave] Starting auto-save...');
+        log('[AutoSave] Starting debounced auto-save...');
 
         try {
-            const states = activeDayKeys.map(key => ({
-                dateKey: key,
-                data: dailyStates.get(key)!
-            })).filter(s => s.data);
-
-            if (states.length === 0) {
-                log('[AutoSave] No data to save');
-                return;
+            let successCount = 0;
+            for (const dateKey of activeDayKeys) {
+                const state = dailyStates.get(dateKey);
+                if (state) {
+                    const result = await upsertAutoBackup(dateKey, state);
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        log(`[AutoSave] Error saving ${dateKey}: ${result.error}`);
+                    }
+                }
             }
 
-            const result = await saveAllStatesToCloud(states);
-            if (result.success) {
-                const successCount = result.results?.filter(r => r.success).length || 0;
-                log(`[AutoSave] Saved ${successCount}/${states.length} days`);
+            if (successCount > 0) {
+                log(`[AutoSave] Saved ${successCount}/${activeDayKeys.length} days`);
                 hasUnsavedChangesRef.current = false;
                 setLastAutoSaveTime(new Date());
-            } else {
-                log(`[AutoSave] Error: ${result.error}`);
             }
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -2736,36 +2765,47 @@ export const useAppLogic = () => {
         }
     }, [dailyStates, activeDayKeys, isCloudLoading, log]);
 
-    // Set up auto-save interval (every 2 minutes)
-    useEffect(() => {
-        // Clear any existing timer
-        if (autoSaveTimerRef.current) {
-            clearInterval(autoSaveTimerRef.current);
+    // Trigger debounced auto-save (called on state changes)
+    const triggerDebouncedAutoSave = useCallback(() => {
+        // Clear existing debounce timer
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
         }
 
-        // Start new timer
-        autoSaveTimerRef.current = setInterval(() => {
+        // Set new debounce timer (5 seconds after activity stops)
+        debounceTimerRef.current = setTimeout(() => {
             performAutoSave();
-        }, AUTO_SAVE_INTERVAL_MS);
+        }, BACKUP_CONFIG.AUTO_DEBOUNCE_MS);
 
-        log(`[AutoSave] Timer started (every ${AUTO_SAVE_INTERVAL_MS / 1000}s)`);
+        // Set fallback timer if not already set (60 seconds max between saves)
+        if (!fallbackTimerRef.current) {
+            fallbackTimerRef.current = setTimeout(() => {
+                performAutoSave();
+                fallbackTimerRef.current = null;
+            }, BACKUP_CONFIG.AUTO_FALLBACK_MS);
+        }
+    }, [performAutoSave]);
 
-        // Cleanup on unmount
+    // Cleanup timers on unmount
+    useEffect(() => {
         return () => {
-            if (autoSaveTimerRef.current) {
-                clearInterval(autoSaveTimerRef.current);
-                log('[AutoSave] Timer cleared');
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+            if (fallbackTimerRef.current) {
+                clearTimeout(fallbackTimerRef.current);
             }
         };
-    }, [performAutoSave, AUTO_SAVE_INTERVAL_MS, log]);
+    }, []);
 
-    // Mark activity on various state changes
+    // Mark activity and trigger debounced auto-save on state changes
     useEffect(() => {
-        // When dailyStates changes (jobs assigned, moved, etc.), mark as activity
+        // When dailyStates changes (jobs assigned, moved, etc.), mark as activity and trigger save
         if (historyIndex > 0 || history.length > 1) {
             markActivity();
+            triggerDebouncedAutoSave();
         }
-    }, [dailyStates, markActivity, historyIndex, history.length]);
+    }, [dailyStates, markActivity, triggerDebouncedAutoSave, historyIndex, history.length]);
 
     const handleSync = useCallback(async () => {
         log('ACTION: Sync started.');
@@ -2836,12 +2876,12 @@ export const useAppLogic = () => {
             }
 
             log('- SUCCESS: Sync complete.');
-            alert('Sync complete! content is up to date.');
+            showToast('Sync complete! Content is up to date.', 'success');
 
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Unknown error';
             log(`- ERROR (Sync): ${msg}`);
-            alert(`Sync failed: ${msg}`);
+            showToast(`Sync failed: ${msg}`, 'error');
         }
     }, [dailyStates, activeDayKeys, log]);
 
@@ -2877,6 +2917,111 @@ export const useAppLogic = () => {
     const closeConfirmation = useCallback(() => {
         setConfirmationState(prev => ({ ...prev, isOpen: false }));
     }, []);
+
+    // Load options modal handlers
+    const showLoadOptionsModal = useCallback(async () => {
+        setLoadOptionsModal(prev => ({ ...prev, isOpen: true, isLoading: true }));
+
+        try {
+            const result = await fetchBackupList();
+            if (result.success && result.backups) {
+                const manual = result.backups
+                    .filter(b => b.saveType === 'manual')
+                    .sort((a, b) => b.versionNumber - a.versionNumber); // Newest version first
+                const auto = result.backups.find(b => b.saveType === 'auto') || null;
+
+                setLoadOptionsModal({
+                    isOpen: true,
+                    manualBackups: manual,
+                    autoBackup: auto,
+                    selectedBackupId: null,
+                    isLoading: false,
+                });
+            } else {
+                setLoadOptionsModal({
+                    isOpen: true,
+                    manualBackups: [],
+                    autoBackup: null,
+                    selectedBackupId: null,
+                    isLoading: false,
+                });
+            }
+        } catch (error) {
+            console.error('Error fetching backups:', error);
+            setLoadOptionsModal({
+                isOpen: true,
+                manualBackups: [],
+                autoBackup: null,
+                selectedBackupId: null,
+                isLoading: false,
+            });
+        }
+    }, []);
+
+    const closeLoadOptionsModal = useCallback(() => {
+        setLoadOptionsModal(prev => ({ ...prev, isOpen: false }));
+    }, []);
+
+    const loadSelectedBackup = useCallback(async (backupId: string) => {
+        setIsCloudLoading(true);
+        log('ACTION: Loading selected backup...');
+
+        try {
+            const result = await loadBackup(backupId);
+            if (result.success && result.data) {
+                const { dateKey } = result.data.version;
+                const loadedState = filterExcludedReps(result.data.data);
+
+                // Update the daily states with the loaded data
+                const newDailyStates = new Map(dailyStates);
+                newDailyStates.set(dateKey, loadedState);
+
+                // Add to active days if not already there
+                const newActiveDays = activeDayKeys.includes(dateKey)
+                    ? activeDayKeys
+                    : [...activeDayKeys, dateKey].sort();
+
+                // Mark this day as cloud-loaded
+                cloudLoadedDaysRef.current.add(dateKey);
+
+                setHistory([newDailyStates]);
+                setHistoryIndex(0);
+                setActiveDayKeys(newActiveDays);
+
+                // Set selected date to the loaded day
+                const loadedDate = new Date(dateKey + 'T12:00:00');
+                _setSelectedDate(loadedDate);
+
+                const timestamp = new Date(result.data.version.createdAt).toLocaleString();
+                const typeLabel = result.data.version.saveType === 'manual'
+                    ? `v${result.data.version.versionNumber}`
+                    : 'auto-save';
+                log(`- SUCCESS: Loaded ${dateKey} (${typeLabel}) from ${timestamp}`);
+                showToast(`Loaded ${dateKey} (${typeLabel})`, 'success');
+            } else {
+                log(`- ERROR: ${result.error}`);
+                showToast(`Error loading backup: ${result.error}`, 'error');
+            }
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Unknown error';
+            log(`- ERROR: ${msg}`);
+            showToast(`Error loading backup: ${msg}`, 'error');
+        } finally {
+            setIsCloudLoading(false);
+            closeLoadOptionsModal();
+        }
+    }, [dailyStates, activeDayKeys, log, showToast, closeLoadOptionsModal]);
+
+    // Show load options modal on initial mount
+    useEffect(() => {
+        if (!hasAutoLoadedRef.current) {
+            hasAutoLoadedRef.current = true;
+            // Use setTimeout to ensure the UI has rendered before showing the modal
+            setTimeout(() => {
+                showLoadOptionsModal();
+            }, 500);
+        }
+    }, [showLoadOptionsModal]);
 
     // Wrapped Handlers
     const _handleSaveStateToFile = handleSaveStateToFile;
@@ -2970,6 +3115,7 @@ export const useAppLogic = () => {
         handleLoadStateFromCloud: confirmLoadStateFromCloud,
         handleUndo, handleRedo, canUndo, canRedo,
         hoveredJobId, setHoveredJobId,
+        hoveredRepId, setHoveredRepId,
         repSettingsModalRepId, setRepSettingsModalRepId,
         roofrJobIdMap,
         announcement,
@@ -2993,6 +3139,17 @@ export const useAppLogic = () => {
 
         confirmationState,
         requestConfirmation,
-        closeConfirmation
+        closeConfirmation,
+
+        // Toast notifications
+        toasts,
+        showToast,
+        dismissToast,
+
+        // Load Options Modal
+        loadOptionsModal,
+        showLoadOptionsModal,
+        loadSelectedBackup,
+        closeLoadOptionsModal
     };
 };

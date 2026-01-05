@@ -19,7 +19,9 @@
       "Bash(start http://localhost:3004)",
       "Bash(ls:*)",
       "Bash(npm install)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Bash(timeout:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

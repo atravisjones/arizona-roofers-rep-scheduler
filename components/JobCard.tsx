@@ -1,9 +1,9 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
-import { normalizeAddressForMatching } from '../services/googleSheetsService';
+import { JobEditModal } from './JobEditModal';
 
 const TAG_CLASSES: Record<string, string> = {
     'Tile': 'bg-tag-orange-bg text-tag-orange-text border-tag-orange-border',
@@ -30,52 +30,24 @@ interface JobCardProps {
     isCompact?: boolean;
     isDraggable?: boolean;
     showAssignment?: boolean;
+    currentRepId?: string;
+    currentSlotId?: string;
 }
 
 export const JobCard: React.FC<JobCardProps> = ({
-    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false
+    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false, currentRepId, currentSlotId
 }) => {
-    const { setHoveredJobId, roofrJobIdMap } = useAppContext();
-    const [isEditing, setIsEditing] = useState(false);
-    const [customerName, setCustomerName] = useState(job.customerName);
-    const [address, setAddress] = useState(job.address);
-    const [notes, setNotes] = useState(job.notes);
-
-    useEffect(() => {
-        setCustomerName(job.customerName);
-        setAddress(job.address);
-        setNotes(job.notes);
-    }, [job]);
+    const { setHoveredJobId } = useAppContext();
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-        if (isEditing || !isDraggable) {
+        if (isModalOpen || !isDraggable) {
             e.preventDefault();
             return;
         }
         e.dataTransfer.setData('jobId', job.id);
         e.dataTransfer.effectAllowed = 'move';
         onDragStart?.(job);
-    }
-
-    const handleSave = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        onUpdateJob?.(job.id, { customerName, address, notes });
-        setIsEditing(false);
-    };
-
-    const handleCancel = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setCustomerName(job.customerName);
-        setAddress(job.address);
-        setNotes(job.notes);
-        setIsEditing(false);
-    };
-
-    const handleRemove = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        if (window.confirm(`Are you sure you want to permanently remove this job?\n\n${job.address}`)) {
-            onRemove?.(job.id);
-        }
     };
 
     const allTags = useMemo(() => {
@@ -115,19 +87,13 @@ export const JobCard: React.FC<JobCardProps> = ({
     const isEliteMatch = typeof assignmentScore === 'number' && assignmentScore >= 90;
 
     const handleCardClick = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (isEditing) return;
-        if (isCompact && !isEditing) {
-            setIsEditing(true); // In compact lists like Needs Details, click often implies desire to edit
+        if (isCompact && onUpdateJob) {
+            setIsModalOpen(true); // In compact lists like Needs Details, click often implies desire to edit
         }
     };
 
     const cardClasses = useMemo(() => {
         const base = "border rounded-lg shadow-sm transition-all duration-200 relative group overflow-hidden";
-
-        if (isEditing) {
-            return `${base} ring-2 ring-brand-primary bg-brand-bg-light/50 p-2`;
-        }
-
         const stateClasses = isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer';
         let backgroundClasses = '';
         let highlightClasses = '';
@@ -170,7 +136,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
 
         return `${base} ${stateClasses} ${backgroundClasses} ${highlightClasses}`;
-    }, [priorityLevel, isActuallyMismatched, isReschedule, isEditing, isDraggable, isEliteMatch]);
+    }, [priorityLevel, isActuallyMismatched, isReschedule, isDraggable, isEliteMatch]);
 
     const googleMapsUrl = useMemo(() => {
         const addressParts = [job.address, job.city, job.zipCode].filter(Boolean);
@@ -179,17 +145,6 @@ export const JobCard: React.FC<JobCardProps> = ({
         return `https://www.google.com/maps/search/?api=1&query=${query}`;
     }, [job.address, job.city, job.zipCode]);
 
-    const roofrUrl = useMemo(() => {
-        if (!job.address || !roofrJobIdMap || roofrJobIdMap.size === 0) return null;
-        const normalizedAddress = normalizeAddressForMatching(job.address);
-        if (normalizedAddress) {
-            const jobId = roofrJobIdMap.get(normalizedAddress);
-            if (jobId) {
-                return `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}`;
-            }
-        }
-        return null;
-    }, [job.address, roofrJobIdMap]);
 
 
     let mismatchTitle = '';
@@ -244,75 +199,100 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         </a>
     );
 
-    const RoofrLink = () => {
-        if (roofrUrl) {
-            return (
-                <a
-                    href={roofrUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="flex items-center space-x-1 bg-bg-primary border border-border-secondary hover:bg-bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 decoration-0"
-                    title="Open Job Card in Roofr"
-                >
-                    <ExternalLinkIcon className="h-3 w-3" />
-                    <span className="inline">Job Card</span>
-                </a>
-            );
+    // Format address for Roofr search: expand directions, keep street only
+    const formatAddressForRoofr = (addr: string): string => {
+        // Use originalAddress if available, otherwise use current address
+        const sourceAddr = job.originalAddress || addr;
+
+        // Skip if it looks like coordinates
+        if (/^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(sourceAddr.trim())) {
+            return sourceAddr;
         }
 
+        // Take only the street part (before any comma - removes city, state, zip)
+        const streetPart = sourceAddr.split(',')[0].trim();
+
+        // Expand direction abbreviations
+        const directionMap: Record<string, string> = {
+            ' N ': ' North ', ' S ': ' South ', ' E ': ' East ', ' W ': ' West ',
+            ' NE ': ' Northeast ', ' NW ': ' Northwest ', ' SE ': ' Southeast ', ' SW ': ' Southwest ',
+            '^N ': 'North ', '^S ': 'South ', '^E ': 'East ', '^W ': 'West ',
+        };
+
+        let formatted = ` ${streetPart} `; // Add spaces for matching
+
+        // Replace directions
+        Object.entries(directionMap).forEach(([abbr, full]) => {
+            if (abbr.startsWith('^')) {
+                // Handle start of string
+                const pattern = new RegExp(abbr.replace('^', '^'), 'gi');
+                formatted = formatted.replace(pattern, full);
+            } else {
+                formatted = formatted.replace(new RegExp(abbr, 'gi'), full);
+            }
+        });
+
+        // Expand common street type abbreviations
+        const streetTypes: Record<string, string> = {
+            ' St$': ' Street', ' St ': ' Street ',
+            ' Ave$': ' Avenue', ' Ave ': ' Avenue ',
+            ' Blvd$': ' Boulevard', ' Blvd ': ' Boulevard ',
+            ' Dr$': ' Drive', ' Dr ': ' Drive ',
+            ' Rd$': ' Road', ' Rd ': ' Road ',
+            ' Ln$': ' Lane', ' Ln ': ' Lane ',
+            ' Ct$': ' Court', ' Ct ': ' Court ',
+            ' Pl$': ' Place', ' Pl ': ' Place ',
+            ' Cir$': ' Circle', ' Cir ': ' Circle ',
+            ' Way$': ' Way', ' Way ': ' Way ',
+            ' Pkwy$': ' Parkway', ' Pkwy ': ' Parkway ',
+            ' Ter$': ' Terrace', ' Ter ': ' Terrace ',
+        };
+
+        Object.entries(streetTypes).forEach(([abbr, full]) => {
+            if (abbr.includes('$')) {
+                const pattern = new RegExp(abbr.replace('$', '$'), 'gi');
+                formatted = formatted.replace(pattern, full);
+            } else {
+                formatted = formatted.replace(new RegExp(abbr, 'gi'), full);
+            }
+        });
+
+        return formatted.trim();
+    };
+
+    const handleRoofrClick = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        const formattedAddress = formatAddressForRoofr(job.address);
+
+        // Copy to clipboard as backup for manual search
+        try {
+            await navigator.clipboard.writeText(formattedAddress);
+        } catch (err) {
+            console.error('Failed to copy address:', err);
+        }
+
+        // Build the Roofr search URL with the formatted address
+        const encodedAddress = encodeURIComponent(formattedAddress);
+        const searchUrl = `https://app.roofr.com/dashboard/team/239329/jobs/list-view?page=1&filter%5Bq%5D=${encodedAddress}`;
+        window.open(searchUrl, '_blank');
+    };
+
+    const RoofrLink = () => {
+        const formattedAddress = formatAddressForRoofr(job.address);
         return (
             <button
                 type="button"
-                disabled
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center space-x-1 bg-bg-tertiary/50 border border-border-secondary text-text-quaternary px-1.5 py-0.5 rounded shadow-sm text-[9px] font-semibold leading-none whitespace-nowrap h-5 opacity-50 cursor-not-allowed"
-                title="Job Card not available"
+                onClick={handleRoofrClick}
+                className="flex items-center space-x-1 bg-bg-primary border border-border-secondary hover:bg-bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5"
+                title={`Search Roofr for "${formattedAddress}" (also copied to clipboard)`}
             >
                 <ExternalLinkIcon className="h-3 w-3" />
                 <span className="inline">Job Card</span>
             </button>
         );
     };
-
-
-    if (isEditing) {
-        return (
-            <div className={cardClasses} onClick={(e) => e.stopPropagation()}>
-                <div className="flex flex-col space-y-1.5">
-                    <div>
-                        <label className="text-xs font-bold text-text-tertiary">City / Cust.</label>
-                        <input value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full p-1 border bg-secondary border-border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" autoFocus />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-text-tertiary">Address</label>
-                        <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full p-1 border bg-secondary border-border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" rows={2} />
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-text-tertiary">Notes</label>
-                        <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full p-1 border bg-secondary border-border-primary rounded-md text-sm text-primary placeholder:text-secondary hover:bg-tertiary focus:ring-2 focus:ring-brand-primary focus:outline-none" rows={3} />
-                    </div>
-                    <div className="mt-1 pt-1 border-t border-border-primary/50 flex items-center justify-between">
-                        {onRemove && (
-                            <button type="button" onClick={handleRemove} className="flex items-center space-x-1 px-2 py-1 text-sm font-semibold rounded-md text-tag-red-text bg-bg-primary hover:bg-tag-red-bg transition-colors border border-tag-red-border" title="Remove Job Permanently">
-                                <TrashIcon className="h-4 w-4" />
-                                <span>Del</span>
-                            </button>
-                        )}
-                        <div className="flex items-center space-x-2">
-                            <button onClick={handleCancel} className="px-3 py-1 text-sm font-semibold border border-border-secondary rounded-md text-text-secondary bg-bg-primary hover:bg-bg-tertiary transition" title="Cancel">
-                                Cancel
-                            </button>
-                            <button onClick={handleSave} className="flex items-center gap-1.5 px-4 py-1 text-sm font-bold border border-tag-green-border rounded-md text-tag-green-text bg-tag-green-bg hover:bg-tag-green-bg/80 transition" title="Save Changes">
-                                <SaveIcon className="h-4 w-4" />
-                                Save
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )
-    }
 
     // Display Logic for Time Slot - prefer the short label from time slot
     const displayTimeLabel = displayJob.timeSlotLabel || job.originalTimeframe || 'Anytime';
@@ -409,7 +389,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                             )}
                             {onUpdateJob && (
                                 <ActionBtn
-                                    onClick={(e) => { e.stopPropagation(); setIsEditing(true); }}
+                                    onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }}
                                     icon={EditIcon}
                                     label="Edit"
                                 />
@@ -448,6 +428,20 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     </div>
                 )}
             </div>
+
+            {/* Edit Modal */}
+            {onUpdateJob && (
+                <JobEditModal
+                    job={job}
+                    isOpen={isModalOpen}
+                    onClose={() => setIsModalOpen(false)}
+                    onSave={onUpdateJob}
+                    onRemove={onRemove}
+                    onUnassign={onUnassign}
+                    currentRepId={currentRepId}
+                    currentSlotId={currentSlotId}
+                />
+            )}
         </div>
     );
 };
