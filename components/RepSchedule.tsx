@@ -484,7 +484,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         } else if (isSelected) { stateClasses = 'border-brand-primary bg-brand-bg-light'; }
         else { stateClasses = 'border-border-primary bg-bg-secondary shadow-sm hover:shadow-md'; }
 
-        const unavailabilityClasses = isNotWorking ? 'opacity-60 bg-bg-tertiary grayscale' : '';
+        const unavailabilityClasses = isFullyUnavailable ? 'opacity-60 grayscale' : '';
 
         // Apply dimming when rep filter is active and this rep doesn't match
         const dimmingClasses = isDimmed ? 'opacity-40 grayscale' : '';
@@ -493,7 +493,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         const slotUnavailableClasses = isUnavailableForSlot ? 'opacity-50 grayscale' : '';
 
         return `${base} ${stateClasses} ${unavailabilityClasses} ${dimmingClasses} ${slotUnavailableClasses}`;
-    }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isNotWorking, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized, isDoubleBooked, isDimmed, isUnavailableForSlot]);
+    }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isFullyUnavailable, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized, isDoubleBooked, isDimmed, isUnavailableForSlot]);
 
     const containerTitle = useMemo(() => {
         if (!isBeingHoveredWithJob) return '';

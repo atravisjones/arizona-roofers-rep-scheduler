@@ -39,6 +39,11 @@ const DayViewRepColumn: React.FC<DayViewRepColumnProps> = ({
     return unavailableSlotIds.includes(slotId);
   };
 
+  // Check if rep is fully unavailable (all 4 slots marked unavailable)
+  const isFullyUnavailable = useMemo(() => {
+    return unavailableSlotIds.length >= 4;
+  }, [unavailableSlotIds]);
+
   // Get all jobs for this rep across all time slots
   const allJobs = useMemo(() => {
     return rep.schedule.flatMap(slot =>
@@ -75,7 +80,9 @@ const DayViewRepColumn: React.FC<DayViewRepColumnProps> = ({
 
   return (
     <div
-      className="flex flex-col border-r border-border-primary"
+      className={`flex flex-col border-r border-border-primary ${
+        isFullyUnavailable ? 'opacity-60 grayscale' : ''
+      }`}
       style={{
         // flex: grow shrink basis - columns grow equally but don't shrink below min-width
         flex: `1 1 ${columnWidth}px`,

@@ -44,10 +44,8 @@ const DayViewPanel: React.FC<DayViewPanelProps> = ({ reps, hideEmptyReps = true 
       const jobCount = rep.schedule.flatMap(s => s.jobs).length;
       if (jobCount > 0) return true;
 
-      // Show if they have at least one available slot today
-      const unavailableSlots = rep.unavailableSlots?.[dayName] || [];
-      const isFullyUnavailable = unavailableSlots.length >= 4; // All 4 slots unavailable
-      return !isFullyUnavailable;
+      // Show all reps regardless of availability (unavailable reps will be visually desaturated)
+      return true;
     });
   }, [reps, hideEmptyReps, dayName]);
 

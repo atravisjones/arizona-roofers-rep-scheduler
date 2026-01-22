@@ -2504,9 +2504,12 @@ export const useAppLogic = () => {
                         if (slot.jobs.length >= maxJobsInSlot) continue;
 
                         const isUnavailable = unavailableSlotsToday.includes(slot.id);
+                        // Allow unavailable reps to receive jobs if they were the original assignee
+                        const isOriginalRep = job.originalRepId === targetRep.id;
                         // Only allow override if rep has at least one available slot today
                         const canOverride = newState.settings.allowAssignOutsideAvailability && hasAnyAvailability;
-                        if (isUnavailable && !canOverride) continue;
+                        const canAssignToUnavailableSlot = canOverride || isOriginalRep;
+                        if (isUnavailable && !canAssignToUnavailableSlot) continue;
 
                         if (newState.settings.strictTimeSlotMatching) {
                             const requiredSlotId = mapTimeframeToSlotId(job.originalTimeframe || '');
@@ -2785,10 +2788,7 @@ export const useAppLogic = () => {
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
-            // Filter out reps who are completely unavailable for the selected day
-            const unavailableSlotsToday = rep.unavailableSlots?.[selectedDayString] || [];
-            const isFullyUnavailable = Array.isArray(unavailableSlotsToday) && unavailableSlotsToday.length === TIME_SLOTS.length;
-            if (isFullyUnavailable) return false;
+            // Show all reps regardless of availability (unavailable reps will be visually desaturated)
 
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
             if (!rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) return false;

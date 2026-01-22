@@ -278,20 +278,10 @@ const SchedulesPanel: React.FC = () => {
                                     if (hasJobInSlot) return false;
                                 }
 
-                                // Only show reps who are working (have jobs OR have available slots)
-                                const jobCount = rep.schedule.flatMap(s => s.jobs).length;
-
-                                // Check if we have availability data for this specific day
-                                const hasDataForSelectedDay = rep.unavailableSlots && selectedDay in rep.unavailableSlots;
-
-                                if (!hasDataForSelectedDay) {
-                                    // No data for this day in sheet - only show if rep has jobs assigned
-                                    return jobCount > 0;
-                                }
-
-                                const unavailableSlots = rep.unavailableSlots[selectedDay] || [];
-                                const isFullyUnavailable = unavailableSlots.length === TIME_SLOTS.length && !rep.isOptimized;
-                                return jobCount > 0 || !isFullyUnavailable;
+                                // Only show available reps in the filter section (hide fully unavailable reps)
+                                const unavailableSlots = rep.unavailableSlots?.[selectedDay] || [];
+                                const isFullyUnavailable = unavailableSlots.length >= 4;
+                                return !isFullyUnavailable;
                             })
                             .sort((a, b) => {
                                 // Sort by salesRank (lower rank = better = comes first)
