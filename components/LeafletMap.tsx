@@ -64,16 +64,18 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   // Clean up any React roots created for popups when the component unmounts
   useEffect(() => {
     return () => {
-      popupRootsRef.current.forEach(root => {
-        try {
-          // Verify root is valid before unmounting to avoid double-unmount errors
-          // @ts-ignore - accessing internal property for safety check if needed, but unmount is usually safe
-          root.unmount();
-        } catch (e) {
-          // Ignore errors during cleanup
-        }
-      });
+      // Defer unmounting to avoid "synchronously unmount while rendering" errors
+      const rootsToUnmount = [...popupRootsRef.current];
       popupRootsRef.current = [];
+      setTimeout(() => {
+        rootsToUnmount.forEach(root => {
+          try {
+            root.unmount();
+          } catch (e) {
+            // Ignore errors during cleanup
+          }
+        });
+      }, 0);
     };
   }, []);
 
@@ -291,24 +293,36 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
     if (!mapRef.current || !featureGroupRef.current) return;
 
     const map = mapRef.current;
-    featureGroupRef.current.clearLayers();
-    markersRef.current.clear();
-    jobRepNameMapRef.current.clear();
-
-    // Clear old React roots when creating new markers
-    popupRootsRef.current.forEach(root => {
-      try { root.unmount(); } catch (e) { }
-    });
-    popupRootsRef.current = [];
-
     const jobsToDisplay = preloadedRouteInfo !== undefined ? jobs : mappableJobs;
     const coordsToDisplay = effectiveRouteInfo?.coordinates;
 
+    // Calculate identity BEFORE clearing markers to prevent unnecessary rebuilds
     const currentJobsId = jobsToDisplay.map(j => j.id).sort().join(',');
     const currentRouteId = effectiveRouteInfo?.geometry
       ? JSON.stringify(effectiveRouteInfo.geometry).length
       : (effectiveRouteInfo?.coordinates?.length || '0');
     const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}`;
+
+    // Skip rebuild if nothing meaningful changed (preserves hover highlighting)
+    if (currentIdentity === dataIdentityRef.current) {
+      return;
+    }
+    dataIdentityRef.current = currentIdentity;
+
+    featureGroupRef.current.clearLayers();
+    markersRef.current.clear();
+    jobRepNameMapRef.current.clear();
+
+    // Clear old React roots when creating new markers (deferred to avoid render cycle issues)
+    const oldRoots = [...popupRootsRef.current];
+    popupRootsRef.current = [];
+    if (oldRoots.length > 0) {
+      setTimeout(() => {
+        oldRoots.forEach(root => {
+          try { root.unmount(); } catch (e) { }
+        });
+      }, 0);
+    }
 
     if (coordsToDisplay && coordsToDisplay.length > 0 && jobsToDisplay.length === coordsToDisplay.length) {
 

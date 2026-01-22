@@ -509,7 +509,9 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
                 const cellAsString = String(cell); // Ensure value is a string before trimming
                 const match = cellAsString.trim().match(dayRegex);
                 if (match) {
-                    days.push({ name: match[0], colIndex: index });
+                    // Normalize day name to proper case (e.g., "Monday" not "MONDAY")
+                    const normalizedDayName = match[0].charAt(0).toUpperCase() + match[0].slice(1).toLowerCase();
+                    days.push({ name: normalizedDayName, colIndex: index });
                 }
             }
         });

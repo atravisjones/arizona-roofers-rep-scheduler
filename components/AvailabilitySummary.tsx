@@ -154,6 +154,10 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
             rep.schedule.forEach(slot => {
                 // If slot is not unavailable AND has no jobs, they are available
                 if (!unavailableSlotIds.has(slot.id) && slot.jobs.length === 0) {
+                    // Ensure the slot label exists in data
+                    if (!data[slot.label]) {
+                        data[slot.label] = [];
+                    }
                     data[slot.label].push({
                         name: rep.name,
                         activeCities,

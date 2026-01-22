@@ -144,6 +144,9 @@ export interface Job {
   zipCode?: string;
   originalRepId?: string; // The rep ID from auto-assignment when job was pasted
   originalRepName?: string; // The rep name from auto-assignment when job was pasted
+  roofAge?: number;      // Parsed from "20yrs" in notes
+  jobValue?: number;     // Calculated score (0-100) - higher = better lead for top reps
+  isRepairJob?: boolean; // True if contains repair/leak/patch/inspect keywords
 }
 
 export interface DisplayJob extends Job {
@@ -247,6 +250,8 @@ export interface AppContextType {
   parsingError: string | null;
   selectedRepId: string | null;
   setSelectedRepId: (id: string | null) => void;
+  selectedRepFilters: Set<string>;
+  setSelectedRepFilters: React.Dispatch<React.SetStateAction<Set<string>>>;
   swapSourceRepId: string | null; // ID of the rep selected for swapping schedule (source)
   setSwapSourceRepId: (id: string | null) => void;
   usingMockData: boolean;
@@ -378,4 +383,12 @@ export interface AppContextType {
   showLoadOptionsModal: () => void;
   loadSelectedBackup: (backupId: string) => Promise<void>;
   closeLoadOptionsModal: () => void;
+
+  // Routing API Integration
+  useRoutingApi: boolean;
+  toggleRoutingApiMode: (enabled: boolean) => void;
+  isLoadingFromRoutingApi: boolean;
+  routingApiError: string | null;
+  routingApiSyncStatus: 'idle' | 'syncing' | 'synced' | 'error';
+  loadJobsFromRoutingApi: () => Promise<void>;
 }

@@ -61,3 +61,9 @@ export const DAY_VIEW_CELL_HEIGHT = 40;  // pixels per 30-min slot
 export const DAY_VIEW_START_HOUR = 6;    // 6am
 export const DAY_VIEW_END_HOUR = 20;     // 8pm (exclusive, so last slot is 7:30pm)
 export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
+
+// Routing API Configuration
+// Connects to the Arizona Roofers Routing backend for loading scanner jobs
+export const ROUTING_API_BASE_URL = 'https://arizona-roofers-routing.vercel.app';
+export const ROUTING_API_KEY = 'scheduling-api-key-2025';
+export const ROUTING_API_SYNC_DEBOUNCE_MS = 2000; // Wait 2s after last change before syncing

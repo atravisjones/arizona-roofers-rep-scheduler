@@ -4,7 +4,7 @@ import RepSchedule from './RepSchedule';
 import { DayViewPanel } from './DayView';
 import { LoadingIcon, ErrorIcon, SearchIcon, ExpandAllIcon, CollapseAllIcon, UnassignAllIcon, LockIcon, UnlockIcon, XIcon, TrophyIcon, ListIcon, GridIcon } from './icons';
 import { SortKey, Job, Rep, DisplayJob } from '../types';
-import { TIME_SLOTS } from '../constants';
+import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
 
 // Helper function to format rep names for the filter tags
 const formatRepNameForFilter = (fullName: string): string => {
@@ -52,6 +52,7 @@ const SchedulesPanel: React.FC = () => {
     const [cityFilters] = useState<Set<string>>(new Set());
     const [lockFilter] = useState<'all' | 'locked' | 'unlocked'>('all');
     const [selectedRepFilters, setSelectedRepFilters] = useState<Set<string>>(new Set());
+    const [selectedSlotFilter, setSelectedSlotFilter] = useState<string | null>(null);
 
     // Determine the actual day name (e.g. "Monday") for the selected date to check availability correctly
     const selectedDay = useMemo(() => selectedDate.toLocaleDateString('en-US', { weekday: 'long' }), [selectedDate]);
@@ -63,6 +64,22 @@ const SchedulesPanel: React.FC = () => {
         // Filter by selected reps (when clicking on rep chips)
         if (selectedRepFilters.size > 0) {
             reps = reps.filter(rep => selectedRepFilters.has(rep.id));
+        }
+
+        // Filter out reps who are unavailable OR already have a job in the selected slot
+        if (selectedSlotFilter) {
+            reps = reps.filter(rep => {
+                // Check if slot is marked as unavailable for this day
+                const isUnavailable = rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
+                if (isUnavailable) return false;
+
+                // Check if rep already has a job in this slot
+                const slotSchedule = rep.schedule.find(slot => slot.id === selectedSlotFilter);
+                const hasJobInSlot = slotSchedule && slotSchedule.jobs.length > 0;
+                if (hasJobInSlot) return false;
+
+                return true; // Show rep - they're available and have no job in this slot
+            });
         }
 
         // Filter by search term - search across multiple fields
@@ -90,7 +107,13 @@ const SchedulesPanel: React.FC = () => {
         }
 
         return reps;
-    }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, repSearchTerm]);
+    }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, selectedSlotFilter, selectedDay, repSearchTerm]);
+
+    // Helper to check if rep is unavailable for the selected time slot
+    const isRepUnavailableForSlot = (rep: Rep): boolean => {
+        if (!selectedSlotFilter) return false;
+        return rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
+    };
 
     // Push visible jobs to context for synchronized map filtering.
     // Use a ref to prevent infinite loops by checking content equality (via IDs)
@@ -194,6 +217,38 @@ const SchedulesPanel: React.FC = () => {
                 </div>
             </div>
 
+            {/* Time Slot Filter Buttons */}
+            <div className="bg-secondary rounded-lg p-2 mb-2 border border-border-primary flex-shrink-0">
+                <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
+                        Filter by Time Slot
+                    </span>
+                    {selectedSlotFilter && (
+                        <button
+                            onClick={() => setSelectedSlotFilter(null)}
+                            className="text-[10px] font-bold text-brand-primary hover:text-brand-primary/80 transition-colors"
+                        >
+                            Clear
+                        </button>
+                    )}
+                </div>
+                <div className="flex gap-1">
+                    {TIME_SLOTS.map(slot => (
+                        <button
+                            key={slot.id}
+                            onClick={() => setSelectedSlotFilter(selectedSlotFilter === slot.id ? null : slot.id)}
+                            className={`px-2 py-1 text-xs rounded transition-colors ${
+                                selectedSlotFilter === slot.id
+                                    ? 'bg-brand-primary text-brand-text-on-primary'
+                                    : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'
+                            }`}
+                        >
+                            {TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {/* Rep Filter Buttons */}
             <div className="bg-secondary rounded-lg p-2 mb-3 border border-border-primary flex-shrink-0">
                 <div className="flex items-center justify-between mb-2">
@@ -213,9 +268,28 @@ const SchedulesPanel: React.FC = () => {
                     <div className="flex flex-wrap gap-1.5 items-center">
                         {appState.reps
                             .filter(rep => {
+                                // If time slot filter is active, hide reps unavailable or with job in that slot
+                                if (selectedSlotFilter) {
+                                    const isUnavailable = rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
+                                    if (isUnavailable) return false;
+
+                                    const slotSchedule = rep.schedule.find(slot => slot.id === selectedSlotFilter);
+                                    const hasJobInSlot = slotSchedule && slotSchedule.jobs.length > 0;
+                                    if (hasJobInSlot) return false;
+                                }
+
                                 // Only show reps who are working (have jobs OR have available slots)
                                 const jobCount = rep.schedule.flatMap(s => s.jobs).length;
-                                const unavailableSlots = rep.unavailableSlots?.[selectedDay] || [];
+
+                                // Check if we have availability data for this specific day
+                                const hasDataForSelectedDay = rep.unavailableSlots && selectedDay in rep.unavailableSlots;
+
+                                if (!hasDataForSelectedDay) {
+                                    // No data for this day in sheet - only show if rep has jobs assigned
+                                    return jobCount > 0;
+                                }
+
+                                const unavailableSlots = rep.unavailableSlots[selectedDay] || [];
                                 const isFullyUnavailable = unavailableSlots.length === TIME_SLOTS.length && !rep.isOptimized;
                                 return jobCount > 0 || !isFullyUnavailable;
                             })
@@ -416,7 +490,12 @@ const SchedulesPanel: React.FC = () => {
                                         isSelected={rep.id === selectedRepId}
                                         onSelectRep={(e) => {
                                             // Toggle rep selection - clicking again deselects
-                                            setSelectedRepId(selectedRepId === rep.id ? null : rep.id);
+                                            const newSelectedId = selectedRepId === rep.id ? null : rep.id;
+                                            setSelectedRepId(newSelectedId);
+                                            // Show route on map when rep is selected
+                                            if (newSelectedId) {
+                                                handleShowRoute(newSelectedId, false);
+                                            }
                                         }}
                                         isExpanded={expandedRepIds.has(rep.id)}
                                         onToggleExpansion={() => handleToggleRepExpansion(rep.id)}
@@ -430,6 +509,7 @@ const SchedulesPanel: React.FC = () => {
                                         isOverrideActive={isOverrideActive}
                                         isHighlighted={isHighlighted}
                                         selectedRepName={repSearchTerm || undefined}
+                                        isUnavailableForSlot={isRepUnavailableForSlot(rep)}
                                     />
                                 );
                             })

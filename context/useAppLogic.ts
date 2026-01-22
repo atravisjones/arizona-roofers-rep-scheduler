@@ -13,6 +13,16 @@ import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStat
 import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup } from '../services/backupService';
 import { saveState, loadState } from '../services/saveLoadService';
 import { doTimesOverlap } from '../utils/timeUtils';
+import {
+    fetchUnassignedJobs,
+    fetchAppointmentsByDate,
+    fetchDaySchedule,
+    createAppointment,
+    mapRoutingApiJobToAppJob,
+    RoutingApiJob,
+    DayScheduleResponse,
+} from '../services/routingApiService';
+import { ROUTING_API_SYNC_DEBOUNCE_MS } from '../constants';
 
 // Helpers
 const norm = (city: string | null | undefined): string => (city || '').toLowerCase().trim();
@@ -106,6 +116,14 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
 
 const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS };
 
+// Type for Routing API sync queue items
+interface RoutingApiSyncItem {
+    jobId: string;
+    repId: string;
+    slotId: string;
+    dateKey: string;
+}
+
 export const useAppLogic = () => {
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -176,6 +194,14 @@ export const useAppLogic = () => {
     const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [isAutoSaving, setIsAutoSaving] = useState(false);
     const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+
+    // Routing API integration state
+    const [useRoutingApi, setUseRoutingApi] = useState<boolean>(false);
+    const [isLoadingFromRoutingApi, setIsLoadingFromRoutingApi] = useState(false);
+    const [routingApiError, setRoutingApiError] = useState<string | null>(null);
+    const [routingApiSyncStatus, setRoutingApiSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+    const routingApiSyncQueueRef = useRef<Map<string, RoutingApiSyncItem>>(new Map());
+    const routingApiSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Toast notification state
     const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -643,6 +669,191 @@ export const useAppLogic = () => {
         }
     }, [dailyStates, log, updateGeoCache, isCloudLoading]);
 
+    // ============ Routing API Integration Functions ============
+
+    /**
+     * Flush the sync queue - send all pending assignments to the Routing API.
+     */
+    const flushRoutingApiSyncQueue = useCallback(async () => {
+        const queue: RoutingApiSyncItem[] = Array.from(routingApiSyncQueueRef.current.values());
+        if (queue.length === 0) return;
+
+        log(`[RoutingAPI] Syncing ${queue.length} assignments...`);
+        setRoutingApiSyncStatus('syncing');
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const item of queue) {
+            try {
+                await createAppointment({
+                    jobId: item.jobId,
+                    repId: item.repId,
+                    date: item.dateKey,
+                    timeSlotId: item.slotId,
+                });
+                successCount++;
+                log(`[RoutingAPI] Synced: ${item.jobId} -> rep ${item.repId}`);
+            } catch (error) {
+                errorCount++;
+                console.error(`[RoutingAPI] Failed to sync job ${item.jobId}:`, error);
+                log(`[RoutingAPI] ERROR syncing ${item.jobId}: ${error}`);
+            }
+        }
+
+        routingApiSyncQueueRef.current.clear();
+
+        if (errorCount > 0) {
+            setRoutingApiSyncStatus('error');
+            showToast(`Sync completed with ${errorCount} errors`, 'error');
+        } else {
+            setRoutingApiSyncStatus('synced');
+            showToast(`Synced ${successCount} assignments to Routing API`, 'success');
+        }
+
+        log(`[RoutingAPI] Sync complete: ${successCount} success, ${errorCount} errors`);
+    }, [log, showToast]);
+
+    /**
+     * Queue a job assignment for syncing to the Routing API.
+     */
+    const queueRoutingApiSync = useCallback((item: { jobId: string; repId: string; slotId: string; dateKey: string }) => {
+        routingApiSyncQueueRef.current.set(item.jobId, item);
+        log(`[RoutingAPI] Queued sync for job ${item.jobId}`);
+
+        // Clear existing timer and set a new debounced one
+        if (routingApiSyncTimerRef.current) {
+            clearTimeout(routingApiSyncTimerRef.current);
+        }
+
+        routingApiSyncTimerRef.current = setTimeout(() => {
+            flushRoutingApiSyncQueue();
+        }, ROUTING_API_SYNC_DEBOUNCE_MS);
+    }, [log, flushRoutingApiSyncQueue]);
+
+    /**
+     * Load jobs from the Routing API for all active days.
+     * Uses the day schedule endpoint which returns jobs with their assignments.
+     */
+    const loadJobsFromRoutingApi = useCallback(async () => {
+        // Note: Don't check useRoutingApi here - state may not be updated yet when called from toggle
+        try {
+            setIsLoadingFromRoutingApi(true);
+            setRoutingApiError(null);
+            log('[RoutingAPI] Fetching day schedules for active days...');
+
+            let totalAssigned = 0;
+
+            // Load schedule for each active day
+            for (const dateKey of activeDayKeys) {
+                try {
+                    log(`[RoutingAPI] Fetching schedule for ${dateKey}...`);
+                    const daySchedule = await fetchDaySchedule(dateKey);
+
+                    // Count jobs
+                    const assignedCount = daySchedule.reps?.reduce(
+                        (sum, rep) => sum + rep.schedule?.reduce(
+                            (slotSum, slot) => slotSum + (slot.jobs?.length || 0), 0
+                        ) || 0, 0
+                    ) || 0;
+
+                    totalAssigned += assignedCount;
+
+                    log(`[RoutingAPI] ${dateKey}: ${assignedCount} assigned jobs`);
+
+                    // Update the day's state with the Routing API data
+                    recordChange(currentDailyStates => {
+                        const newDailyStates = new Map<string, AppState>(currentDailyStates);
+                        const existingDayState = newDailyStates.get(dateKey);
+
+                        if (!existingDayState) {
+                            log(`[RoutingAPI] No existing state for ${dateKey}, skipping`);
+                            return currentDailyStates;
+                        }
+
+                        // Create a new state with merged data
+                        const newState: AppState = JSON.parse(JSON.stringify(existingDayState));
+
+                        // Merge jobs from Routing API into existing reps
+                        if (daySchedule.reps && daySchedule.reps.length > 0) {
+                            const apiRepsMap = new Map(daySchedule.reps.map(r => [r.name.toLowerCase().trim(), r]));
+
+                            for (const rep of newState.reps) {
+                                const apiRep = apiRepsMap.get(rep.name.toLowerCase().trim());
+                                if (apiRep && apiRep.schedule) {
+                                    // Merge jobs from API into rep's schedule
+                                    for (const apiSlot of apiRep.schedule) {
+                                        const repSlot = rep.schedule.find(s => s.id === apiSlot.id);
+                                        if (repSlot && apiSlot.jobs && apiSlot.jobs.length > 0) {
+                                            // Add jobs that don't already exist
+                                            const existingJobIds = new Set(repSlot.jobs.map(j => j.id));
+                                            for (const apiJob of apiSlot.jobs) {
+                                                if (!existingJobIds.has(apiJob.id)) {
+                                                    const mappedJob = mapRoutingApiJobToAppJob(apiJob);
+                                                    repSlot.jobs.push({
+                                                        ...mappedJob,
+                                                        assignedRepName: rep.name,
+                                                        timeSlotLabel: repSlot.label,
+                                                    } as DisplayJob);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // NOTE: We intentionally skip unassignedJobs from the Routing API
+                        // because they aren't date-filtered (returns ALL pending jobs in database).
+                        // Scanner jobs are auto-assigned, so they appear in reps' schedules above.
+
+                        newDailyStates.set(dateKey, newState);
+                        return newDailyStates;
+                    }, 'Load from Routing API');
+
+                } catch (dayError) {
+                    console.error(`[RoutingAPI] Failed to load ${dateKey}:`, dayError);
+                    log(`[RoutingAPI] ERROR loading ${dateKey}: ${dayError}`);
+                }
+            }
+
+            if (totalAssigned > 0) {
+                showToast(`Loaded ${totalAssigned} assigned jobs from Routing API`, 'success');
+            } else {
+                showToast('No assigned jobs found in Routing API for active days', 'info');
+            }
+
+        } catch (error) {
+            console.error('[RoutingAPI] Failed to load jobs:', error);
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            setRoutingApiError(errorMsg);
+            showToast(`Failed to load from Routing API: ${errorMsg}`, 'error');
+            log(`[RoutingAPI] ERROR: ${errorMsg}`);
+        } finally {
+            setIsLoadingFromRoutingApi(false);
+        }
+    }, [useRoutingApi, activeDayKeys, log, showToast, recordChange]);
+
+    /**
+     * Toggle Routing API mode on/off.
+     */
+    const toggleRoutingApiMode = useCallback((enabled: boolean) => {
+        setUseRoutingApi(enabled);
+        log(`[RoutingAPI] Mode ${enabled ? 'enabled' : 'disabled'}`);
+
+        if (enabled) {
+            // Load jobs when enabling
+            loadJobsFromRoutingApi();
+        } else {
+            // Clear sync queue when disabling
+            if (routingApiSyncTimerRef.current) {
+                clearTimeout(routingApiSyncTimerRef.current);
+            }
+            routingApiSyncQueueRef.current.clear();
+            setRoutingApiSyncStatus('idle');
+        }
+    }, [log, loadJobsFromRoutingApi]);
+
     const setSelectedDate = useCallback((date: Date) => {
         const dateKey = formatDateToKey(date);
         if (!activeDayKeys.includes(dateKey)) return;
@@ -685,6 +896,25 @@ export const useAppLogic = () => {
         log(`Removed day ${dateKeyToRemove} from workspace.`);
     }, [activeDayKeys, selectedDate, log]);
 
+    // Initialize next 7 days on app startup
+    useEffect(() => {
+        // Only run if activeDayKeys is empty (first load)
+        if (activeDayKeys.length > 0) return;
+
+        const today = new Date();
+        today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
+
+        const next7Days: string[] = [];
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() + i);
+            next7Days.push(formatDateToKey(date));
+        }
+
+        setActiveDayKeys(next7Days);
+        log('Initialized next 7 days on startup');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Run once on mount
 
     // Auto-save effect
     const saveTimeoutRef = useRef<any>(null);
@@ -1055,7 +1285,17 @@ export const useAppLogic = () => {
 
         setSelectedRepId(target.repId);
         setExpandedRepIds(prev => new Set(prev).add(target.repId));
-    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute]);
+
+        // Queue sync to Routing API if enabled
+        if (useRoutingApi) {
+            queueRoutingApiSync({
+                jobId,
+                repId: target.repId,
+                slotId: target.slotId,
+                dateKey: formatDateToKey(selectedDate),
+            });
+        }
+    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute, useRoutingApi, queueRoutingApiSync]);
 
     const handleShowFilteredJobsOnMap = useCallback(async (jobs: DisplayJob[], title: string) => {
         const requestId = ++mapRequestRef.current;
@@ -2098,7 +2338,12 @@ export const useAppLogic = () => {
                     return acc;
                 }, {} as Record<string, number>);
 
+                // Sort by job value first (high-value jobs assigned first to top reps)
+                // Then by city order for geographic efficiency
                 jobsToAssign.sort((a, b) => {
+                    const valueA = a.jobValue ?? 50;
+                    const valueB = b.jobValue ?? 50;
+                    if (valueB !== valueA) return valueB - valueA; // Descending by value
                     const orderA = cityOrder[norm(a.city)] ?? 999;
                     const orderB = cityOrder[norm(b.city)] ?? 999;
                     return orderA - orderB;
@@ -2219,7 +2464,12 @@ export const useAppLogic = () => {
                     return acc;
                 }, {} as Record<string, number>);
 
+                // Sort by job value first (high-value jobs assigned first)
+                // Then by city order for geographic efficiency
                 jobsToAssign.sort((a, b) => {
+                    const valueA = a.jobValue ?? 50;
+                    const valueB = b.jobValue ?? 50;
+                    if (valueB !== valueA) return valueB - valueA; // Descending by value
                     const orderA = cityOrder[norm(a.city)] ?? 999;
                     const orderB = cityOrder[norm(b.city)] ?? 999;
                     return orderA - orderB;
@@ -2535,6 +2785,11 @@ export const useAppLogic = () => {
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
+            // Filter out reps who are completely unavailable for the selected day
+            const unavailableSlotsToday = rep.unavailableSlots?.[selectedDayString] || [];
+            const isFullyUnavailable = Array.isArray(unavailableSlotsToday) && unavailableSlotsToday.length === TIME_SLOTS.length;
+            if (isFullyUnavailable) return false;
+
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
             if (!rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) return false;
             if (lockFilter === 'locked' && !rep.isLocked) return false;
@@ -3150,6 +3405,14 @@ export const useAppLogic = () => {
         loadOptionsModal,
         showLoadOptionsModal,
         loadSelectedBackup,
-        closeLoadOptionsModal
+        closeLoadOptionsModal,
+
+        // Routing API Integration
+        useRoutingApi,
+        toggleRoutingApiMode,
+        isLoadingFromRoutingApi,
+        routingApiError,
+        routingApiSyncStatus,
+        loadJobsFromRoutingApi,
     };
 };

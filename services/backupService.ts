@@ -264,6 +264,55 @@ export async function getMostRecentBackup(
 }
 
 /**
+ * Load the most recent backup for a specific date (full data, not just metadata).
+ * This is used when navigating to a new day to check if Supabase has data for it.
+ */
+export async function loadBackupForDate(
+  dateKey: string
+): Promise<{ success: boolean; data?: BackupSnapshot; error?: string }> {
+  try {
+    console.log('[BackupService] Loading backup for date:', dateKey);
+
+    // Get the most recent backup for this date (prefer auto-save)
+    const { data, error } = await supabase
+      .from('schedule_backups')
+      .select('*')
+      .eq('date_key', dateKey)
+      .order('save_type', { ascending: true }) // 'auto' comes before 'manual' alphabetically
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (!data) {
+      console.log('[BackupService] No backup found for date:', dateKey);
+      return { success: false, error: 'No backup found' };
+    }
+
+    console.log('[BackupService] Found backup for', dateKey, ':', data.save_type, 'v' + data.version_number);
+
+    return {
+      success: true,
+      data: {
+        version: {
+          id: data.id,
+          dateKey: data.date_key,
+          saveType: data.save_type as SaveType,
+          versionNumber: data.version_number,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+        },
+        data: data.snapshot as AppState,
+      },
+    };
+  } catch (error) {
+    console.error('[BackupService] Error loading backup for date:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
  * Get all unique date keys that have backups.
  */
 export async function getBackupDateKeys(): Promise<{ success: boolean; dateKeys?: string[]; error?: string }> {

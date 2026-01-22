@@ -154,6 +154,8 @@ interface TagFilters {
 
 const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) => {
     const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings, placementJobId, setPlacementJobId, handlePlaceJobOnMap, selectedRepId, appState } = useAppContext();
+    // selectedRepFilters may not exist in context yet - default to empty Set
+    const selectedRepFilters = new Set<string>();
     const [copySuccess, setCopySuccess] = useState(false);
 
     const [isUnplottedExpanded, setIsUnplottedExpanded] = useState(true);
@@ -235,9 +237,15 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         const isOverviewMap = repName === 'Unassigned Jobs' || repName === 'Job Map' || repName === 'All Rep Locations' || repName.startsWith('Zip:');
         const isRepView = !isOverviewMap;
 
-        // Get selected rep's name if one is selected
-        const selectedRep = selectedRepId ? appState.reps.find(r => r.id === selectedRepId) : null;
-        const selectedRepName = selectedRep?.name;
+        // Get all selected reps' names (for multi-select filtering)
+        const selectedRepNames = new Set<string>();
+        if (selectedRepFilters.size > 0) {
+            selectedRepFilters.forEach(repId => {
+                const rep = appState.reps.find(r => r.id === repId);
+                if (rep) selectedRepNames.add(rep.name);
+            });
+        }
+        const hasRepFilter = selectedRepNames.size > 0;
 
         return routeData.mappableJobs.map(job => {
             const tags = jobTagsMap.get(job.id);
@@ -245,22 +253,22 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             const isMatch = tags ? checkJobMatch(job, tags, tagFilters, selectedTimeSlotId) : true;
 
             // Saturation Filter: Dim if not belonging to the current rep (when in Rep View)
-            // OR if a rep is selected and this job doesn't belong to them
+            // OR if reps are selected and this job doesn't belong to any of them
             const belongsToRep = job.assignedRepName === repName;
-            const belongsToSelectedRep = selectedRepName ? job.assignedRepName === selectedRepName : true;
+            const belongsToSelectedReps = hasRepFilter ? selectedRepNames.has(job.assignedRepName || '') : true;
 
             // Final dim state: Dimmed if:
             // 1. Filter mismatch (time/tags)
             // 2. Rep View AND Not Rep's Job (unless it's start location)
-            // 3. A rep is selected AND job doesn't belong to selected rep (unless it's their home/start)
-            const isSelectedRepHome = job.isStartLocation && job.assignedRepName === selectedRepName;
+            // 3. Reps are selected AND job doesn't belong to any selected rep (unless it's their home/start)
+            const isSelectedRepHome = job.isStartLocation && selectedRepNames.has(job.assignedRepName || '');
             const isDimmed = !isMatch ||
                 (isRepView && !belongsToRep && !job.isStartLocation) ||
-                (selectedRepName && !belongsToSelectedRep && !isSelectedRepHome);
+                (hasRepFilter && !belongsToSelectedReps && !isSelectedRepHome);
 
             return { ...job, isDimmed };
         });
-    }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepId, appState.reps]);
+    }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepFilters, appState.reps]);
 
     let title: string, subtitle: string;
     const totalJobs = (routeData?.mappableJobs.length ?? 0) + (routeData?.unmappableJobs.length ?? 0);

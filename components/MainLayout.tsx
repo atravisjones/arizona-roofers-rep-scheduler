@@ -492,7 +492,7 @@ const MainLayout: React.FC = () => {
         return (
           <>
             {!isStacked && renderColumnHeader('jobs', '2. Jobs')}
-            <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
+            <div className={isStacked ? "flex flex-col flex-1 min-h-0" : "flex flex-col flex-grow min-h-0"}>
               <JobsPanel />
             </div>
           </>
@@ -733,6 +733,36 @@ const MainLayout: React.FC = () => {
             <button onClick={() => context.showLoadOptionsModal()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
               <CloudDownloadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
+            <div className="w-px h-4 bg-border-secondary mx-1"></div>
+            {/* Routing API Integration Toggle */}
+            <button
+              onClick={() => context.toggleRoutingApiMode(!context.useRoutingApi)}
+              className={`flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition ${
+                context.useRoutingApi
+                  ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200'
+                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary border border-border-secondary/50'
+              }`}
+              title={context.useRoutingApi ? 'Routing API enabled - Click to disable' : 'Enable Routing API to load scanner jobs'}
+            >
+              <span className={`w-2 h-2 rounded-full ${
+                context.useRoutingApi
+                  ? context.routingApiSyncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse'
+                    : context.routingApiSyncStatus === 'error' ? 'bg-red-500'
+                    : 'bg-green-500'
+                  : 'bg-gray-400'
+              }`}></span>
+              Routing
+            </button>
+            {context.useRoutingApi && (
+              <button
+                onClick={() => context.loadJobsFromRoutingApi()}
+                disabled={context.isLoadingFromRoutingApi}
+                className="px-2 py-1 text-[10px] font-semibold bg-brand-bg-light text-brand-text-light rounded hover:bg-brand-primary/20 disabled:opacity-50 transition"
+                title="Refresh jobs from Routing API"
+              >
+                {context.isLoadingFromRoutingApi ? 'Loading...' : 'Refresh'}
+              </button>
+            )}
             {/* Auto-save indicator */}
             {context.isAutoSaving ? (
               <span className="text-xs text-yellow-500 ml-1 animate-pulse" title="Auto-saving...">saving...</span>

@@ -389,6 +389,30 @@ export async function parseJobsFromText(
             continue;
         }
 
+        // Parse roof age from notes (e.g., "20yrs", "15 yrs")
+        const ageMatch = notes.match(/\b(\d+)\s*yrs?\b/i);
+        const roofAge = ageMatch ? parseInt(ageMatch[1], 10) : undefined;
+
+        // Detect repair-type keywords (lower value jobs)
+        const repairKeywords = /\b(repair|leak|patch|inspect)\b/i;
+        const isRepairJob = repairKeywords.test(notes);
+
+        // Detect high-value keywords (reroof, new roof, replacement)
+        const highValueKeywords = /\b(reroof|new\s*roof|replacement)\b/i;
+        const isHighValueJob = highValueKeywords.test(notes);
+
+        // Calculate job value score (0-100)
+        let jobValue = 50; // Base score
+        if (roofAge !== undefined) {
+            if (roofAge >= 20) jobValue += 30;
+            else if (roofAge >= 15) jobValue += 20;
+            else if (roofAge >= 10) jobValue += 10;
+            else if (roofAge < 5) jobValue -= 10;
+        }
+        if (isHighValueJob) jobValue += 20;
+        if (isRepairJob) jobValue -= 20;
+        jobValue = Math.max(0, Math.min(100, jobValue)); // Clamp to 0-100
+
         const newJob = {
             id: `job-${Date.now()}-${jobs.length}-${Math.random().toString(36).substring(2, 9)}`,
             customerName: city,
@@ -397,6 +421,9 @@ export async function parseJobsFromText(
             city, notes,
             originalTimeframe: currentTimeframe,
             zipCode,
+            roofAge,
+            jobValue,
+            isRepairJob,
         };
         jobs.push(newJob);
 

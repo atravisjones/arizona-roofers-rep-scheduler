@@ -30,6 +30,7 @@ interface RepScheduleProps {
     isOverrideActive?: boolean;
     isHighlighted?: boolean;
     selectedRepName?: string;
+    isUnavailableForSlot?: boolean;
 }
 
 interface DropZoneProps {
@@ -293,7 +294,7 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
 };
 
 
-const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false, selectedRepName }) => {
+const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false, selectedRepName, isUnavailableForSlot = false }) => {
     const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate } = useAppContext();
     const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -488,8 +489,11 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         // Apply dimming when rep filter is active and this rep doesn't match
         const dimmingClasses = isDimmed ? 'opacity-40 grayscale' : '';
 
-        return `${base} ${stateClasses} ${unavailabilityClasses} ${dimmingClasses}`;
-    }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isNotWorking, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized, isDoubleBooked, isDimmed]);
+        // Apply grayscale when rep is unavailable for the selected time slot filter
+        const slotUnavailableClasses = isUnavailableForSlot ? 'opacity-50 grayscale' : '';
+
+        return `${base} ${stateClasses} ${unavailabilityClasses} ${dimmingClasses} ${slotUnavailableClasses}`;
+    }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isNotWorking, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized, isDoubleBooked, isDimmed, isUnavailableForSlot]);
 
     const containerTitle = useMemo(() => {
         if (!isBeingHoveredWithJob) return '';
