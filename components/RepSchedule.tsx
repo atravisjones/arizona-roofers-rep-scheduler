@@ -8,6 +8,9 @@ import { useAppContext } from '../context/AppContext';
 import { mapTimeframeToSlotId } from '../services/geminiService';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 
+// Helper to check if a rep is London Smith (case-insensitive)
+const isLondon = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('london smith');
+
 interface RepScheduleProps {
     rep: Rep;
     onJobDrop: (jobId: string, target: { repId: string, slotId: string }, e: React.DragEvent<HTMLDivElement>) => void;
@@ -295,7 +298,7 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
 
 
 const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false, selectedRepName, isUnavailableForSlot = false }) => {
-    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate } = useAppContext();
+    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate, setHoveredRepId } = useAppContext();
     const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -484,13 +487,15 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         } else if (isSelected) { stateClasses = 'border-brand-primary bg-brand-bg-light'; }
         else { stateClasses = 'border-border-primary bg-bg-secondary shadow-sm hover:shadow-md'; }
 
-        const unavailabilityClasses = isFullyUnavailable ? 'opacity-60 grayscale' : '';
+        // London Smith never gets desaturated styling - always show in full color
+        const isLondonRep = isLondon(rep);
+        const unavailabilityClasses = isFullyUnavailable && !isLondonRep ? 'opacity-60 grayscale' : '';
 
         // Apply dimming when rep filter is active and this rep doesn't match
-        const dimmingClasses = isDimmed ? 'opacity-40 grayscale' : '';
+        const dimmingClasses = isDimmed && !isLondonRep ? 'opacity-40 grayscale' : '';
 
         // Apply grayscale when rep is unavailable for the selected time slot filter
-        const slotUnavailableClasses = isUnavailableForSlot ? 'opacity-50 grayscale' : '';
+        const slotUnavailableClasses = isUnavailableForSlot && !isLondonRep ? 'opacity-50 grayscale' : '';
 
         return `${base} ${stateClasses} ${unavailabilityClasses} ${dimmingClasses} ${slotUnavailableClasses}`;
     }, [isSelected, isBeingHoveredWithJob, skillMatchStatus, isFullyUnavailable, isInvalidDropTarget, isOverrideActive, isHighlighted, rep.isLocked, rep.isOptimized, isDoubleBooked, isDimmed, isUnavailableForSlot]);
@@ -570,7 +575,12 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
 
     return (
         <div onDragOver={handleDragOver} onDrop={handleContainerDrop} className={containerClasses} title={containerTitle}>
-            <div className="flex justify-between items-center cursor-pointer" onClick={onToggleExpansion}>
+            <div
+                className="flex justify-between items-center cursor-pointer"
+                onClick={onToggleExpansion}
+                onMouseEnter={() => setHoveredRepId(rep.id)}
+                onMouseLeave={() => setHoveredRepId(null)}
+            >
                 <div className="flex items-center min-w-0 flex-1 mr-2">
                     <div
                         className="w-4 h-4 rounded-full mr-1.5 flex-shrink-0 ring-1 ring-inset ring-border-secondary"
@@ -595,19 +605,8 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                     {rep.region && rep.region !== 'UNKNOWN' && rep.region !== 'PHX' && (
                         <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${REGION_CLASSES[rep.region]}`}>{rep.region}</span>
                     )}
-                    {isFullyUnavailable && (
+                    {isFullyUnavailable && !(isLondon(rep) && selectedDay !== 'Sunday') && (
                         <span className="ml-2 text-[10px] bg-bg-quaternary text-text-tertiary font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">Unavailable</span>
-                    )}
-
-                    {jobCount > 0 && (
-                        <span
-                            onClick={(e) => { e.stopPropagation(); setIsScoreDetailsOpen(true); }}
-                            className="ml-2 flex items-center gap-1 text-[10px] font-bold text-tag-amber-text bg-tag-amber-bg px-1.5 py-0.5 rounded border border-tag-amber-border cursor-pointer hover:bg-tag-amber-bg/80 transition-colors whitespace-nowrap"
-                            title={scoreTooltip}
-                        >
-                            <TrophyIcon className="h-3 w-3" />
-                            Avg: {averageScore}
-                        </span>
                     )}
                 </div>
                 <div className="flex items-center space-x-1 flex-shrink-0">
@@ -791,7 +790,9 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                             </div>
                         ) : (
                             rep.schedule.map(slot => {
-                                const isUnavailable = unavailableSlotIdsForToday.has(slot.id);
+                                // London Smith is always available except on Sundays
+                                const isSunday = selectedDay === 'Sunday';
+                                const isUnavailable = isLondon(rep) && !isSunday ? false : unavailableSlotIdsForToday.has(slot.id);
                                 return (<DropZone key={slot.id} repId={rep.id} slotId={slot.id} onJobDrop={handleInternalDrop} label={slot.label} isUnavailable={isUnavailable} onJobDragStart={onJobDragStart} onJobDragEnd={onJobDragEnd} draggedJob={draggedJob} jobs={slot.jobs} onUnassign={onUnassign} onUpdateJob={onUpdateJob} onRemoveJob={onRemoveJob} isOptimized={false} />);
                             })
                         )}

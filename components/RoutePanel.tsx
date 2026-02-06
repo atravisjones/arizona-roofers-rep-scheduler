@@ -270,48 +270,13 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         });
     }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepFilters, appState.reps]);
 
-    let title: string, subtitle: string;
-    const totalJobs = (routeData?.mappableJobs.length ?? 0) + (routeData?.unmappableJobs.length ?? 0);
-
-    if (isLoading) {
-        title = "Calculating Route...";
-        subtitle = "Please wait.";
-    } else if (!routeData) {
-        title = "No Route Selected";
-        subtitle = "Select a rep or a job list to view the map.";
-    } else if (totalJobs === 0) {
-        const repName = routeData?.repName;
-        title = repName || "No Route Selected";
-        subtitle = "No mappable jobs found.";
-        if (title === 'Unassigned Jobs' || title === 'Job Map' || repName === 'All Rep Locations' || repName?.startsWith('Zip:')) {
-            title = 'Job Map';
-        }
-    } else {
-        const { repName } = routeData;
-        const isOverviewMap = repName === 'Unassigned Jobs' || repName === 'Job Map' || repName === 'All Rep Locations' || repName.startsWith('Zip:');
-
-        if (isOverviewMap) {
-            title = 'Job Map';
-            subtitle = `${totalJobs} ${repName === 'All Rep Locations' ? 'locations' : 'jobs'}`;
-        } else {
-            title = repName;
-            subtitle = `${totalJobs} stops`;
-        }
-    }
-
     const routeInfoForMap = routeData?.routeInfo || null;
     const mapType = (routeData?.repName === 'Unassigned Jobs' || routeData?.repName === 'Job Map' || routeData?.repName === 'All Rep Locations' || routeData?.repName?.startsWith('Zip:')) ? 'unassigned' : 'route';
 
     return (
         <div className="w-full h-full flex flex-col bg-bg-secondary rounded-lg overflow-hidden">
             <header className="p-3 border-b border-border-primary bg-bg-primary flex-shrink-0">
-                <div>
-                    <h4 className="font-bold text-base text-text-primary">{title}</h4>
-                    <p className="text-sm text-text-secondary">{subtitle}</p>
-                </div>
-
-
-                <div className="mt-3 bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
+                <div className="bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
                     <div className="flex items-center gap-2">
                         <button
                             onClick={handleShowAllJobsOnMap}

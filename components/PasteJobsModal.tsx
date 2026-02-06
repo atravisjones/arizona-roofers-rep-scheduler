@@ -45,7 +45,7 @@ const PasteJobsModal: React.FC<PasteJobsModalProps> = ({ isOpen, onClose, onPars
                         <textarea
                             rows={12}
                             className="w-full p-4 bg-bg-primary border border-border-secondary rounded-lg shadow-sm focus:ring-2 focus:ring-brand-primary focus:border-brand-primary transition text-sm font-mono leading-relaxed resize-none"
-                            placeholder="Example:&#10;Monday, Nov 20, 2023&#10;7:30am - 10am&#10;MESA, AZ 85204 (Tile 2700sqft) -> Christian Noren&#10;13858 West Tara Lane..."
+                            placeholder="Paste jobs with or without dates:&#10;&#10;With schedule:&#10;Monday, Nov 20, 2023&#10;7:30am - 10am&#10;MESA (Tile 2700sqft) -> Rep Name&#10;13858 West Tara Lane...&#10;&#10;Individual jobs (go to unassigned):&#10;SUN CITY # (Roof Age 7+) 7yrs Flat Insurance 85351 - 9608 W Glen Oaks Cir, Sun City, Az, 85351"
                             value={pastedText}
                             onChange={(e) => setPastedText(e.target.value)}
                             autoFocus
@@ -55,7 +55,7 @@ const PasteJobsModal: React.FC<PasteJobsModalProps> = ({ isOpen, onClose, onPars
                         </div>
                     </div>
                     <p className="text-xs text-text-tertiary mt-2 flex items-center gap-1">
-                        <span className="font-bold text-brand-primary">Tip:</span> Include the date, time ranges, and city names for best results.
+                        <span className="font-bold text-brand-primary">Tip:</span> Date/time optional. Jobs without times go to unassigned. Format: CITY # (notes) tags zip - address
                     </p>
                 </div>
                 <footer className="px-6 py-4 bg-bg-secondary border-t border-border-primary flex justify-end space-x-3 rounded-b-xl">

@@ -17,7 +17,7 @@ const JobsPanel: React.FC = () => {
         handleParseJobs, handleAutoAssign,
         handleUpdateJob, handleRemoveJob, isLoadingReps, handleShowUnassignedJobsOnMap, handleJobDrop,
         setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs,
-        filteredAssignedJobs
+        allJobs
     } = useAppContext();
 
     const [jobSearchTerm, setJobSearchTerm] = useState('');
@@ -26,22 +26,9 @@ const JobsPanel: React.FC = () => {
     const [jobsFilteredByTabs, setJobsFilteredByTabs] = useState<Job[]>(appState.unassignedJobs);
     const [activeViewTab, setActiveViewTab] = useState<JobsViewTab>('unassigned');
 
-    // Get all jobs (unassigned + assigned)
-    const allJobs = useMemo(() => {
-        const assignedJobs: Job[] = filteredAssignedJobs.map(dj => ({
-            id: dj.id,
-            customerName: dj.customerName,
-            address: dj.address,
-            city: dj.city,
-            notes: dj.notes,
-            originalTimeframe: dj.originalTimeframe,
-            assignedRepName: dj.assignedRepName,
-            timeSlotLabel: dj.timeSlotLabel
-        }));
-        return [...appState.unassignedJobs, ...assignedJobs];
-    }, [appState.unassignedJobs, filteredAssignedJobs]);
-
     // Filter jobs based on active view tab
+    // allJobs from context is unfiltered by schedule column filters (rep/time slot)
+    // This ensures Jobs column only filters by its own tags/search
     const jobsForFilter = useMemo(() => {
         return activeViewTab === 'unassigned' ? appState.unassignedJobs : allJobs;
     }, [activeViewTab, appState.unassignedJobs, allJobs]);
@@ -92,13 +79,10 @@ const JobsPanel: React.FC = () => {
 
     return (
         <>
-            <div className="flex justify-between items-center mb-1 border-b border-border-primary pb-1">
-                <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
-                    2. Jobs
-                    <span className="px-2 py-0.5 bg-tertiary text-secondary rounded-full text-xs font-medium">
-                        {activeViewTab === 'unassigned' ? unassignedCount : allJobsCount}
-                    </span>
-                </h2>
+            <div className="flex justify-between items-center mb-1">
+                <span className="px-2 py-0.5 bg-tertiary text-secondary rounded-full text-xs font-medium">
+                    {activeViewTab === 'unassigned' ? unassignedCount : allJobsCount} jobs
+                </span>
 
                 <div className="flex items-center gap-1">
                     <div className="relative group">

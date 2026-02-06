@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { DisplayJob, Job } from '../types';
-import { TAG_KEYWORDS } from '../constants';
+import { TAG_KEYWORDS, TIME_SLOTS } from '../constants';
 import { ClipboardIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTH_OUTER_RING_CITIES } from '../services/geography';
+import { getEffectiveUnavailableSlots, isFieldSalesRep } from '../utils/repUtils';
 
 // Helper to extract job type and clean up notes for display
 const getJobDisplayDetails = (job: Job | DisplayJob) => {
@@ -142,7 +143,13 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
             northern: 0,
         };
 
-        const data = appState.reps
+        const data = [...appState.reps]
+            .sort((a, b) => {
+                // Sort by salesRank (closing rate) - lower rank = better
+                const aRank = a.salesRank ?? 999;
+                const bRank = b.salesRank ?? 999;
+                return aRank - bRank;
+            })
             .map(rep => {
                 // Get all jobs for this rep in order of time slots
                 const repJobs = rep.schedule.flatMap(slot => 
@@ -193,6 +200,40 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
         return { overviewData: data, stats: currentStats };
     }, [appState.reps]);
 
+    // Get day name for availability checking
+    const dayName = useMemo(() =>
+        selectedDate.toLocaleDateString('en-US', { weekday: 'long' }),
+        [selectedDate]
+    );
+
+    // Calculate reps that are off and reps available but with no jobs
+    // Excludes management and door knockers (only shows field sales reps)
+    const { repsOff, repsAvailableNoJobs } = useMemo(() => {
+        const off: string[] = [];
+        const availableNoJobs: string[] = [];
+
+        appState.reps.forEach(rep => {
+            // Skip non-field sales reps (management, door knockers, etc.)
+            if (!isFieldSalesRep(rep)) return;
+
+            const unavailableSlots = getEffectiveUnavailableSlots(rep, dayName);
+            const isFullyUnavailable = unavailableSlots.length >= TIME_SLOTS.length;
+            const jobCount = rep.schedule.flatMap(s => s.jobs).length;
+
+            if (isFullyUnavailable) {
+                off.push(rep.name);
+            } else if (jobCount === 0) {
+                availableNoJobs.push(rep.name);
+            }
+        });
+
+        // Sort alphabetically
+        off.sort((a, b) => a.localeCompare(b));
+        availableNoJobs.sort((a, b) => a.localeCompare(b));
+
+        return { repsOff: off, repsAvailableNoJobs: availableNoJobs };
+    }, [appState.reps, dayName]);
+
 
     const handleSelectAll = () => {
         if (summaryRef.current) {
@@ -233,8 +274,8 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                         {/* 1. Email Subject & Header */}
                         <div className="mb-6">
                             <div className="bg-bg-tertiary p-3 rounded-md mb-4 border border-border-primary">
-                                <p className="font-mono text-sm text-text-secondary select-all">
-                                    <span className="font-bold text-text-primary">Email Subject:</span> {subjectLine}
+                                <p className="font-mono text-sm text-text-primary select-all font-bold">
+                                    {subjectLine}
                                 </p>
                             </div>
 
@@ -299,7 +340,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                                     const { jobType, rescheduleInfo, priorityLevel, priorityReason, roofAge, sqft, stories } = getJobDisplayDetails(job);
                                                     const locationDisplay = [job.city ? job.city.toUpperCase() : '', job.zipCode ? `AZ ${job.zipCode}` : null].filter(Boolean).join(', ');
                                                     const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
-                                                    
+
                                                     return (
                                                         <li key={job.id}>
                                                             <span className="uppercase">{locationDisplay}</span>
@@ -316,6 +357,38 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
                                 })
                             ) : (
                                 <p className="text-text-tertiary italic">No assigned jobs.</p>
+                            )}
+                        </div>
+
+                        <hr className="border-border-secondary" />
+
+                        {/* 4. Reps Off Today */}
+                        <div>
+                            <h2 className="text-xl font-bold mb-3 text-text-primary">4. Reps Off Today ({repsOff.length})</h2>
+                            {repsOff.length > 0 ? (
+                                <ul className="text-sm text-text-secondary space-y-1">
+                                    {repsOff.map(name => (
+                                        <li key={name}>{name}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-text-tertiary italic">All reps are available today.</p>
+                            )}
+                        </div>
+
+                        <hr className="border-border-secondary" />
+
+                        {/* 5. Available Reps with No Jobs */}
+                        <div>
+                            <h2 className="text-xl font-bold mb-3 text-text-primary">5. Available Reps - No Jobs ({repsAvailableNoJobs.length})</h2>
+                            {repsAvailableNoJobs.length > 0 ? (
+                                <ul className="text-sm text-text-secondary space-y-1">
+                                    {repsAvailableNoJobs.map(name => (
+                                        <li key={name}>{name}</li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="text-sm text-text-tertiary italic">All available reps have jobs assigned.</p>
                             )}
                         </div>
                     </div>

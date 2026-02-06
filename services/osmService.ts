@@ -1,4 +1,3 @@
-
 import { RouteInfo } from "../types";
 
 export interface Coordinates {
@@ -47,6 +46,47 @@ const ARIZONA_BOUNDS = {
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Attempts to parse an address as a coordinate pair in the format "lat,lon".
+ * Returns coordinates if valid, null otherwise.
+ */
+function parseCoordinateFormat(address: string): GeocodeResult {
+    // Trim whitespace and check for coordinate pattern
+    const trimmed = address.trim();
+    const coordPattern = /^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/;
+    const match = trimmed.match(coordPattern);
+
+    if (!match) {
+        return { coordinates: null, error: null };
+    }
+
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+
+    // Validate coordinate ranges
+    if (isNaN(lat) || isNaN(lon)) {
+        return { coordinates: null, error: 'Invalid coordinate format' };
+    }
+
+    if (lat < -90 || lat > 90) {
+        return { coordinates: null, error: 'Latitude must be between -90 and 90' };
+    }
+
+    if (lon < -180 || lon > 180) {
+        return { coordinates: null, error: 'Longitude must be between -180 and 180' };
+    }
+
+    // Optional: Check if coordinates are within Arizona bounds
+    if (lat >= ARIZONA_BOUNDS.south && lat <= ARIZONA_BOUNDS.north &&
+        lon >= ARIZONA_BOUNDS.west && lon <= ARIZONA_BOUNDS.east) {
+        return { coordinates: { lat, lon }, error: null };
+    }
+
+    // Allow coordinates outside Arizona but warn
+    console.warn(`Coordinates ${lat},${lon} are outside Arizona bounds but will be used.`);
+    return { coordinates: { lat, lon }, error: null };
+}
 
 /**
  * Expands abbreviations and generates variations of an address to increase match probability.
@@ -194,47 +234,6 @@ async function queryNominatim(query: string, retries = 2, initialDelay = 1000): 
         }
     }
     return { coordinates: null, error: 'Max retries exceeded' };
-}
-
-/**
- * Attempts to parse an address as a coordinate pair in the format "lat,lon".
- * Returns coordinates if valid, null otherwise.
- */
-function parseCoordinateFormat(address: string): GeocodeResult {
-    // Trim whitespace and check for coordinate pattern
-    const trimmed = address.trim();
-    const coordPattern = /^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/;
-    const match = trimmed.match(coordPattern);
-
-    if (!match) {
-        return { coordinates: null, error: null };
-    }
-
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
-
-    // Validate coordinate ranges
-    if (isNaN(lat) || isNaN(lon)) {
-        return { coordinates: null, error: 'Invalid coordinate format' };
-    }
-
-    if (lat < -90 || lat > 90) {
-        return { coordinates: null, error: 'Latitude must be between -90 and 90' };
-    }
-
-    if (lon < -180 || lon > 180) {
-        return { coordinates: null, error: 'Longitude must be between -180 and 180' };
-    }
-
-    // Optional: Check if coordinates are within Arizona bounds
-    if (lat >= ARIZONA_BOUNDS.south && lat <= ARIZONA_BOUNDS.north &&
-        lon >= ARIZONA_BOUNDS.west && lon <= ARIZONA_BOUNDS.east) {
-        return { coordinates: { lat, lon }, error: null };
-    }
-
-    // Allow coordinates outside Arizona but warn
-    console.warn(`Coordinates ${lat},${lon} are outside Arizona bounds but will be used.`);
-    return { coordinates: { lat, lon }, error: null };
 }
 
 /**

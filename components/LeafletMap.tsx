@@ -57,7 +57,13 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const [mappableJobs, setMappableJobs] = useState<DisplayJob[]>([]);
 
   const effectiveRouteInfo = preloadedRouteInfo !== undefined ? preloadedRouteInfo : internalRouteInfo;
-  const addresses = useMemo(() => jobs.map(j => j.address), [jobs]);
+  const addresses = useMemo(() => jobs.map(j => {
+    // Combine address, city, and zipCode for accurate geocoding
+    const parts = [j.address];
+    if (j.city) parts.push(j.city);
+    if (j.zipCode) parts.push(j.zipCode);
+    return parts.join(', ');
+  }), [jobs]);
 
   const isPlacementMode = !!placementJobId;
 
@@ -180,6 +186,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   }, [hoveredJobId]);
 
   // Handle rep hover - dim all jobs not belonging to the hovered rep
+  // IMPORTANT: Jobs should NEVER be removed from the map on hover - only visually dimmed
   useEffect(() => {
     if (previousHoveredRepIdRef.current === hoveredRepId) return;
 
@@ -192,27 +199,30 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
       if (hoveredRepId && hoveredRepName) {
         // A rep is being hovered - dim markers not belonging to that rep
         const belongsToRep = jobRepName === hoveredRepName;
-        markerData.marker.setOpacity(belongsToRep ? 1 : 0.3);
-        // Apply grayscale via icon update if not belonging to rep
+
         if (!belongsToRep) {
-          const currentIcon = markerData.marker.getIcon();
-          if (currentIcon && currentIcon.options) {
-            const dimmedHtml = `<div style="filter: grayscale(100%); opacity: 0.4;">${currentIcon.options.html || ''}</div>`;
-            const dimmedIcon = L.divIcon({
-              ...currentIcon.options,
-              html: dimmedHtml,
-              className: 'dimmed-marker',
-            });
-            markerData.marker.setIcon(dimmedIcon);
-          }
+          // Apply grayscale + reduced opacity via icon update for non-matching markers
+          // Use baseIcon HTML to avoid nesting wrapper divs on repeated hovers
+          const baseIconHtml = markerData.baseIcon?.options?.html || '';
+          const baseIconOptions = markerData.baseIcon?.options || {};
+          const dimmedHtml = `<div style="filter: grayscale(100%); opacity: 0.5;">${baseIconHtml}</div>`;
+          const dimmedIcon = L.divIcon({
+            ...baseIconOptions,
+            html: dimmedHtml,
+            className: 'dimmed-marker',
+          });
+          markerData.marker.setIcon(dimmedIcon);
+          markerData.marker.setZIndexOffset(0); // Send dimmed markers to back
         } else {
           // Restore the base icon for markers that belong to the hovered rep
           markerData.marker.setIcon(markerData.baseIcon);
+          markerData.marker.setZIndexOffset(500); // Normal z-index for matching markers
         }
       } else {
         // No rep is hovered - restore all markers to normal
-        markerData.marker.setOpacity(1);
         markerData.marker.setIcon(markerData.baseIcon);
+        // Restore original z-index (we don't track it, so use default of 500)
+        markerData.marker.setZIndexOffset(500);
       }
     });
 
@@ -301,7 +311,9 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
     const currentRouteId = effectiveRouteInfo?.geometry
       ? JSON.stringify(effectiveRouteInfo.geometry).length
       : (effectiveRouteInfo?.coordinates?.length || '0');
-    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}`;
+    // Include dimmed state in identity so filter changes trigger marker rebuild
+    const dimmedJobsId = jobsToDisplay.filter(j => j.isDimmed).map(j => j.id).sort().join(',');
+    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}-${dimmedJobsId}`;
 
     // Skip rebuild if nothing meaningful changed (preserves hover highlighting)
     if (currentIdentity === dataIdentityRef.current) {

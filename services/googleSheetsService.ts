@@ -1,5 +1,5 @@
 import { Rep } from '../types';
-import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE } from '../constants';
+import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE } from '../constants';
 import { MOCK_REPS_DATA } from './mockData';
 import { ALL_KNOWN_CITIES } from './geography';
 import { createAddressVariationMap } from './addressMatcher';
@@ -350,6 +350,87 @@ async function fetchSalesRankings(selectedDate: Date = new Date()): Promise<Map<
     return rankMap;
 }
 
+/**
+ * Fetches closing rates from the Appointment Summary tab of the Apt Outcome Tracker spreadsheet.
+ * Uses the "30 days" Close rate % column to rank reps.
+ * Returns a Map where key is normalized rep name and value is their rank based on closing rate.
+ * Higher closing rate = lower rank number (rank 1 = best closer).
+ */
+async function fetchClosingRates(): Promise<Map<string, number>> {
+    const rankMap = new Map<string, number>();
+    try {
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${APT_OUTCOME_SPREADSHEET_ID}/values/'${encodeURIComponent(APT_OUTCOME_SHEET_TITLE)}'!${APT_OUTCOME_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
+        const response = await fetchWithRetry(url);
+        if (!response.ok) {
+            console.warn(`Failed to fetch closing rates: ${response.statusText}`);
+            return rankMap;
+        }
+        const data = await response.json();
+        const values = data.values;
+
+        if (!values || values.length < 2) {
+            console.warn('Appointment Summary sheet is empty or has only a header.');
+            return rankMap;
+        }
+
+        // Row 68 is the header row (index 0 in our range B68:N100)
+        // Column B (index 0) = Sales Rep
+        // Column M (index 11) = 30 days Close rate %
+        const REP_COL_INDEX = 0;  // Column B = Sales Rep
+        const CLOSE_RATE_COL_INDEX = 11;  // Column M = 30 days Close rate %
+
+        // Collect rep names and their closing rates
+        const repRates: { name: string; normalized: string; rate: number }[] = [];
+
+        // Start from row 1 (skip header at index 0)
+        for (let i = 1; i < values.length; i++) {
+            const row = values[i];
+            if (!row || row.length === 0) continue;
+
+            const repName = row[REP_COL_INDEX];
+            const closeRateStr = row[CLOSE_RATE_COL_INDEX];
+
+            if (!repName || !String(repName).trim()) continue;
+
+            // Skip total/summary rows
+            if (String(repName).trim().toLowerCase() === 'total') continue;
+
+            const normalized = normalizeName(String(repName));
+            if (!normalized) continue;
+
+            // Parse percentage (e.g., "61.54%", "0.6154", "61.54")
+            let rate = 0;
+            if (closeRateStr) {
+                const rateStr = String(closeRateStr).replace('%', '').trim();
+                rate = parseFloat(rateStr);
+                // If it's a decimal like 0.6154, convert to percentage
+                if (!isNaN(rate) && rate > 0 && rate < 1) {
+                    rate = rate * 100;
+                }
+                if (isNaN(rate)) rate = 0;
+            }
+
+            // Only add if not already present (first occurrence wins)
+            if (!repRates.some(r => r.normalized === normalized)) {
+                repRates.push({ name: String(repName), normalized, rate });
+            }
+        }
+
+        // Sort by closing rate descending (highest rate = best = rank 1)
+        repRates.sort((a, b) => b.rate - a.rate);
+
+        // Assign ranks
+        repRates.forEach((rep, index) => {
+            rankMap.set(rep.normalized, index + 1);
+        });
+
+        console.log(`Fetched closing rates for ${rankMap.size} reps from Appointment Summary (30 days)`);
+    } catch (error) {
+        console.error("Error fetching closing rates:", error);
+    }
+    return rankMap;
+}
+
 // Fetches and parses the rep skills from the 'Appointment Blocks' sheet.
 async function fetchRepSkills(): Promise<Map<string, { skills: Record<string, number>, zipCodes: string[] }>> {
     const skillsMap = new Map<string, { skills: Record<string, number>, zipCodes: string[] }>();
@@ -466,9 +547,9 @@ export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
 export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string }> {
     let sheetName = '';
     try {
-        // 0. Fetch skills and rankings data in parallel
+        // 0. Fetch skills and closing rate rankings data in parallel
         const skillsPromise = fetchRepSkills();
-        const ranksPromise = fetchSalesRankings(date);
+        const ranksPromise = fetchClosingRates(); // Use closing rate from Apt Outcome Tracker
 
         // 1. Get spreadsheet metadata to find the current sheet name
         const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?key=${GOOGLE_API_KEY}`;

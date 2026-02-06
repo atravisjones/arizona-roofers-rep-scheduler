@@ -13,6 +13,7 @@ import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStat
 import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup } from '../services/backupService';
 import { saveState, loadState } from '../services/saveLoadService';
 import { doTimesOverlap } from '../utils/timeUtils';
+import { isLondon, getEffectiveUnavailableSlots } from '../utils/repUtils';
 import {
     fetchUnassignedJobs,
     fetchAppointmentsByDate,
@@ -28,7 +29,28 @@ import { ROUTING_API_SYNC_DEBOUNCE_MS } from '../constants';
 const norm = (city: string | null | undefined): string => (city || '').toLowerCase().trim();
 const isJoseph = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('joseph simms');
 const isRichard = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('richard hadsall');
-const isLondon = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('london smith');
+
+// Black Canyon City latitude - jobs north of this go to London Smith
+const BLACK_CANYON_CITY_LATITUDE = 34.07;
+
+/**
+ * Checks if a job has a "Commercial" tag in its notes.
+ * @param job The job to check
+ * @returns true if the job is tagged as Commercial
+ */
+const isCommercialJob = (job: Job | DisplayJob): boolean => {
+    return /\bcommercial\b/i.test(job.notes || '');
+};
+
+/**
+ * Checks if a job's coordinates are north of Black Canyon City, AZ (lat > 34.07).
+ * @param jobCoordinates The job's coordinates (lat, lon)
+ * @returns true if the job is north of Black Canyon City
+ */
+const isJobNorthOfBlackCanyonCity = (jobCoordinates: Coordinates | undefined): boolean => {
+    if (!jobCoordinates) return false;
+    return jobCoordinates.lat > BLACK_CANYON_CITY_LATITUDE;
+};
 
 // Filter out reps from rows beyond MAX_REP_ROW (inactive reps at bottom of sheet)
 const filterExcludedReps = (state: AppState): AppState => {
@@ -1160,7 +1182,8 @@ export const useAppLogic = () => {
         // ============================================================
         // PENALTIES (only for availability - geography penalties removed)
         // ============================================================
-        const isUnavailable = (rep.unavailableSlots?.[selectedDayString] || []).includes(slotId);
+        const effectiveUnavailableSlots = getEffectiveUnavailableSlots(rep, selectedDayString);
+        const isUnavailable = effectiveUnavailableSlots.includes(slotId);
         if (isUnavailable) {
             penalty += (allSettings.unavailabilityPenalty * 50);
         }
@@ -1664,10 +1687,13 @@ export const useAppLogic = () => {
             const { splitTextByDays } = await import('../services/geminiService');
 
             // Check if the text contains multiple days
-            const daySections = splitTextByDays(pastedText);
+            let daySections = splitTextByDays(pastedText);
 
+            // If no date headers found, treat the whole text as jobs for the selected date
             if (daySections.length === 0) {
-                throw new Error('No date headers found in pasted text. Please include date headers like "Monday, Dec 7, 2025"');
+                const selectedDateKey = formatDateToKey(selectedDate);
+                log('No date headers found - using selected date: ' + selectedDateKey);
+                daySections = [{ dateString: selectedDateKey, text: pastedText }];
             }
 
             log(`Found ${daySections.length} day(s) in pasted text`);
@@ -2281,8 +2307,9 @@ export const useAppLogic = () => {
                     let targetSlotId: string | null = null;
                     if (job.originalTimeframe) { targetSlotId = mapTimeframeToSlotId(job.originalTimeframe); }
                     let assigned = false;
-                    const availableSlots = rep.schedule.filter(s => !(rep.unavailableSlots?.[selectedDayString] || []).includes(s.id));
-                    const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 };
+                    const effectiveUnavailable = getEffectiveUnavailableSlots(rep, selectedDayString);
+                    const availableSlots = rep.schedule.filter(s => !effectiveUnavailable.includes(s.id));
+                    const dummyBreakdown: ScoreBreakdown = { timeframeMatch: 0, distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 };
                     // Set original rep info if not already set (first assignment)
                     const jobWithOriginal = {
                         ...job,
@@ -2303,8 +2330,9 @@ export const useAppLogic = () => {
                 newDailyStates.set(dateKey, newState);
                 return newDailyStates;
             }, 'Distribute Jobs');
-            setAutoMapAction('show-all');
             setIsDistributing(false);
+            // Delay map refresh to ensure state has propagated
+            setTimeout(() => setAutoMapAction('show-all'), 50);
         }, 10);
     }, [recordChange, selectedDate, log, selectedDayString, isJobValidForRepRegion]);
 
@@ -2329,9 +2357,108 @@ export const useAppLogic = () => {
                 }
 
                 const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
-                const jobsToAssign = [...newState.unassignedJobs];
+                let jobsToAssign = [...newState.unassignedJobs];
                 newState.unassignedJobs = [];
                 let assignedCount = 0;
+
+                // ============================================================
+                // LONDON SMITH SPECIAL AUTO-ASSIGNMENT
+                // Commercial jobs and jobs north of Black Canyon City (lat > 34.07)
+                // are automatically assigned to London Smith before normal assignment
+                // ============================================================
+                const londonRep = newState.reps.find(r => isLondon(r) && !r.isLocked && !r.isOptimized);
+                if (londonRep) {
+                    const londonUnavailable = getEffectiveUnavailableSlots(londonRep, selectedDayString);
+                    const londonHasAvailability = londonRep.schedule.some(s => !londonUnavailable.includes(s.id));
+
+                    if (londonHasAvailability) {
+                        const jobsForLondon: Job[] = [];
+                        const remainingJobs: Job[] = [];
+
+                        for (const job of jobsToAssign) {
+                            const jobCoord = geoCache.get(job.address);
+                            const shouldGoToLondon = isCommercialJob(job) || isJobNorthOfBlackCanyonCity(jobCoord);
+
+                            if (shouldGoToLondon) {
+                                jobsForLondon.push(job);
+                            } else {
+                                remainingJobs.push(job);
+                            }
+                        }
+
+                        // Assign London's special jobs
+                        for (const job of jobsForLondon) {
+                            const londonJobCount = londonRep.schedule.flatMap(s => s.jobs).length;
+                            if (londonJobCount >= newState.settings.maxJobsPerRep) {
+                                // London is full, put job back in queue
+                                remainingJobs.push(job);
+                                continue;
+                            }
+
+                            // Find best slot for this job
+                            let targetSlotId = mapTimeframeToSlotId(job.originalTimeframe || '');
+                            let assignedToSlot = false;
+
+                            // Try the preferred slot first
+                            if (targetSlotId) {
+                                const targetSlot = londonRep.schedule.find(s => s.id === targetSlotId);
+                                if (targetSlot && !londonUnavailable.includes(targetSlot.id)) {
+                                    const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
+                                    if (targetSlot.jobs.length < maxJobsInSlot) {
+                                        const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 100, penalty: 0, timeframeMatch: 100 };
+                                        const displayJob: DisplayJob = {
+                                            ...job,
+                                            assignmentScore: 100,
+                                            scoreBreakdown: dummyBreakdown,
+                                            originalRepId: job.originalRepId || londonRep.id,
+                                            originalRepName: job.originalRepName || londonRep.name,
+                                        };
+                                        targetSlot.jobs.push(displayJob);
+                                        assignedToSlot = true;
+                                        assignedCount++;
+                                        const reason = isCommercialJob(job) ? 'Commercial' : 'North of Black Canyon City';
+                                        log(`- LONDON AUTO-ASSIGN: ${job.address} (${reason})`);
+                                    }
+                                }
+                            }
+
+                            // If preferred slot didn't work, try any available slot
+                            if (!assignedToSlot) {
+                                for (const slot of londonRep.schedule) {
+                                    if (londonUnavailable.includes(slot.id)) continue;
+                                    const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
+                                    if (slot.jobs.length >= maxJobsInSlot) continue;
+
+                                    const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 100, penalty: 0, timeframeMatch: 50 };
+                                    const displayJob: DisplayJob = {
+                                        ...job,
+                                        assignmentScore: 90,
+                                        scoreBreakdown: dummyBreakdown,
+                                        originalRepId: job.originalRepId || londonRep.id,
+                                        originalRepName: job.originalRepName || londonRep.name,
+                                    };
+                                    slot.jobs.push(displayJob);
+                                    assignedToSlot = true;
+                                    assignedCount++;
+                                    const reason = isCommercialJob(job) ? 'Commercial' : 'North of Black Canyon City';
+                                    log(`- LONDON AUTO-ASSIGN: ${job.address} (${reason})`);
+                                    break;
+                                }
+                            }
+
+                            // If still not assigned, put back in queue for normal assignment
+                            if (!assignedToSlot) {
+                                remainingJobs.push(job);
+                            }
+                        }
+
+                        // Update jobsToAssign to only contain remaining jobs
+                        jobsToAssign = remainingJobs;
+                    }
+                }
+                // ============================================================
+                // END LONDON SMITH SPECIAL AUTO-ASSIGNMENT
+                // ============================================================
 
                 const cityOrder = EAST_TO_WEST_CITIES.reduce((acc, city, index) => {
                     acc[city.toLowerCase()] = index;
@@ -2366,7 +2493,8 @@ export const useAppLogic = () => {
                         const isUnderMinTarget = currentJobCount < newState.settings.minJobsPerRep;
 
                         // Check if rep has at least one available slot today (for override logic)
-                        const unavailableSlotsToday = rep.unavailableSlots?.[selectedDayString] || [];
+                        // Use effective unavailable slots (handles London Smith special case)
+                        const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDayString);
                         const hasAnyAvailability = rep.schedule.some(s => !unavailableSlotsToday.includes(s.id));
 
                         for (const slot of rep.schedule) {
@@ -2425,10 +2553,11 @@ export const useAppLogic = () => {
                 return newDailyStates;
 
             }, 'Auto-Assign All');
-            setAutoMapAction('show-all');
             setIsAutoAssigning(false);
+            // Delay map refresh to ensure state has propagated
+            setTimeout(() => setAutoMapAction('show-all'), 50);
         }, 100);
-    }, [recordChange, selectedDate, log, selectedDayString, checkCityRuleViolation, calculateAssignmentScore, history, historyIndex, updateGeoCache, isJobValidForRepRegion]);
+    }, [recordChange, selectedDate, log, selectedDayString, checkCityRuleViolation, calculateAssignmentScore, history, historyIndex, updateGeoCache, isJobValidForRepRegion, geoCache]);
 
     const handleAutoAssignForRep = useCallback((repId: string) => {
         log(`ACTION: Auto-Assign for Rep ID ${repId} clicked.`);
@@ -2496,7 +2625,8 @@ export const useAppLogic = () => {
                     }
 
                     // Check if rep has at least one available slot today (for override logic)
-                    const unavailableSlotsToday = targetRep.unavailableSlots?.[selectedDayString] || [];
+                    // Use effective unavailable slots (handles London Smith special case)
+                    const unavailableSlotsToday = getEffectiveUnavailableSlots(targetRep, selectedDayString);
                     const hasAnyAvailability = targetRep.schedule.some(s => !unavailableSlotsToday.includes(s.id));
 
                     for (const slot of targetRep.schedule) {
@@ -2578,7 +2708,7 @@ export const useAppLogic = () => {
                     slot.jobs.push({
                         ...jobToMove,
                         assignmentScore: 85,
-                        scoreBreakdown: { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 }
+                        scoreBreakdown: { timeframeMatch: 0, distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 }
                     });
                     assignedCount++;
                 }
@@ -2587,7 +2717,8 @@ export const useAppLogic = () => {
                 return newDailyStates;
             }, 'AI Assign');
             addAiThought(`Assignment complete! ${result.assignments.length} jobs were assigned.`);
-            setAutoMapAction('show-all');
+            // Delay map refresh to ensure state has propagated
+            setTimeout(() => setAutoMapAction('show-all'), 50);
         } catch (error) {
             console.error("AI assignment failed:", error);
             log(`- ERROR: AI assignment failed. Details in console.`);
@@ -2783,12 +2914,19 @@ export const useAppLogic = () => {
             setSelectedRepId(null);
             log(`- SUCCESS: Merged loaded state with existing data.`);
             showToast("Schedule loaded and merged successfully!", 'success');
+
+            // Auto-refresh map to show all jobs with rep colors after load
+            setTimeout(() => setAutoMapAction('show-all'), 50);
         } catch (error) { const msg = error instanceof Error ? error.message : "Unknown error"; log(`- ERROR: ${msg}`); showToast(`Error loading file: ${msg}`, 'error'); }
     }, [log, dailyStates, activeDayKeys, selectedDate]);
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
-            // Show all reps regardless of availability (unavailable reps will be visually desaturated)
+            // Hide reps that are fully unavailable for the selected day (unless they have jobs assigned)
+            const unavailableSlots = getEffectiveUnavailableSlots(rep, selectedDayString);
+            const isFullyUnavailable = unavailableSlots.length === TIME_SLOTS.length;
+            const hasJobsAssigned = rep.schedule.some(slot => slot.jobs.length > 0);
+            if (isFullyUnavailable && !hasJobsAssigned && !rep.isOptimized) return false;
 
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
             if (!rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) return false;
@@ -2797,12 +2935,6 @@ export const useAppLogic = () => {
             return true;
         });
         repsToSort.sort((a, b) => {
-            const aUnavailableSlots = a.unavailableSlots?.[selectedDayString];
-            const bUnavailableSlots = b.unavailableSlots?.[selectedDayString];
-            const aIsUnavailable = Array.isArray(aUnavailableSlots) && aUnavailableSlots.length === TIME_SLOTS.length;
-            const bIsUnavailable = Array.isArray(bUnavailableSlots) && bUnavailableSlots.length === TIME_SLOTS.length;
-            if (aIsUnavailable && !bIsUnavailable) return 1;
-            if (!aIsUnavailable && bIsUnavailable) return -1;
             let aValue: string | number, bValue: string | number;
             switch (sortConfig.key) {
                 case 'name': aValue = getCleanSortName(a.name); bValue = getCleanSortName(b.name); break;
@@ -2950,6 +3082,9 @@ export const useAppLogic = () => {
 
                 log(`- SUCCESS: Loaded ${loadedCount}/7 days from cloud`);
                 showToast(`Loaded ${loadedCount} day(s) from cloud successfully!`, 'success');
+
+                // Auto-refresh map to show all jobs with rep colors after load
+                setTimeout(() => setAutoMapAction('show-all'), 50);
             } else {
                 log(`- ERROR: ${result.error}`);
                 showToast(`Error loading from cloud: ${result.error}`, 'error');
@@ -3253,6 +3388,9 @@ export const useAppLogic = () => {
                     : 'auto-save';
                 log(`- SUCCESS: Loaded ${dateKey} (${typeLabel}) from ${timestamp}`);
                 showToast(`Loaded ${dateKey} (${typeLabel})`, 'success');
+
+                // Auto-refresh map to show all jobs with rep colors after load
+                setTimeout(() => setAutoMapAction('show-all'), 50);
             } else {
                 log(`- ERROR: ${result.error}`);
                 showToast(`Error loading backup: ${result.error}`, 'error');

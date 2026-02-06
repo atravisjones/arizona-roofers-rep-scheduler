@@ -3,3 +3,9 @@ dist
 .env
 .DS_Store
 *.log
+.vercel
+.env*.local
+
+nul
+*.zip
+.env.local

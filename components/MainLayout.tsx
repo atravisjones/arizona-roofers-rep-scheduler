@@ -35,10 +35,13 @@ type DropTarget = {
   position: DropPosition;
 } | null;
 
-const COLUMN_LABELS: Record<ColumnId, string> = {
-  schedules: 'Schedules',
-  jobs: 'Jobs',
-  routes: 'Map',
+const getColumnLabel = (id: ColumnId): string => {
+  const labels: Record<ColumnId, string> = {
+    schedules: 'Schedules',
+    jobs: 'Jobs',
+    routes: 'Map',
+  };
+  return labels[id];
 };
 
 // Column configuration for dynamic flex-based layout (no limits - user can resize freely)
@@ -482,7 +485,7 @@ const MainLayout: React.FC = () => {
       case 'schedules':
         return (
           <>
-            {!isStacked && renderColumnHeader('schedules', '1. Rep Schedules')}
+            {!isStacked && renderColumnHeader('schedules', 'Schedules')}
             <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
               <SchedulesPanel />
             </div>
@@ -491,7 +494,7 @@ const MainLayout: React.FC = () => {
       case 'jobs':
         return (
           <>
-            {!isStacked && renderColumnHeader('jobs', '2. Jobs')}
+            {!isStacked && renderColumnHeader('jobs', 'Jobs')}
             <div className={isStacked ? "flex flex-col flex-1 min-h-0" : "flex flex-col flex-grow min-h-0"}>
               <JobsPanel />
             </div>
@@ -500,7 +503,7 @@ const MainLayout: React.FC = () => {
       case 'routes':
         return (
           <>
-            {!isStacked && renderColumnHeader('routes', '3. Route Map')}
+            {!isStacked && renderColumnHeader('routes', getColumnLabel('routes'))}
             <div className={isStacked ? "flex-1 min-h-0" : "flex-grow min-h-0"}>
               <RouteMapPanel routeData={context.activeRoute} isLoading={context.isRouting} />
             </div>
@@ -520,7 +523,7 @@ const MainLayout: React.FC = () => {
       <button
         onClick={() => toggleCollapse(id)}
         className="p-1 hover:bg-bg-tertiary rounded transition"
-        title={`Expand ${COLUMN_LABELS[id]}`}
+        title={`Expand ${getColumnLabel(id)}`}
       >
         <ChevronRightIcon className="h-4 w-4 text-text-secondary" />
       </button>
@@ -529,7 +532,7 @@ const MainLayout: React.FC = () => {
           className="text-xs font-semibold text-text-secondary transform -rotate-90 whitespace-nowrap origin-center"
           style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
         >
-          {COLUMN_LABELS[id]}
+          {getColumnLabel(id)}
         </span>
       </div>
     </div>
@@ -547,11 +550,11 @@ const MainLayout: React.FC = () => {
             <button
               onClick={() => toggleCollapse(id)}
               className="p-1 hover:bg-bg-tertiary rounded transition"
-              title={`Expand ${COLUMN_LABELS[id]}`}
+              title={`Expand ${getColumnLabel(id)}`}
             >
               <ChevronRightIcon className="h-3.5 w-3.5 text-text-secondary" />
             </button>
-            <span className="text-sm font-semibold text-text-secondary">{COLUMN_LABELS[id]}</span>
+            <span className="text-sm font-semibold text-text-secondary">{getColumnLabel(id)}</span>
             <button
               onClick={() => setColumnStacking(id, null)}
               className="ml-auto p-1 hover:bg-bg-tertiary rounded text-text-tertiary hover:text-text-secondary transition"
@@ -583,7 +586,7 @@ const MainLayout: React.FC = () => {
           <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0">
             <div className="flex items-center gap-2">
               <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
-              <span className="text-sm font-semibold text-text-primary">{COLUMN_LABELS[id]}</span>
+              <span className="text-sm font-semibold text-text-primary">{getColumnLabel(id)}</span>
             </div>
             <div className="flex items-center gap-0.5">
               <button
@@ -903,7 +906,7 @@ const MainLayout: React.FC = () => {
                 {showStackIndicator && (
                   <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none z-10 flex items-center justify-center">
                     <div className="bg-brand-primary text-brand-text-on-primary px-3 py-1.5 rounded-md text-sm font-semibold shadow-lg">
-                      Stack below {COLUMN_LABELS[id]}
+                      Stack below {getColumnLabel(id)}
                     </div>
                   </div>
                 )}
@@ -918,7 +921,7 @@ const MainLayout: React.FC = () => {
                     <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0 rounded-t-xl">
                       <div className="flex items-center gap-2">
                         <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
-                        <span className="text-sm font-semibold text-text-primary">{COLUMN_LABELS[id]}</span>
+                        <span className="text-sm font-semibold text-text-primary">{getColumnLabel(id)}</span>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleCollapse(id); }}

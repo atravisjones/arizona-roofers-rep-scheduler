@@ -23,6 +23,9 @@ const formatRepNameForFilter = (fullName: string): string => {
     return `${firstName} ${lastName.charAt(0).toUpperCase()}`;
 };
 
+// Helper to check if a rep is London Smith (case-insensitive)
+const isLondon = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('london smith');
+
 const chipBaseClass = "px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all duration-200 flex items-center gap-1 select-none cursor-pointer hover:shadow-sm";
 const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm ring-1 ring-brand-primary/20";
 const chipInactiveClass = "bg-bg-tertiary text-secondary border-border-primary hover:border-brand-primary/50 hover:bg-brand-bg-light hover:text-brand-primary";
@@ -41,7 +44,7 @@ const SchedulesPanel: React.FC = () => {
         sortConfig, setSortConfig, handleClearAllSchedules, assignedJobsCount, isOverrideActive,
         setFilteredAssignedJobs, selectedRepId, setSelectedRepId, selectedDate, checkCityRuleViolation,
         swapSourceRepId, setSwapSourceRepId, handleSwapSchedules,
-        uiSettings, updateUiSettings
+        uiSettings, updateUiSettings, setHoveredRepId
     } = useAppContext();
 
     // Get current view mode (default to 'list')
@@ -69,6 +72,9 @@ const SchedulesPanel: React.FC = () => {
         // Filter out reps who are unavailable OR already have a job in the selected slot
         if (selectedSlotFilter) {
             reps = reps.filter(rep => {
+                // London Smith always appears (special rules - always available except Sundays)
+                if (isLondon(rep)) return true;
+
                 // Check if slot is marked as unavailable for this day
                 const isUnavailable = rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
                 if (isUnavailable) return false;
@@ -105,6 +111,23 @@ const SchedulesPanel: React.FC = () => {
                 );
             });
         }
+
+        // Sort by availability status - available reps first, unavailable at bottom
+        reps = reps.sort((a, b) => {
+            const aUnavailableSlots = a.unavailableSlots?.[selectedDay] || [];
+            const bUnavailableSlots = b.unavailableSlots?.[selectedDay] || [];
+
+            const aIsFullyUnavailable = aUnavailableSlots.length >= 4 && !a.isOptimized;
+            const bIsFullyUnavailable = bUnavailableSlots.length >= 4 && !b.isOptimized;
+
+            // Primary sort: available reps before unavailable reps
+            if (aIsFullyUnavailable !== bIsFullyUnavailable) {
+                return aIsFullyUnavailable ? 1 : -1;
+            }
+
+            // Secondary sort: maintain existing sort order (no change)
+            return 0;
+        });
 
         return reps;
     }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, selectedSlotFilter, selectedDay, repSearchTerm]);
@@ -145,24 +168,12 @@ const SchedulesPanel: React.FC = () => {
 
     return (
         <div className="flex flex-col h-full min-h-0 overflow-hidden">
-            <div className="flex justify-between items-center mb-3 border-b border-border-primary pb-2 flex-shrink-0">
-                <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
-                    1. Schedules
+            <div className="flex justify-between items-center mb-3 flex-shrink-0">
+                <div className="flex items-center gap-2">
                     <div className="flex items-center px-2 py-0.5 bg-tag-amber-bg text-tag-amber-text rounded-full border border-tag-amber-border text-xs font-medium" title="Assigned Jobs">
                         {assignedJobsCount} Assigned
                     </div>
-                    {visibleReps.length > 0 && (
-                        <div className="flex items-center px-2 py-0.5 bg-tertiary text-secondary rounded-full border border-border-primary text-xs font-medium" title="Average Score">
-                            <TrophyIcon className="h-3 w-3 mr-1 text-tag-amber-text" />
-                            <span className="font-bold">Avg: {Math.round(visibleReps.reduce((acc, rep) => {
-                                const jobs = rep.schedule.flatMap(s => s.jobs).filter(j => typeof j.assignmentScore === 'number');
-                                if (jobs.length === 0) return acc;
-                                const repAvg = jobs.reduce((sum, j) => sum + (j.assignmentScore || 0), 0) / jobs.length;
-                                return acc + repAvg;
-                            }, 0) / (visibleReps.filter(r => r.schedule.flatMap(s => s.jobs).some(j => typeof j.assignmentScore === 'number')).length || 1))}</span>
-                        </div>
-                    )}
-                </h2>
+                </div>
 
                 <div className="flex items-center gap-2">
                     {/* View Toggle Buttons */}
@@ -232,15 +243,15 @@ const SchedulesPanel: React.FC = () => {
                         </button>
                     )}
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-1.5">
                     {TIME_SLOTS.map(slot => (
                         <button
                             key={slot.id}
                             onClick={() => setSelectedSlotFilter(selectedSlotFilter === slot.id ? null : slot.id)}
-                            className={`px-2 py-1 text-xs rounded transition-colors ${
+                            className={`${chipBaseClass} ${
                                 selectedSlotFilter === slot.id
-                                    ? 'bg-brand-primary text-brand-text-on-primary'
-                                    : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'
+                                    ? chipActiveClass
+                                    : chipInactiveClass
                             }`}
                         >
                             {TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}
@@ -268,6 +279,9 @@ const SchedulesPanel: React.FC = () => {
                     <div className="flex flex-wrap gap-1.5 items-center">
                         {appState.reps
                             .filter(rep => {
+                                // London Smith always appears (special rules - always available except Sundays)
+                                if (isLondon(rep)) return true;
+
                                 // If time slot filter is active, hide reps unavailable or with job in that slot
                                 if (selectedSlotFilter) {
                                     const isUnavailable = rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
@@ -319,13 +333,21 @@ const SchedulesPanel: React.FC = () => {
                                     chipClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow ring-2 ring-brand-primary ring-offset-1";
                                 } else if (isSwapTarget) {
                                     chipClass = "bg-bg-secondary text-text-primary border-brand-primary border-dashed hover:bg-brand-bg-light hover:border-solid animate-pulse cursor-pointer";
-                                } else if (isSwapDisabled) {
+                                } else if (isSwapDisabled && !isLondon(rep)) {
+                                    // London Smith never gets desaturated styling - always show in full color
                                     chipClass = "opacity-40 cursor-not-allowed bg-bg-tertiary text-text-quaternary border-border-primary";
                                 }
+
+                                // Calculate availability for this day
+                                // London Smith always shows 4 available slots regardless of sheet data
+                                const unavailableSlotsToday = rep.unavailableSlots?.[selectedDay] || [];
+                                const availableSlots = isLondon(rep) ? 4 : 4 - unavailableSlotsToday.length;
 
                                 return (
                                     <button
                                         key={rep.id}
+                                        onMouseEnter={() => setHoveredRepId(rep.id)}
+                                        onMouseLeave={() => setHoveredRepId(null)}
                                         onClick={() => {
                                             if (swapSourceRepId) {
                                                 if (isSwapTarget) {
@@ -362,21 +384,20 @@ const SchedulesPanel: React.FC = () => {
                                             setSelectedRepId(isSelected ? null : rep.id);
                                         }}
                                         disabled={!!isSwapDisabled}
-                                        title={isDoubleBooked ? `${rep.name} - Double Booked!` : `${rep.name} (Right-click to multi-select)`}
+                                        title={isDoubleBooked ? `${rep.name} - Double Booked!` : `${rep.name} - ${availableSlots}/4 slots available (Right-click to multi-select)`}
                                         className={`${chipClass} ${chipBaseClass}`}
                                     >
                                         {formatRepNameForFilter(rep.name)}
-                                        {jobCount > 0 && (
-                                            <span className={`ml-1.5 flex items-center justify-center h-4 min-w-[16px] px-1 text-[9px] font-bold rounded-full ${
-                                                isDoubleBooked
-                                                    ? 'bg-tag-red-text text-white'
-                                                    : isSelected || isSwapSource
-                                                        ? (isOptimized ? 'bg-tag-teal-text text-primary' : 'bg-brand-secondary text-brand-text-on-primary')
-                                                        : (isOptimized ? 'bg-tag-teal-bg text-tag-teal-text' : 'bg-brand-bg-light text-brand-text-light')
-                                            }`}>
-                                                {jobCount}
-                                            </span>
-                                        )}
+                                        {/* Assigned/Available indicator - red if no jobs, green if 1+ */}
+                                        <span className={`ml-1 text-[8px] font-medium ${
+                                            isSelected
+                                                ? 'text-white'
+                                                : jobCount === 0
+                                                    ? 'text-tag-red-text'
+                                                    : 'text-tag-teal-text'
+                                        }`}>
+                                            {jobCount}/{availableSlots}
+                                        </span>
                                     </button>
                                 );
                             })}

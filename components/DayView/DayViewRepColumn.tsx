@@ -4,6 +4,7 @@ import DayViewTimeCell from './DayViewTimeCell';
 import DayViewJobBlock from './DayViewJobBlock';
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './dayViewUtils';
 import { LockIcon } from '../icons';
+import { getEffectiveUnavailableSlots } from '../../utils/repUtils';
 
 interface DayViewRepColumnProps {
   rep: Rep;
@@ -28,10 +29,10 @@ const DayViewRepColumn: React.FC<DayViewRepColumnProps> = ({
   columnWidth,
   onRepHover,
 }) => {
-  // Get unavailable slots for this rep on this day
+  // Get unavailable slots for this rep on this day (handles London Smith special case)
   const unavailableSlotIds = useMemo(() => {
-    return rep.unavailableSlots?.[dayName] || [];
-  }, [rep.unavailableSlots, dayName]);
+    return getEffectiveUnavailableSlots(rep, dayName);
+  }, [rep, dayName]);
 
   // Check if a time slot is unavailable based on the rep's unavailable slots
   const isTimeUnavailable = (startMinutes: number): boolean => {

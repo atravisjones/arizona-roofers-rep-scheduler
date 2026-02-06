@@ -21,7 +21,8 @@
       "Bash(npm install)",
       "Bash(start:*)",
       "Bash(timeout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "mcp__chrome-devtools__new_page"
     ],
     "deny": [],
     "ask": []

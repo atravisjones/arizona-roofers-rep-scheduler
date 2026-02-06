@@ -230,6 +230,10 @@ export async function parseJobsFromText(
     const timeSlotRegex = /(\d{1,2}(?::\d{2})?(?:am|pm)?\s*-\s*\d{1,2}(?::\d{2})?(?:am|pm)?)/i;
     let currentTimeframe: string | undefined = undefined;
 
+    // Regex to detect exact time at the START of a line (new calendar scraper format)
+    // e.g., "10:00am-12:00pm - SCOTTSDALE - ..." or "1:00pm-3:00pm - MESA - ..."
+    const exactTimeStartRegex = /^(\d{1,2}:\d{2}(?:am|pm)\s*-\s*\d{1,2}:\d{2}(?:am|pm))\s*-\s*/i;
+
     const knownCitiesList = Array.from(ALL_KNOWN_CITIES).sort((a, b) => b.length - a.length);
 
     for (const line of lines) {
@@ -249,6 +253,16 @@ export async function parseJobsFromText(
         // This prevents the timestamp from being confused with the job date or address
         const timestampRegex = /\s*-\s*(?:(?:(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday),?\s+)?[a-z]{3,9}\s+\d{1,2},?\s+\d{4}(?:\s+at)?|\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2}|[a-z]{3,9}\s+\d{1,2},?)\s*(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]M)?)?(?:\s+[A-Z]{3,4})?\s*$/i;
         trimmedLine = trimmedLine.replace(timestampRegex, '').trim();
+
+        // Check for exact time at the START of the line (new calendar scraper format)
+        // This extracts the time and sets it as the job's timeframe
+        let jobSpecificTimeframe: string | undefined = undefined;
+        const exactTimeMatch = trimmedLine.match(exactTimeStartRegex);
+        if (exactTimeMatch) {
+            jobSpecificTimeframe = exactTimeMatch[1]; // e.g., "10:00am-12:00pm"
+            // Remove the time from the start of the line for further parsing
+            trimmedLine = trimmedLine.replace(exactTimeStartRegex, '').trim();
+        }
 
         const timeSlotMatch = trimmedLine.match(timeSlotRegex);
         if (timeSlotMatch && /\(\d+\)$/.test(trimmedLine)) {
@@ -344,13 +358,36 @@ export async function parseJobsFromText(
         // This prevents "MESA, 85204" from becoming the city name if the parsing logic above was loose.
         city = city.replace(/\d+/g, '').replace(/[,:.-]+$/, '').replace(/^[,:.-]+/, '').trim();
 
-        // 4. If we didn't find an address with the regex, use notes as a fallback,
-        // but only if 'notes' itself looks like a plausible address.
+        // 4. If we didn't find an address with the regex, try alternate methods
         if (addressStartIndex === -1) {
-            // If 'notes' contains a number and a letter, it might be an address.
-            if (/\d/.test(notes) && /[a-zA-Z]/.test(notes)) {
+            // Try to find address after a " - " delimiter (common format: CITY # notes - address)
+            const dashIndex = lineWithoutRep.lastIndexOf(' - ');
+            if (dashIndex > -1) {
+                const potentialAddress = lineWithoutRep.substring(dashIndex + 3).trim();
+                if (/\d/.test(potentialAddress) && /[a-zA-Z]/.test(potentialAddress)) {
+                    address = potentialAddress;
+                    // Re-parse the non-address part
+                    nonAddressPart = lineWithoutRep.substring(0, dashIndex).trim();
+                    cityAndNotesPart = nonAddressPart;
+
+                    // Re-check for city in the updated non-address part
+                    const lowerNonAddr = nonAddressPart.toLowerCase();
+                    const reMatchedCity = knownCitiesList.find(c => lowerNonAddr.startsWith(c));
+                    if (reMatchedCity) {
+                        city = reMatchedCity.toUpperCase();
+                        const cityRegex = new RegExp(`^${reMatchedCity}[,\\.\\s#]*`, 'i');
+                        notes = nonAddressPart.replace(cityRegex, '').trim();
+                    }
+                }
+            }
+
+            // If still no address, try using notes as fallback
+            if (!address && /\d/.test(notes) && /[a-zA-Z]/.test(notes)) {
                 address = notes;
-            } else {
+            }
+
+            // If still no address, skip this line
+            if (!address) {
                 continue;
             }
         }
@@ -367,7 +404,13 @@ export async function parseJobsFromText(
             }
         }
 
-        if (!city) {
+        // If still no city but we have a valid address, use a placeholder to allow the job through
+        if (!city && address) {
+            city = 'UNKNOWN';
+        }
+
+        // Only skip if both city AND address are missing
+        if (!city && !address) {
             continue;
         }
 
@@ -413,13 +456,16 @@ export async function parseJobsFromText(
         if (isRepairJob) jobValue -= 20;
         jobValue = Math.max(0, Math.min(100, jobValue)); // Clamp to 0-100
 
+        // Use job-specific timeframe if found at start of line, otherwise use current header timeframe
+        const effectiveTimeframe = jobSpecificTimeframe || currentTimeframe;
+
         const newJob = {
             id: `job-${Date.now()}-${jobs.length}-${Math.random().toString(36).substring(2, 9)}`,
             customerName: city,
             address,
             originalAddress: address, // Preserve the original address as first pasted
             city, notes,
-            originalTimeframe: currentTimeframe,
+            originalTimeframe: effectiveTimeframe,
             zipCode,
             roofAge,
             jobValue,
@@ -427,8 +473,8 @@ export async function parseJobsFromText(
         };
         jobs.push(newJob);
 
-        if (assignedRep && currentTimeframe) {
-            const slotId = mapTimeframeToSlotId(currentTimeframe);
+        if (assignedRep && effectiveTimeframe) {
+            const slotId = mapTimeframeToSlotId(effectiveTimeframe);
             if (slotId) {
                 assignments.push({ jobId: newJob.id, repId: assignedRep.id, slotId });
             }

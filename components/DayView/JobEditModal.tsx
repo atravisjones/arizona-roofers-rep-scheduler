@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext';
 import { TAG_KEYWORDS, TIME_SLOTS } from '../../constants';
 import { XIcon, SaveIcon, TrashIcon, MapPinIcon, ExternalLinkIcon, UserIcon } from '../icons';
 import { normalizeAddressForMatching } from '../../services/googleSheetsService';
+import { getEffectiveUnavailableSlots } from '../../utils/repUtils';
 
 const TAG_CLASSES: Record<string, string> = {
   'Tile': 'bg-tag-orange-bg text-tag-orange-text border-tag-orange-border',
@@ -84,9 +85,9 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
     return [...roofTags, ...sqftTag, ...storiesTag, ...ageTag];
   }, [notes]);
 
-  // Check if a rep is available on the selected day
+  // Check if a rep is available on the selected day (handles London Smith special case)
   const isRepAvailable = (rep: Rep): boolean => {
-    const unavailableSlots = rep.unavailableSlots?.[dayName] || [];
+    const unavailableSlots = getEffectiveUnavailableSlots(rep, dayName);
     // Rep is unavailable if all 4 slots are marked unavailable
     return unavailableSlots.length < 4;
   };

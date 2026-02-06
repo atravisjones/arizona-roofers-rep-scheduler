@@ -33,6 +33,11 @@ export const ROOFR_JOBS_SPREADSHEET_ID = "1KadSyM67SOB6agq2YDHkZLYMXnn81Fna5jTWD
 export const ROOFR_JOBS_SHEET_TITLE = 'Main';
 export const ROOFR_JOBS_DATA_RANGE = 'A2:B'; // Fetch all rows in columns A and B
 
+// Apt Outcome Tracker - for closing rate rankings (30 days close rate)
+export const APT_OUTCOME_SPREADSHEET_ID = "1TtweJEEhVEO_DAgmvTY7PcaPQdmbxlOtPfffKdiXBcw";
+export const APT_OUTCOME_SHEET_TITLE = 'Appointment Summary';
+export const APT_OUTCOME_DATA_RANGE = 'B68:N100'; // Row 68 has headers, B=Sales Rep, M=30 days Close rate %
+
 // If fetching data fails, use mock data to allow the app to run.
 export const USE_MOCK_DATA_ON_FAILURE = true;
 
