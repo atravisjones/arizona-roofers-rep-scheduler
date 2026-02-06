@@ -34,6 +34,34 @@ const chipInactiveClass = "bg-bg-tertiary text-secondary border-border-primary h
 const chipOptimizedActiveClass = "bg-tag-teal-bg text-tag-teal-text border-tag-teal-border shadow-sm ring-1 ring-tag-teal-border";
 const chipOptimizedInactiveClass = "bg-tag-teal-bg/50 text-tag-teal-text border-tag-teal-border/50 hover:border-tag-teal-border hover:bg-tag-teal-bg hover:text-tag-teal-text";
 
+// Fixed palette of maximally distinct, vivid colors — guarantees reds, oranges, etc.
+const DISTINCT_PALETTE = [
+    '#dc2626', // red
+    '#2563eb', // blue
+    '#16a34a', // green
+    '#ea580c', // orange
+    '#7c3aed', // violet
+    '#0891b2', // cyan
+    '#db2777', // pink
+    '#ca8a04', // amber
+    '#0d9488', // teal
+    '#65a30d', // lime
+    '#4f46e5', // indigo
+    '#c026d3', // fuchsia
+    '#b45309', // dark orange
+    '#0e7490', // dark cyan
+    '#15803d', // dark green
+    '#9333ea', // purple
+    '#be123c', // crimson
+    '#1d4ed8', // royal blue
+];
+const getRepColorByPosition = (name: string, allNames: string[]): string => {
+    const sorted = [...new Set(allNames)].sort();
+    const index = sorted.indexOf(name);
+    if (index < 0 || sorted.length === 0) return '#808080';
+    return DISTINCT_PALETTE[index % DISTINCT_PALETTE.length];
+};
+
 const SchedulesPanel: React.FC = () => {
     const {
         appState, isLoadingReps, repsError, filteredReps,
@@ -387,6 +415,10 @@ const SchedulesPanel: React.FC = () => {
                                         title={isDoubleBooked ? `${rep.name} - Double Booked!` : `${rep.name} - ${availableSlots}/4 slots available (Right-click to multi-select)`}
                                         className={`${chipClass} ${chipBaseClass}`}
                                     >
+                                        <span
+                                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-inset ring-black/10"
+                                            style={{ backgroundColor: rep.customColor || getRepColorByPosition(rep.name, appState.reps.map(r => r.name)) }}
+                                        />
                                         {formatRepNameForFilter(rep.name)}
                                         {/* Assigned/Available indicator - red if no jobs, green if 1+ */}
                                         <span className={`ml-1 text-[8px] font-medium ${

@@ -187,16 +187,32 @@ const REGION_CLASSES: Record<string, string> = {
     'UNKNOWN': 'bg-bg-tertiary text-text-secondary border-border-primary'
 };
 
-const generateColorFromName = (name: string): string => {
-    let hash = 0;
-    if (name.length === 0) return 'hsl(0, 0%, 80%)';
-    for (let i = 0; i < name.length; i++) {
-        const char = name.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash;
-    }
-    const hue = Math.abs(hash % 360);
-    return `hsl(${hue}, 65 %, 75 %)`;
+// Fixed palette of maximally distinct, vivid colors — guarantees reds, oranges, etc.
+const DISTINCT_PALETTE = [
+    '#dc2626', // red
+    '#2563eb', // blue
+    '#16a34a', // green
+    '#ea580c', // orange
+    '#7c3aed', // violet
+    '#0891b2', // cyan
+    '#db2777', // pink
+    '#ca8a04', // amber
+    '#0d9488', // teal
+    '#65a30d', // lime
+    '#4f46e5', // indigo
+    '#c026d3', // fuchsia
+    '#b45309', // dark orange
+    '#0e7490', // dark cyan
+    '#15803d', // dark green
+    '#9333ea', // purple
+    '#be123c', // crimson
+    '#1d4ed8', // royal blue
+];
+const getRepColorByPosition = (name: string, allNames: string[]): string => {
+    const sorted = [...new Set(allNames)].sort();
+    const index = sorted.indexOf(name);
+    if (index < 0 || sorted.length === 0) return '#808080';
+    return DISTINCT_PALETTE[index % DISTINCT_PALETTE.length];
 };
 
 interface ScoreDetailsModalProps {
@@ -298,11 +314,12 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
 
 
 const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false, selectedRepName, isUnavailableForSlot = false }) => {
-    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate, setHoveredRepId } = useAppContext();
+    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate, setHoveredRepId, handleUpdateRep } = useAppContext();
     const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const swapMenuRef = useRef<HTMLDivElement>(null);
+    const colorInputRef = useRef<HTMLInputElement>(null);
     const [isScoreDetailsOpen, setIsScoreDetailsOpen] = useState(false);
     const [copySuccess, setCopySuccess] = useState(false);
 
@@ -511,7 +528,8 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         return '';
     }, [isBeingHoveredWithJob, isInvalidDropTarget, isOverrideActive, invalidReason, rep.isLocked, rep.isOptimized]);
 
-    const repColor = useMemo(() => generateColorFromName(rep.name), [rep.name]);
+    const allRepNames = useMemo(() => appState.reps.map(r => r.name), [appState.reps]);
+    const repColor = useMemo(() => rep.customColor || getRepColorByPosition(rep.name, allRepNames), [rep.name, rep.customColor, allRepNames]);
 
     const rankColor = useMemo(() => {
         const rank = rep.salesRank;
@@ -583,9 +601,18 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
             >
                 <div className="flex items-center min-w-0 flex-1 mr-2">
                     <div
-                        className="w-4 h-4 rounded-full mr-1.5 flex-shrink-0 ring-1 ring-inset ring-border-secondary"
+                        className="w-4 h-4 rounded-full mr-1.5 flex-shrink-0 ring-1 ring-inset ring-border-secondary cursor-pointer hover:ring-2 hover:ring-brand-primary transition-all"
                         style={{ backgroundColor: repColor }}
-                        title={rep.name}
+                        title="Click to change color"
+                        onClick={(e) => { e.stopPropagation(); colorInputRef.current?.click(); }}
+                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); if (rep.customColor) handleUpdateRep(rep.id, { customColor: undefined }); }}
+                    />
+                    <input
+                        ref={colorInputRef}
+                        type="color"
+                        className="sr-only"
+                        value={repColor.startsWith('#') ? repColor : '#808080'}
+                        onChange={(e) => handleUpdateRep(rep.id, { customColor: e.target.value })}
                     />
                     <h3 className="text-sm font-bold truncate text-text-primary">{rep.name}</h3>
                     {rep.isOptimized ? (

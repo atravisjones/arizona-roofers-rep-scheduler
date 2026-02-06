@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { DisplayJob, RouteInfo } from '../types';
 import LeafletMap from './LeafletMap';
-import { LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon } from './icons';
+import { LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon, HomeIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
 import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS, TAG_KEYWORDS } from '../constants';
@@ -160,6 +160,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
 
     const [isUnplottedExpanded, setIsUnplottedExpanded] = useState(true);
     const [showTagFilters, setShowTagFilters] = useState(false);
+    const [showRepHomes, setShowRepHomes] = useState(false);
 
     // State for filtering
     const [selectedTimeSlotId, setSelectedTimeSlotId] = useState<string | null>(null);
@@ -295,6 +296,16 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         >
                             <RefreshIcon />
                             <span>Refresh</span>
+                        </button>
+                        <button
+                            onClick={() => setShowRepHomes(!showRepHomes)}
+                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${showRepHomes
+                                ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm'
+                                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            title="Toggle rep home locations on/off"
+                        >
+                            <HomeIcon className="h-3.5 w-3.5" />
+                            <span>Rep Homes</span>
                         </button>
                     </div>
 
@@ -500,7 +511,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             </header>
 
             <div className="flex-grow relative bg-bg-quaternary">
-                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} placementJobId={placementJobId} onPlaceJob={handlePlaceJobOnMap} />
+                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} placementJobId={placementJobId} onPlaceJob={handlePlaceJobOnMap} showRepHomes={showRepHomes} reps={appState.reps} />
             </div>
 
             {routeData && routeData.routeInfo && (routeData.repName !== 'Unassigned Jobs' && routeData.repName !== 'Job Map' && routeData.repName !== 'All Rep Locations' && !routeData.repName.startsWith('Zip:')) && !isLoading && (

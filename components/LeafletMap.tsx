@@ -2,12 +2,40 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { geocodeAddresses, Coordinates, fetchRoute } from '../services/osmService';
 import { LoadingIcon } from './icons';
-import { RouteInfo, DisplayJob } from '../types';
+import { RouteInfo, DisplayJob, Rep } from '../types';
 import { JobCard } from './JobCard';
 import { useAppContext, AppContext } from '../context/AppContext';
 import { TAG_KEYWORDS } from '../constants';
 
 declare const L: any;
+
+// Fixed palette of maximally distinct, vivid colors — guarantees reds, oranges, etc.
+const DISTINCT_PALETTE = [
+    '#dc2626', // red
+    '#2563eb', // blue
+    '#16a34a', // green
+    '#ea580c', // orange
+    '#7c3aed', // violet
+    '#0891b2', // cyan
+    '#db2777', // pink
+    '#ca8a04', // amber
+    '#0d9488', // teal
+    '#65a30d', // lime
+    '#4f46e5', // indigo
+    '#c026d3', // fuchsia
+    '#b45309', // dark orange
+    '#0e7490', // dark cyan
+    '#15803d', // dark green
+    '#9333ea', // purple
+    '#be123c', // crimson
+    '#1d4ed8', // royal blue
+];
+const getRepColorByPosition = (name: string, allNames: string[]): string => {
+    const sorted = [...new Set(allNames)].sort();
+    const index = sorted.indexOf(name);
+    if (index < 0 || sorted.length === 0) return '#808080';
+    return DISTINCT_PALETTE[index % DISTINCT_PALETTE.length];
+};
 
 interface LeafletMapProps {
   jobs: DisplayJob[];
@@ -15,13 +43,15 @@ interface LeafletMapProps {
   mapType?: 'unassigned' | 'route';
   placementJobId?: string | null;
   onPlaceJob?: (jobId: string, lat: number, lon: number) => void;
+  showRepHomes?: boolean;
+  reps?: Rep[];
 }
 
 const PHOENIX_COORDS: [number, number] = [33.4484, -112.0740];
 const DEFAULT_ZOOM = 9;
 const ROUTE_ZOOM = 12;
 
-const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob }) => {
+const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob, showRepHomes, reps }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const featureGroupRef = useRef<any>(null);
@@ -50,6 +80,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const previousHoveredIdRef = useRef<string | null>(null);
   const previousHoveredRepIdRef = useRef<string | null>(null);
   const jobRepNameMapRef = useRef<Map<string, string | undefined>>(new Map()); // Map jobId to assignedRepName
+  const repHomesLayerRef = useRef<any>(null); // Separate layer for rep home markers
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -313,7 +344,9 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
       : (effectiveRouteInfo?.coordinates?.length || '0');
     // Include dimmed state in identity so filter changes trigger marker rebuild
     const dimmedJobsId = jobsToDisplay.filter(j => j.isDimmed).map(j => j.id).sort().join(',');
-    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}-${dimmedJobsId}`;
+    // Include custom colors so color changes trigger marker rebuild
+    const repColorsId = reps?.filter(r => r.customColor).map(r => `${r.name}:${r.customColor}`).join(',') || '';
+    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}-${dimmedJobsId}-${repColorsId}`;
 
     // Skip rebuild if nothing meaningful changed (preserves hover highlighting)
     if (currentIdentity === dataIdentityRef.current) {
@@ -338,24 +371,12 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
 
     if (coordsToDisplay && coordsToDisplay.length > 0 && jobsToDisplay.length === coordsToDisplay.length) {
 
-      const uniqueRepNames: string[] = Array.from(new Set<string>(
-        jobsToDisplay.map(j => j.assignedRepName).filter((name): name is string => !!name)
-      )).sort();
-
-      const repColorMap = new Map<string, string>();
-      const goldenRatioConjugate = 0.61803398875;
-      let hue = 0.1;
-
-      uniqueRepNames.forEach((repName: string) => {
-        hue += goldenRatioConjugate;
-        hue %= 1;
-        const color = `hsl(${hue * 360}, 75%, 45%)`;
-        repColorMap.set(repName, color);
-      });
-
+      const allRepNames = reps?.map(r => r.name) || [];
       const getColorForRep = (repName?: string): string => {
         if (!repName) return '#808080';
-        return repColorMap.get(repName) || '#808080';
+        const rep = reps?.find(r => r.name === repName);
+        if (rep?.customColor) return rep.customColor;
+        return getRepColorByPosition(repName, allRepNames);
       };
 
       coordsToDisplay.forEach((coord: Coordinates, index: number) => {
@@ -587,8 +608,72 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
 
     return () => clearTimeout(timer);
 
-  }, [effectiveRouteInfo, jobs, mapType, mappableJobs, preloadedRouteInfo]);
+  }, [effectiveRouteInfo, jobs, mapType, mappableJobs, preloadedRouteInfo, reps]);
   // Note: Removed handlers and hoveredJobId from dependency array - hoveredJobId causes full rebuild which creates stutter
+
+  // Separate effect for rep home markers overlay
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Remove existing rep homes layer
+    if (repHomesLayerRef.current) {
+      mapRef.current.removeLayer(repHomesLayerRef.current);
+      repHomesLayerRef.current = null;
+    }
+
+    if (!showRepHomes || !reps || reps.length === 0) return;
+
+    const repsWithZips = reps.filter(r => r.zipCodes && r.zipCodes.length > 0);
+    if (repsWithZips.length === 0) return;
+
+    const addresses = repsWithZips.map(r => `${r.zipCodes![0]}, Arizona, USA`);
+    const layer = L.featureGroup();
+    repHomesLayerRef.current = layer;
+
+    geocodeAddresses(addresses).then(results => {
+      // Check layer still exists (not removed by toggle-off during geocoding)
+      if (repHomesLayerRef.current !== layer) return;
+
+      repsWithZips.forEach((rep, i) => {
+        const coord = results[i]?.coordinates;
+        if (!coord) return;
+
+        const color = rep.customColor || getRepColorByPosition(rep.name, reps.map(r => r.name));
+        const firstName = rep.name.split(' ')[0];
+        const markerHtml = `
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 1px;">
+            <span style="font-size: 9px; font-weight: 700; color: #000; text-shadow: -1px -1px 0 white, 1px -1px 0 white, -1px 1px 0 white, 1px 1px 0 white; white-space: nowrap;">${firstName}</span>
+            <div style="background-color: ${color}; border: 1.5px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.3); width: 18px; height: 18px; border-radius: 4px; display: flex; align-items: center; justify-content: center;">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width: 11px; height: 11px;" viewBox="0 0 20 20" fill="white">
+                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+              </svg>
+            </div>
+          </div>`;
+        const icon = L.divIcon({
+          html: markerHtml,
+          className: 'custom-div-icon',
+          iconSize: [40, 30],
+          iconAnchor: [20, 30],
+        });
+        L.marker([coord.lat, coord.lon], { icon, zIndexOffset: 900 })
+          .bindTooltip(`${rep.name} — Home: ${rep.zipCodes![0]}`, { direction: 'top', offset: [0, -10] })
+          .addTo(layer);
+      });
+
+      if (mapRef.current && repHomesLayerRef.current === layer) {
+        layer.addTo(mapRef.current);
+      }
+    }).catch(err => {
+      console.error('Failed to geocode rep home locations:', err);
+    });
+
+    return () => {
+      if (mapRef.current && repHomesLayerRef.current) {
+        mapRef.current.removeLayer(repHomesLayerRef.current);
+        repHomesLayerRef.current = null;
+      }
+    };
+  }, [showRepHomes, reps]);
 
   return (
     <div className="w-full h-full relative rounded-lg overflow-hidden bg-bg-tertiary">

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -801,6 +801,14 @@ const MainLayout: React.FC = () => {
               </button>
               <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
                 <RedoIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={context.handleRefreshAvailability}
+                disabled={context.isLoadingReps}
+                className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-brand-primary disabled:opacity-30 transition"
+                title="Resync availability from Google Sheet"
+              >
+                {context.isLoadingReps ? <LoadingIcon /> : <RefreshIcon className="h-3.5 w-3.5" />}
               </button>
             </div>
 

@@ -207,6 +207,8 @@ export const useAppLogic = () => {
     const [isCloudLoading, setIsCloudLoading] = useState(false);
     // Ref to ensure cloud load only happens once on initial mount
     const hasAutoLoadedRef = useRef(false);
+    // Ref to trigger map refresh after load state fully propagates
+    const pendingMapRefreshAfterLoad = useRef(false);
 
     // Auto-save configuration - now uses debounce + fallback timer
     // Debounce: 5 seconds after user stops making changes
@@ -360,6 +362,9 @@ export const useAppLogic = () => {
 
 
     const dailyStates = useMemo(() => history[historyIndex] || new Map(), [history, historyIndex]);
+    // Ref that always holds the latest dailyStates — used by async functions to avoid stale closures
+    const dailyStatesRef = useRef(dailyStates);
+    dailyStatesRef.current = dailyStates;
 
     const appState = useMemo(() => {
         return dailyStates.get(formatDateToKey(selectedDate)) || EMPTY_STATE;
@@ -580,7 +585,7 @@ export const useAppLogic = () => {
             return;
         }
 
-        if (dailyStates.has(dateKey)) {
+        if (dailyStatesRef.current.has(dateKey)) {
             log(`State for ${dateKey} already loaded.`);
             return;
         }
@@ -595,8 +600,18 @@ export const useAppLogic = () => {
             setIsLoadingReps(true);
             setRepsError(null);
             setUsingMockData(false);
-            setActiveRoute(null);
             const { reps: repData, sheetName } = await fetchSheetData(date);
+
+            // Check if cloud loaded this day while we were fetching (race condition protection)
+            if (cloudLoadedDaysRef.current.has(dateKey)) {
+                log(`State for ${dateKey} was loaded from cloud during fetch, aborting loadReps.`);
+                return;
+            }
+
+            // Only clear the map if no cloud load just populated it
+            if (!pendingMapRefreshAfterLoad.current && cloudLoadedDaysRef.current.size === 0) {
+                setActiveRoute(null);
+            }
             setActiveSheetName(sheetName);
             if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
             const repsWithSchedule = repData.map(rep => ({
@@ -613,13 +628,13 @@ export const useAppLogic = () => {
 
             const newDayState: AppState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
 
-            // Check again if cloud loaded this day while we were fetching (race condition protection)
+            // Check again before committing intermediate state
             if (cloudLoadedDaysRef.current.has(dateKey)) {
-                log(`State for ${dateKey} was loaded from cloud during fetch, aborting loadReps.`);
+                log(`State for ${dateKey} was loaded from cloud, aborting loadReps.`);
                 return;
             }
 
-            const newDailyStates = new Map(dailyStates).set(dateKey, newDayState);
+            const newDailyStates = new Map(dailyStatesRef.current).set(dateKey, newDayState);
             setHistory([newDailyStates]);
             setHistoryIndex(0);
 
@@ -680,7 +695,7 @@ export const useAppLogic = () => {
                 return;
             }
 
-            const mergedDailyStates = new Map(dailyStates).set(dateKey, newDayState);
+            const mergedDailyStates = new Map(dailyStatesRef.current).set(dateKey, newDayState);
             setHistory([mergedDailyStates]);
             setHistoryIndex(0);
         } catch (error) {
@@ -689,7 +704,46 @@ export const useAppLogic = () => {
         } finally {
             setIsLoadingReps(false);
         }
-    }, [dailyStates, log, updateGeoCache, isCloudLoading]);
+    }, [log, updateGeoCache, isCloudLoading]);
+
+    // Refresh availability from Google Sheets without removing assigned jobs
+    const handleRefreshAvailability = useCallback(async () => {
+        const dateKey = formatDateToKey(selectedDate);
+        try {
+            setIsLoadingReps(true);
+            log('Refreshing availability from Google Sheets...');
+            const { reps: freshReps } = await fetchSheetData(selectedDate);
+            const freshMap = new Map(freshReps.map(r => [r.id, r]));
+
+            recordChange(currentDailyStates => {
+                const dayState = currentDailyStates.get(dateKey);
+                if (!dayState) return currentDailyStates;
+                const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
+                newState.reps = newState.reps.map(rep => {
+                    const fresh = freshMap.get(rep.id);
+                    if (!fresh) return rep;
+                    return {
+                        ...rep,
+                        unavailableSlots: fresh.unavailableSlots,
+                        availability: fresh.availability,
+                        skills: fresh.skills,
+                        zipCodes: fresh.zipCodes,
+                        region: fresh.region,
+                        salesRank: fresh.salesRank,
+                    };
+                });
+                const newDailyStates = new Map(currentDailyStates);
+                newDailyStates.set(dateKey, newState);
+                return newDailyStates;
+            }, 'Refresh Availability');
+            log('Availability refreshed successfully.');
+        } catch (error) {
+            console.error('Failed to refresh availability:', error);
+            setRepsError('Failed to refresh availability. See console.');
+        } finally {
+            setIsLoadingReps(false);
+        }
+    }, [selectedDate, log, recordChange]);
 
     // ============ Routing API Integration Functions ============
 
@@ -2331,8 +2385,8 @@ export const useAppLogic = () => {
                 return newDailyStates;
             }, 'Distribute Jobs');
             setIsDistributing(false);
-            // Delay map refresh to ensure state has propagated
-            setTimeout(() => setAutoMapAction('show-all'), 50);
+            // Flag map refresh — the effect watching allJobs will pick this up
+            pendingMapRefreshAfterLoad.current = true;
         }, 10);
     }, [recordChange, selectedDate, log, selectedDayString, isJobValidForRepRegion]);
 
@@ -2554,8 +2608,8 @@ export const useAppLogic = () => {
 
             }, 'Auto-Assign All');
             setIsAutoAssigning(false);
-            // Delay map refresh to ensure state has propagated
-            setTimeout(() => setAutoMapAction('show-all'), 50);
+            // Flag map refresh — the effect watching allJobs will pick this up
+            pendingMapRefreshAfterLoad.current = true;
         }, 100);
     }, [recordChange, selectedDate, log, selectedDayString, checkCityRuleViolation, calculateAssignmentScore, history, historyIndex, updateGeoCache, isJobValidForRepRegion, geoCache]);
 
@@ -2717,8 +2771,8 @@ export const useAppLogic = () => {
                 return newDailyStates;
             }, 'AI Assign');
             addAiThought(`Assignment complete! ${result.assignments.length} jobs were assigned.`);
-            // Delay map refresh to ensure state has propagated
-            setTimeout(() => setAutoMapAction('show-all'), 50);
+            // Flag map refresh — the effect watching allJobs will pick this up
+            pendingMapRefreshAfterLoad.current = true;
         } catch (error) {
             console.error("AI assignment failed:", error);
             log(`- ERROR: AI assignment failed. Details in console.`);
@@ -2971,6 +3025,14 @@ export const useAppLogic = () => {
         setAutoMapAction('none');
     }, [autoMapAction, handleShowAllJobsOnMap, handleShowRoute]);
 
+    // Trigger map refresh after load/assign once allJobs has actually updated
+    useEffect(() => {
+        if (pendingMapRefreshAfterLoad.current && allJobs.length > 0) {
+            pendingMapRefreshAfterLoad.current = false;
+            handleShowAllJobsOnMap();
+        }
+    }, [allJobs, handleShowAllJobsOnMap]);
+
     const handleSaveStateToCloud = useCallback(async (dateKey?: string) => {
         log('ACTION: Manual save to cloud (versioned backup).');
         try {
@@ -3083,8 +3145,8 @@ export const useAppLogic = () => {
                 log(`- SUCCESS: Loaded ${loadedCount}/7 days from cloud`);
                 showToast(`Loaded ${loadedCount} day(s) from cloud successfully!`, 'success');
 
-                // Auto-refresh map to show all jobs with rep colors after load
-                setTimeout(() => setAutoMapAction('show-all'), 50);
+                // Flag map refresh — the effect watching allJobs will pick this up
+                pendingMapRefreshAfterLoad.current = true;
             } else {
                 log(`- ERROR: ${result.error}`);
                 showToast(`Error loading from cloud: ${result.error}`, 'error');
@@ -3389,8 +3451,8 @@ export const useAppLogic = () => {
                 log(`- SUCCESS: Loaded ${dateKey} (${typeLabel}) from ${timestamp}`);
                 showToast(`Loaded ${dateKey} (${typeLabel})`, 'success');
 
-                // Auto-refresh map to show all jobs with rep colors after load
-                setTimeout(() => setAutoMapAction('show-all'), 50);
+                // Flag map refresh — the effect watching allJobs will pick this up
+                pendingMapRefreshAfterLoad.current = true;
             } else {
                 log(`- ERROR: ${result.error}`);
                 showToast(`Error loading backup: ${result.error}`, 'error');
@@ -3496,7 +3558,7 @@ export const useAppLogic = () => {
         draggedJob, setDraggedJob, draggedOverRepId, setDraggedOverRepId, handleJobDragEnd,
         handleRefreshRoute, settings: appState.settings, updateSettings,
         uiSettings, updateUiSettings, updateCustomTheme, resetCustomTheme,
-        loadReps, handleShowRoute, handleParseJobs, handleAutoAssign, handleDistributeJobs, handleAutoAssignForRep, handleAiAssign, handleAiFixAddresses, handleTryAddressVariations, clearAiThoughts, handleUnassignJob,
+        loadReps, handleRefreshAvailability, handleShowRoute, handleParseJobs, handleAutoAssign, handleDistributeJobs, handleAutoAssignForRep, handleAiAssign, handleAiFixAddresses, handleTryAddressVariations, clearAiThoughts, handleUnassignJob,
         handleClearAllSchedules, handleJobDrop, handleToggleRepLock,
         handleToggleRepExpansion, handleToggleAllReps, handleUpdateJob, handleRemoveJob, handleUpdateRep, allJobs, assignedJobs, assignedJobsCount,
         assignedCities, assignedRepNames, filteredReps, handleShowUnassignedJobsOnMap, handleShowAllJobsOnMap, handleShowZipOnMap, handleShowAllRepLocations, handleShowFilteredJobsOnMap,

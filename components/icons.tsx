@@ -472,3 +472,9 @@ export const SidebarLeftIcon: React.FC<{className?: string}> = ({className}) => 
         <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18v16H3V4zm6 0v16" />
     </svg>
 );
+
+export const HomeIcon: React.FC<{className?: string}> = ({className}) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className || "h-5 w-5"} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10" />
+    </svg>
+);

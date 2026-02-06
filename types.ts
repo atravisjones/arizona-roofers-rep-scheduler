@@ -131,6 +131,7 @@ export interface Rep {
   // Gamification Properties
   salesRank?: number; // 1 = Top performer.
   scoringOverrides?: Partial<ScoringWeights>; // Individual overrides
+  customColor?: string; // User-chosen hex color, e.g. "#FF5733"
 }
 
 export interface Job {
@@ -291,6 +292,7 @@ export interface AppContextType {
   updateCustomTheme: (updates: Record<string, string>) => void;
   resetCustomTheme: () => void;
   loadReps: (date: Date) => Promise<void>;
+  handleRefreshAvailability: () => Promise<void>;
   handleShowRoute: (repId: string, optimize: boolean) => Promise<void>;
   handleShowUnassignedJobsOnMap: (jobs?: Job[]) => Promise<void>;
   handleShowFilteredJobsOnMap: (jobs: DisplayJob[], title: string) => Promise<void>; // New function
