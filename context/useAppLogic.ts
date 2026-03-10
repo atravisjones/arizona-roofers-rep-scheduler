@@ -2071,8 +2071,8 @@ export const useAppLogic = () => {
                 const titleBeforeDash = title.includes(' - ') ? title.split(' - ')[0] : title;
                 const titleAfterDash = title.includes(' - ') ? title.split(' - ').slice(1).join(' - ') : '';
 
-                // Use address from Calendar Events, or extract from title, or Master Sheet
-                const address = apt.address || titleAfterDash || apt.masterAddress || '';
+                // Use address from Calendar Events, or Master Sheet (full with city/state/zip), or title
+                const address = apt.address || apt.masterAddress || titleAfterDash || '';
                 // Try multiple sources for city: masterAddress (full with city/state/zip),
                 // then calendar address, then title prefix (e.g. "MESA Tile 2s ...")
                 let city = extractCity(apt.masterAddress || '');
