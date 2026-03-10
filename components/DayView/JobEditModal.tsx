@@ -4,7 +4,7 @@ import { DisplayJob, Rep } from '../../types';
 import { useAppContext } from '../../context/AppContext';
 import { TAG_KEYWORDS, TIME_SLOTS } from '../../constants';
 import { XIcon, SaveIcon, TrashIcon, MapPinIcon, ExternalLinkIcon, UserIcon } from '../icons';
-import { normalizeAddressForMatching } from '../../services/googleSheetsService';
+import { resolveRoofrJobId } from '../../services/roofrApiService';
 import { getEffectiveUnavailableSlots } from '../../utils/repUtils';
 
 const TAG_CLASSES: Record<string, string> = {
@@ -112,18 +112,12 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
     return { available, unavailable };
   }, [appState.reps, dayName]);
 
-  // Get Roofr URL
+  // Get Roofr URL (try address then customer name)
   const roofrUrl = useMemo(() => {
-    if (!job?.address || !roofrJobIdMap || roofrJobIdMap.size === 0) return null;
-    const normalizedAddress = normalizeAddressForMatching(job.address);
-    if (normalizedAddress) {
-      const jobId = roofrJobIdMap.get(normalizedAddress);
-      if (jobId) {
-        return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
-      }
-    }
-    return null;
-  }, [job?.address, roofrJobIdMap]);
+    if (!job || !roofrJobIdMap || roofrJobIdMap.size === 0) return null;
+    const jobId = resolveRoofrJobId(roofrJobIdMap, job.address, job.customerName);
+    return jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}` : null;
+  }, [job?.address, job?.customerName, roofrJobIdMap]);
 
   // Google Maps URL
   const googleMapsUrl = useMemo(() => {

@@ -6,6 +6,7 @@ import LeafletMap from './LeafletMap';
 import { LoadingIcon, ErrorIcon, OptimizeIcon, ClipboardIcon, ChevronDownIcon, ChevronUpIcon, MessageIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
+import { resolveRoofrJobId } from '../services/roofrApiService';
 
 interface RepRouteCardProps {
     repName: string;
@@ -366,11 +367,9 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
         });
     };
 
-    // Helper to generate Roofr Job Card URL
-    const getRoofrUrl = (address: string) => {
-        const normalized = normalizeAddressForMatching(address);
-        if (!normalized) return null;
-        const jobId = appState.roofrJobIdMap.get(normalized);
+    // Helper to generate Roofr Job Card URL (try address then customer name)
+    const getRoofrUrl = (address: string, customerName?: string) => {
+        const jobId = resolveRoofrJobId(appState.roofrJobIdMap, address, customerName);
         if (!jobId) return null;
         return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
     };
@@ -422,7 +421,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                                             <div className="flex items-center space-x-2">
                                                                 <span>{item.job.city}</span>
                                                                 {(() => {
-                                                                    const roofrUrl = getRoofrUrl(item.job.address);
+                                                                    const roofrUrl = getRoofrUrl(item.job.address, item.job.customerName);
                                                                     if (roofrUrl) {
                                                                         return (
                                                                             <a
@@ -468,7 +467,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                                                 <span className="text-text-secondary">
                                                     {job.address}
                                                     {(() => {
-                                                        const roofrUrl = getRoofrUrl(job.address);
+                                                        const roofrUrl = getRoofrUrl(job.address, job.customerName);
                                                         if (roofrUrl) {
                                                             return (
                                                                 <a

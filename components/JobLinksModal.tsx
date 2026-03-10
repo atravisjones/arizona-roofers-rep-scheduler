@@ -2,6 +2,7 @@ import React from 'react';
 import { Job } from '../types';
 import { ExternalLinkIcon, XIcon } from './icons';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
+import { resolveRoofrJobId } from '../services/roofrApiService';
 
 interface JobLinksModalProps {
     isOpen: boolean;
@@ -17,11 +18,10 @@ const JobLinksModal: React.FC<JobLinksModalProps> = ({ isOpen, onClose, jobs, ro
     // Filter jobs to only unique addresses (in case of duplicates/multiple days)
     const uniqueJobs = Array.from(new Map(jobs.map(job => [normalizeAddressForMatching(job.address) || job.address, job])).values());
 
-    // Check coverage
-    const linkCount = uniqueJobs.filter(j => {
-        const norm = normalizeAddressForMatching(j.address);
-        return norm && roofrJobIdMap.has(norm);
-    }).length;
+    // Check coverage (try address then customer name)
+    const linkCount = uniqueJobs.filter(j =>
+        !!resolveRoofrJobId(roofrJobIdMap, j.address, j.customerName)
+    ).length;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
@@ -45,8 +45,7 @@ const JobLinksModal: React.FC<JobLinksModalProps> = ({ isOpen, onClose, jobs, ro
                         </div>
                     ) : (
                         uniqueJobs.map((job, idx) => {
-                            const normalized = normalizeAddressForMatching(job.address);
-                            const jobId = normalized ? roofrJobIdMap.get(normalized) : null;
+                            const jobId = resolveRoofrJobId(roofrJobIdMap, job.address, job.customerName);
                             const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}` : null;
 
                             return (

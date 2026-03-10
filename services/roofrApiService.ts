@@ -36,6 +36,7 @@ export interface RoofrJob {
 export interface RoofrIndex {
   jobs: RoofrJob[];
   byAddress: Map<string, RoofrJob>;
+  byCustomer: Map<string, RoofrJob>;
   byPhone: Map<string, RoofrJob>;
   byJobId: Map<string, RoofrJob>;
   /** Backward-compatible map: normalizedAddress → jobId */
@@ -50,6 +51,11 @@ let inflightPromise: Promise<RoofrIndex> | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // --- Helpers ---
+
+function normalizeCustomerName(name: string | null | undefined): string {
+  if (!name) return '';
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
 
 function normalizePhone(phone: string | null | undefined): string {
   if (!phone) return '';
@@ -86,6 +92,7 @@ function mapApiRow(row: Record<string, any>): RoofrJob {
 
 function buildIndex(jobs: RoofrJob[]): RoofrIndex {
   const byAddress = new Map<string, RoofrJob>();
+  const byCustomer = new Map<string, RoofrJob>();
   const byPhone = new Map<string, RoofrJob>();
   const byJobId = new Map<string, RoofrJob>();
   const addressToJobId = new Map<string, string>();
@@ -107,6 +114,20 @@ function buildIndex(jobs: RoofrJob[]): RoofrIndex {
       }
     }
 
+    // Index by normalized customer name (fallback when address doesn't match)
+    const normName = normalizeCustomerName(job.customer);
+    if (normName && job.jobId) {
+      // Use most recent job per customer (later entries overwrite)
+      byCustomer.set(normName, job);
+      // Also add to address maps so ALL existing consumers benefit from name matching
+      if (!byAddress.has(normName)) {
+        byAddress.set(normName, job);
+      }
+      if (!addressToJobId.has(normName)) {
+        addressToJobId.set(normName, job.jobId);
+      }
+    }
+
     // Index by normalized phone
     const normPhone = normalizePhone(job.phone);
     if (normPhone) {
@@ -116,7 +137,7 @@ function buildIndex(jobs: RoofrJob[]): RoofrIndex {
     }
   }
 
-  return { jobs, byAddress, byPhone, byJobId, addressToJobId };
+  return { jobs, byAddress, byCustomer, byPhone, byJobId, addressToJobId };
 }
 
 // --- Public API ---
@@ -188,6 +209,53 @@ export async function fetchRoofrEnrichmentMap(): Promise<Map<string, RoofrJob>> 
     console.error('Failed to fetch Roofr enrichment:', error);
     return new Map();
   }
+}
+
+/**
+ * Normalize a customer name for matching (exported for use in components).
+ */
+export { normalizeCustomerName };
+
+/**
+ * Fetch Roofr data and return the customer name → RoofrJob map.
+ */
+export async function fetchRoofrCustomerMap(): Promise<Map<string, RoofrJob>> {
+  try {
+    const index = await fetchRoofrIndex();
+    return index.byCustomer;
+  } catch (error) {
+    console.error('Failed to fetch Roofr customer map:', error);
+    return new Map();
+  }
+}
+
+/**
+ * Resolve a Roofr job from a scheduler job, trying address first then customer name.
+ * Works with both the enrichment map and the ID map.
+ */
+export function resolveRoofrJobId(
+  idMap: Map<string, string> | undefined,
+  address: string | undefined,
+  customerName: string | undefined,
+): string | null {
+  if (!idMap || idMap.size === 0) return null;
+  // Try address match
+  if (address) {
+    const normAddr = normalizeAddressForMatching(address);
+    if (normAddr) {
+      const id = idMap.get(normAddr);
+      if (id) return id;
+    }
+  }
+  // Fallback: customer name
+  if (customerName) {
+    const normName = normalizeCustomerName(customerName);
+    if (normName) {
+      const id = idMap.get(normName);
+      if (id) return id;
+    }
+  }
+  return null;
 }
 
 /**

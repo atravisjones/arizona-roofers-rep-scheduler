@@ -4,6 +4,7 @@ import { TAG_KEYWORDS } from '../constants';
 import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
+import { normalizeCustomerName } from '../services/roofrApiService';
 import { JobEditModal } from './JobEditModal';
 
 const TAG_CLASSES: Record<string, string> = {
@@ -38,7 +39,7 @@ interface JobCardProps {
 export const JobCard: React.FC<JobCardProps> = ({
     job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false, currentRepId, currentSlotId
 }) => {
-    const { setHoveredJobId, roofrJobIdMap, roofrEnrichmentMap } = useAppContext();
+    const { setHoveredJobId, roofrJobIdMap, roofrEnrichmentMap, roofrCustomerMap } = useAppContext();
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -261,16 +262,31 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         return formatted.trim();
     };
 
+    // Resolve Roofr job: try address first, then customer name
+    const resolveRoofrJob = () => {
+        const normalized = normalizeAddressForMatching(job.address);
+        const addrMatch = normalized ? roofrEnrichmentMap?.get(normalized) : null;
+        if (addrMatch) return addrMatch;
+        const normName = normalizeCustomerName(job.customerName);
+        return normName ? roofrCustomerMap?.get(normName) || null : null;
+    };
+
     const handleRoofrClick = async (e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
 
-        // Try direct job ID link first
-        const normalized = normalizeAddressForMatching(job.address);
-        const jobId = normalized ? roofrJobIdMap?.get(normalized) : null;
+        // Try direct match (address then customer name)
+        const match = resolveRoofrJob();
+        if (match?.jobId) {
+            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${match.jobId}`, '_blank');
+            return;
+        }
 
-        if (jobId) {
-            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${jobId}`, '_blank');
+        // Also check the legacy ID map
+        const normalized = normalizeAddressForMatching(job.address);
+        const legacyJobId = normalized ? roofrJobIdMap?.get(normalized) : null;
+        if (legacyJobId) {
+            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${legacyJobId}`, '_blank');
             return;
         }
 
@@ -289,15 +305,14 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
     };
 
     const RoofrLink = () => {
-        const normalized = normalizeAddressForMatching(job.address);
-        const hasDirectLink = normalized ? roofrJobIdMap?.has(normalized) : false;
-        const enrichment = normalized ? roofrEnrichmentMap?.get(normalized) : null;
+        const match = resolveRoofrJob();
+        const hasDirectLink = !!match?.jobId;
 
         // Build enrichment tooltip
         let tooltipText = hasDirectLink ? 'Open Roofr job card' : `Search Roofr for "${job.address}"`;
-        if (enrichment) {
-            const parts = [enrichment.stage, enrichment.leadSource];
-            if (enrichment.value) parts.push(`$${enrichment.value.toLocaleString()}`);
+        if (match) {
+            const parts = [match.stage, match.leadSource];
+            if (match.value) parts.push(`$${match.value.toLocaleString()}`);
             tooltipText = parts.filter(Boolean).join(' · ');
         }
 

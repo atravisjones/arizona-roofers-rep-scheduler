@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DisplayJob } from '../types';
 import { ExternalLinkIcon, XIcon, CheckCircleIcon, AlertCircleIcon } from './icons';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
+import { resolveRoofrJobId } from '../services/roofrApiService';
 
 interface AllLinksModalProps {
     isOpen: boolean;
@@ -51,8 +52,7 @@ const AllLinksModal: React.FC<AllLinksModalProps> = ({ isOpen, onClose, allJobs,
         let count = 0;
         jobsByRep.forEach(jobs => {
             jobs.forEach(job => {
-                const norm = normalizeAddressForMatching(job.address);
-                if (norm && roofrJobIdMap.has(norm)) {
+                if (resolveRoofrJobId(roofrJobIdMap, job.address, job.customerName)) {
                     count++;
                 }
             });
@@ -79,10 +79,9 @@ const AllLinksModal: React.FC<AllLinksModalProps> = ({ isOpen, onClose, allJobs,
                 {/* Content */}
                 <div className="overflow-y-auto p-4 custom-scrollbar">
                     {Array.from(jobsByRep.entries()).map(([repName, jobs]) => {
-                        const repLinkedCount = jobs.filter(j => {
-                            const norm = normalizeAddressForMatching(j.address);
-                            return norm && roofrJobIdMap.has(norm);
-                        }).length;
+                        const repLinkedCount = jobs.filter(j =>
+                            !!resolveRoofrJobId(roofrJobIdMap, j.address, j.customerName)
+                        ).length;
 
                         return (
                             <div key={repName} className="mb-6 last:mb-0">
@@ -97,8 +96,7 @@ const AllLinksModal: React.FC<AllLinksModalProps> = ({ isOpen, onClose, allJobs,
                                 {/* Jobs Grid */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     {jobs.map((job) => {
-                                        const normalized = normalizeAddressForMatching(job.address);
-                                        const jobId = normalized ? roofrJobIdMap.get(normalized) : null;
+                                        const jobId = resolveRoofrJobId(roofrJobIdMap, job.address, job.customerName);
                                         const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}` : null;
                                         const hasLink = !!roofrUrl;
 

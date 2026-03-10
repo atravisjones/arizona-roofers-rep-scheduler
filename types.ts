@@ -350,6 +350,9 @@ export interface AppContextType {
   // Roofr enrichment data (normalizedAddress → full RoofrJob)
   roofrEnrichmentMap: Map<string, RoofrJob>;
 
+  // Roofr customer name lookup (normalizedName → full RoofrJob)
+  roofrCustomerMap: Map<string, RoofrJob>;
+
   // Announcement message
   announcement: string;
 

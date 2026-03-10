@@ -5,7 +5,7 @@ import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Setting
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, MAX_REP_ROW } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
-import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, RoofrJob } from '../services/roofrApiService';
+import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
 import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES, ALL_KNOWN_CITIES } from '../services/geography';
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
@@ -192,6 +192,7 @@ export const useAppLogic = () => {
     const [geoCache, setGeoCache] = useState<Map<string, Coordinates>>(new Map());
     const [roofrJobIdMap, setRoofrJobIdMap] = useState<Map<string, string>>(new Map());
     const [roofrEnrichmentMap, setRoofrEnrichmentMap] = useState<Map<string, RoofrJob>>(new Map());
+    const [roofrCustomerMap, setRoofrCustomerMap] = useState<Map<string, RoofrJob>>(new Map());
     const [announcement, setAnnouncement] = useState<string>('');
     const [changeLog, setChangeLog] = useState<JobChange[]>([]);
 
@@ -394,13 +395,15 @@ export const useAppLogic = () => {
             // Try new Roofr Search API first, fall back to Google Sheets
             log('Fetching Roofr data via API...');
             try {
-                const [idMap, enrichMap] = await Promise.all([
+                const [idMap, enrichMap, custMap] = await Promise.all([
                     fetchRoofrJobIdMap(),
                     fetchRoofrEnrichmentMap(),
+                    fetchRoofrCustomerMap(),
                 ]);
                 setRoofrJobIdMap(idMap);
                 setRoofrEnrichmentMap(enrichMap);
-                log(`- COMPLETE: Loaded ${idMap.size} Roofr jobs via API (${enrichMap.size} enriched).`);
+                setRoofrCustomerMap(custMap);
+                log(`- COMPLETE: Loaded ${idMap.size} Roofr jobs via API (${enrichMap.size} enriched, ${custMap.size} by name).`);
             } catch (apiError) {
                 log('- API failed, falling back to Google Sheets...');
                 console.warn('Roofr API failed, using Sheet fallback:', apiError);
@@ -3993,6 +3996,7 @@ export const useAppLogic = () => {
         repSettingsModalRepId, setRepSettingsModalRepId,
         roofrJobIdMap,
         roofrEnrichmentMap,
+        roofrCustomerMap,
         announcement,
         setFilteredAssignedJobs,
         setFilteredUnassignedJobs,

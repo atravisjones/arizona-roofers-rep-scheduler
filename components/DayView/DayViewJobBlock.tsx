@@ -4,6 +4,7 @@ import { TAG_KEYWORDS } from '../../constants';
 import { useAppContext } from '../../context/AppContext';
 import { calculateJobPosition, formatMinutesAsTime } from './dayViewUtils';
 import { UnassignJobIcon, MapPinIcon, ExternalLinkIcon, StarIcon, RescheduleIcon } from '../icons';
+import { resolveRoofrJobId } from '../../services/roofrApiService';
 
 const TAG_CLASSES: Record<string, string> = {
   'Tile': 'bg-tag-orange-bg text-tag-orange-text',
@@ -127,8 +128,8 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
   };
 
-  // Get Roofr job URL if available
-  const roofrJobId = roofrJobIdMap?.get(job.address.toLowerCase().trim());
+  // Get Roofr job URL if available (try address then customer name)
+  const roofrJobId = resolveRoofrJobId(roofrJobIdMap, job.address, job.customerName);
   const roofrUrl = roofrJobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${roofrJobId}` : null;
 
   const openRoofr = (e: React.MouseEvent) => {
