@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Job, DisplayJob, Rep } from '../types';
 import { TAG_KEYWORDS, TIME_SLOTS } from '../constants';
 import { MapPinIcon, UserIcon, TrashIcon, SaveIcon, UnassignJobIcon, ExternalLinkIcon } from './icons';
@@ -153,8 +154,8 @@ export const JobEditModal: React.FC<JobEditModalProps> = ({
 
     const displayJob = job as DisplayJob;
 
-    return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={onClose}>
+    return createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-[70]" onClick={onClose}>
             <div className="bg-bg-primary rounded-lg shadow-xl w-full max-w-md border border-border-primary" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-border-primary">
@@ -331,7 +332,8 @@ export const JobEditModal: React.FC<JobEditModalProps> = ({
                     </div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

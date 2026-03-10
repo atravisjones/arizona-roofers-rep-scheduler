@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { DisplayJob, Rep } from '../../types';
 import { useAppContext } from '../../context/AppContext';
 import { TAG_KEYWORDS, TIME_SLOTS } from '../../constants';
@@ -118,7 +119,7 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
     if (normalizedAddress) {
       const jobId = roofrJobIdMap.get(normalizedAddress);
       if (jobId) {
-        return `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}`;
+        return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
       }
     }
     return null;
@@ -169,7 +170,7 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
 
   if (!isOpen || !job) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]"
       onClick={onClose}
@@ -392,7 +393,8 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

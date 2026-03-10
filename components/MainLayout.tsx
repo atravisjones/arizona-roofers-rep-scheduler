@@ -636,6 +636,16 @@ const MainLayout: React.FC = () => {
               </button>
 
               <button
+                onClick={context.handleLoadFromSheet}
+                disabled={context.isLoadingFromSheet || context.isLoadingReps}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-bg-secondary/50 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary rounded-md transition-all border border-border-secondary/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Load sales appointments from Calendar Events sheet"
+              >
+                {context.isLoadingFromSheet ? <LoadingIcon /> : <CloudDownloadIcon className="h-3.5 w-3.5" />}
+                <span>{context.isLoadingFromSheet ? 'Loading...' : 'Load'}</span>
+              </button>
+
+              <button
                 onClick={context.handleAutoAssign}
                 disabled={context.isLoadingReps || context.isAutoAssigning || context.isParsing || context.appState.unassignedJobs.length === 0}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-brand-primary text-brand-text-on-primary hover:bg-brand-secondary disabled:bg-bg-quaternary disabled:text-text-tertiary disabled:cursor-not-allowed rounded-md transition-all"

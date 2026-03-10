@@ -47,7 +47,7 @@ const JobLinksModal: React.FC<JobLinksModalProps> = ({ isOpen, onClose, jobs, ro
                         uniqueJobs.map((job, idx) => {
                             const normalized = normalizeAddressForMatching(job.address);
                             const jobId = normalized ? roofrJobIdMap.get(normalized) : null;
-                            const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}` : null;
+                            const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}` : null;
 
                             return (
                                 <div key={job.id} className="flex items-center justify-between gap-3 p-2 bg-bg-primary border border-border-secondary rounded transition hover:border-border-tertiary hover:shadow-sm">

@@ -99,7 +99,7 @@ const AllLinksModal: React.FC<AllLinksModalProps> = ({ isOpen, onClose, allJobs,
                                     {jobs.map((job) => {
                                         const normalized = normalizeAddressForMatching(job.address);
                                         const jobId = normalized ? roofrJobIdMap.get(normalized) : null;
-                                        const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}` : null;
+                                        const roofrUrl = jobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}` : null;
                                         const hasLink = !!roofrUrl;
 
                                         return (

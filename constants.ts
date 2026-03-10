@@ -26,12 +26,13 @@ export const STORAGE_SHEET_NAME = "Sheet1";
 // Rep skillsets sheet details
 export const SKILLS_SHEET_TITLE = 'Appointment Blocks';
 export const SKILLS_DATA_RANGE = 'A19:H52';
-export const SALES_ORDER_DATA_RANGE = 'A43:G85'; // Fetching header row + all month columns (Oct-Mar)
+export const SALES_ORDER_DATA_RANGE = 'A69:A82'; // Ordered list of best closing reps (rank 1 = first row)
 
-// Job ID / Roofr URL sheet details
-export const ROOFR_JOBS_SPREADSHEET_ID = "1KadSyM67SOB6agq2YDHkZLYMXnn81Fna5jTWDBQQuog";
-export const ROOFR_JOBS_SHEET_TITLE = 'Main';
-export const ROOFR_JOBS_DATA_RANGE = 'A2:B'; // Fetch all rows in columns A and B
+// Job ID / Roofr URL sheet details — reads from Apt Outcome Tracker (Master Sheet tab)
+// Column B = Address, Column O = Job ID
+export const ROOFR_JOBS_SPREADSHEET_ID = "1Bw1Tug38f_cEkAN6V4XzlDT_lJf7UDMAUK0NjoBEtK0";
+export const ROOFR_JOBS_SHEET_TITLE = 'Master Sheet';
+export const ROOFR_JOBS_DATA_RANGE = 'B2:O'; // Fetch columns B (address) through O (job ID)
 
 // Apt Outcome Tracker - for closing rate rankings (30 days close rate)
 export const APT_OUTCOME_SPREADSHEET_ID = "1TtweJEEhVEO_DAgmvTY7PcaPQdmbxlOtPfffKdiXBcw";

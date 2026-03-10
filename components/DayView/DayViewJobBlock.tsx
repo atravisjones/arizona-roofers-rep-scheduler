@@ -129,7 +129,7 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
 
   // Get Roofr job URL if available
   const roofrJobId = roofrJobIdMap?.get(job.address.toLowerCase().trim());
-  const roofrUrl = roofrJobId ? `https://app.roofr.com/jobs/${roofrJobId}` : null;
+  const roofrUrl = roofrJobId ? `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${roofrJobId}` : null;
 
   const openRoofr = (e: React.MouseEvent) => {
     e.stopPropagation();

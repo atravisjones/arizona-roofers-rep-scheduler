@@ -30,7 +30,10 @@ try {
 
 const saveCacheToStorage = () => {
     try {
-        const obj = Object.fromEntries(geocodeCache);
+        // Only persist successful geocodes — failures should be retried next session
+        const successfulEntries = Array.from(geocodeCache.entries())
+            .filter(([, result]) => result.coordinates !== null);
+        const obj = Object.fromEntries(successfulEntries);
         localStorage.setItem('geocode-cache', JSON.stringify(obj));
     } catch (e) {
         console.warn("Failed to save geocode cache to localStorage");
@@ -173,7 +176,25 @@ function getAddressVariations(address: string): string[] {
 /**
  * Performs the raw API call to Nominatim for a specific query string.
  */
-async function queryNominatim(query: string, retries = 2, initialDelay = 1000): Promise<GeocodeResult> {
+// Global circuit breaker: tracks consecutive 503/429 failures across all geocode calls.
+// When tripped, all subsequent geocode attempts short-circuit until auto-reset after cooldown.
+let nominatimCircuitOpen = false;
+let consecutive503Count = 0;
+let circuitOpenedAt = 0;
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const CIRCUIT_COOLDOWN_MS = 60_000; // Auto-reset after 60 seconds
+
+async function queryNominatim(query: string, retries = 1, initialDelay = 2000): Promise<GeocodeResult> {
+    // Short-circuit if Nominatim is known to be rate-limiting us (auto-reset after cooldown)
+    if (nominatimCircuitOpen) {
+        if (Date.now() - circuitOpenedAt > CIRCUIT_COOLDOWN_MS) {
+            nominatimCircuitOpen = false;
+            consecutive503Count = 0;
+        } else {
+            return { coordinates: null, error: 'Geocoding service temporarily unavailable (rate limited)' };
+        }
+    }
+
     // Ensure Arizona context is present if it looks like a US address and lacks it
     let finalQuery = query;
     if (!/,\s*(az|arizona)\b/i.test(finalQuery)) {
@@ -186,19 +207,22 @@ async function queryNominatim(query: string, retries = 2, initialDelay = 1000): 
         finalQuery = `${streetPart}, Vail, AZ`;
     }
 
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(finalQuery)}&format=json&limit=1`;
+    const url = `/api/geocode?q=${encodeURIComponent(finalQuery)}`;
     let currentDelay = initialDelay;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
             const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'RepRoutePlanner/1.0 (Arizona)'
-                }
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
 
             if (response.ok) {
+                // Success — reset circuit breaker
+                consecutive503Count = 0;
                 const data = await response.json();
                 if (data && data.length > 0) {
                     const lat = parseFloat(data[0].lat);
@@ -216,6 +240,13 @@ async function queryNominatim(query: string, retries = 2, initialDelay = 1000): 
             }
 
             if (response.status === 503 || response.status === 429) {
+                consecutive503Count++;
+                if (consecutive503Count >= CIRCUIT_BREAKER_THRESHOLD) {
+                    nominatimCircuitOpen = true;
+                    circuitOpenedAt = Date.now();
+                    console.warn(`[Geocode] Circuit breaker tripped after ${consecutive503Count} consecutive 503/429 errors. Skipping remaining addresses.`);
+                    return { coordinates: null, error: 'Geocoding service temporarily unavailable (rate limited)' };
+                }
                 if (attempt < retries) {
                     await sleep(currentDelay);
                     currentDelay *= 2;
@@ -225,6 +256,9 @@ async function queryNominatim(query: string, retries = 2, initialDelay = 1000): 
             return { coordinates: null, error: `API status ${response.status}: ${response.statusText}` };
 
         } catch (error) {
+            if (error instanceof Error && error.name === 'AbortError') {
+                return { coordinates: null, error: 'Request timed out' };
+            }
             if (attempt < retries) {
                 await sleep(currentDelay);
                 currentDelay *= 2;
@@ -314,10 +348,16 @@ export async function geocodeAddresses(addresses: string[]): Promise<GeocodeResu
             // Re-check cache in case a parallel pre-cache process is running
             if (geocodeCache.has(address)) continue;
 
+            // If circuit breaker tripped, mark remaining addresses as failed without calling API
+            if (nominatimCircuitOpen) {
+                geocodeCache.set(address, { coordinates: null, error: 'Geocoding service temporarily unavailable (rate limited)' });
+                continue;
+            }
+
             await sleep(1000); // Respect Nominatim's usage policy of max 1 request/sec
             const result = await geocodeSingleAddressAPI(address);
             geocodeCache.set(address, result); // Cache the result (even if null)
-            saveCacheToStorage(); // Save after every new fetch
+            saveCacheToStorage(); // Save after every new fetch (only persists successes)
         }
     }
 

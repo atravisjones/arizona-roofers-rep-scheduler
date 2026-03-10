@@ -183,6 +183,45 @@ function findSheetNameForDate(dateToFind: Date, sheets: any[]): string | null {
  * E.g., `"Lee" William Yost Phoenix` -> `leeyost`
  * E.g., `Lee Yost` -> `leeyost`
  */
+// Common nickname -> canonical name mappings for consistent matching
+const NICKNAME_MAP: Record<string, string> = {
+    'will': 'william',
+    'bill': 'william',
+    'billy': 'william',
+    'nick': 'nicholas',
+    'mike': 'michael',
+    'matt': 'matthew',
+    'dan': 'daniel',
+    'joe': 'joseph',
+    'chris': 'christopher',
+    'rob': 'robert',
+    'bob': 'robert',
+    'tom': 'thomas',
+    'dick': 'richard',
+    'rich': 'richard',
+    'rick': 'richard',
+    'jon': 'jonathan',
+    'alex': 'alexander',
+    'ben': 'benjamin',
+    'sam': 'samuel',
+    'tony': 'anthony',
+    'ed': 'edward',
+    'jim': 'james',
+    'jimmy': 'james',
+    'jake': 'jacob',
+    'charlie': 'charles',
+    'chuck': 'charles',
+    'dave': 'david',
+    'steve': 'steven',
+    'andy': 'andrew',
+    'drew': 'andrew',
+    'pat': 'patrick',
+    'josh': 'joshua',
+    'zach': 'zachary',
+    'nate': 'nathan',
+    'greg': 'gregory',
+};
+
 const normalizeName = (name: string): string => {
     if (!name) return '';
     // Clean string: lowercase, remove quotes, content in parens, and city suffixes.
@@ -198,16 +237,17 @@ const normalizeName = (name: string): string => {
 
     // If only one part (e.g., "Cher"), use that.
     if (parts.length === 1) {
-        return parts[0];
+        return NICKNAME_MAP[parts[0]] || parts[0];
     }
 
     // If name is like "Lee Y", the key is "leey".
     if (parts.length === 2 && parts[1].length === 1) {
-        return `${parts[0]}${parts[1]}`;
+        const first = NICKNAME_MAP[parts[0]] || parts[0];
+        return `${first}${parts[1]}`;
     }
 
     // For "First Middle Last" or "First Last", the key is "firstlast".
-    const first = parts[0];
+    const first = NICKNAME_MAP[parts[0]] || parts[0];
     const last = parts[parts.length - 1];
 
     return `${first}${last}`;
@@ -228,16 +268,13 @@ const cleanDisplayName = (name: string): string => {
 };
 
 /**
- * Fetches the sales rankings from the 'Appointment Blocks' sheet.
- * Uses the previous month's rankings for the selected date.
- * For example: December uses November's data, January uses December's data.
- * Falls back to the previous available month if the current month's column is empty.
- * @param selectedDate The date for which to fetch rankings.
+ * Fetches the sales rankings from the Apt Outcome Tracker's 'Appointment Summary' tab.
+ * Reads a simple ordered list of rep names from A69:A82 (best closer = first row).
  */
-async function fetchSalesRankings(selectedDate: Date = new Date()): Promise<Map<string, number>> {
+async function fetchSalesRankings(): Promise<Map<string, number>> {
     const rankMap = new Map<string, number>();
     try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(SKILLS_SHEET_TITLE)}'!${SALES_ORDER_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
+        const url = `https://sheets.googleapis.com/v4/spreadsheets/${APT_OUTCOME_SPREADSHEET_ID}/values/'${encodeURIComponent(APT_OUTCOME_SHEET_TITLE)}'!${SALES_ORDER_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
         const response = await fetchWithRetry(url);
         if (!response.ok) {
             console.warn(`Failed to fetch sales rankings: ${response.statusText}`);
@@ -246,104 +283,24 @@ async function fetchSalesRankings(selectedDate: Date = new Date()): Promise<Map<
         const data = await response.json();
         const values = data.values;
 
-        if (!values || values.length < 2) {
+        if (!values || values.length === 0) {
             return rankMap;
         }
 
-        // Parse header row to find month columns
-        // Row format: ["Sales Order", "October", "November", "December", "January", "February", "March"]
-        const headerRow = values[0];
-        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                            'July', 'August', 'September', 'October', 'November', 'December'];
-
-        // Build a map of month name -> column index
-        const monthToColumn = new Map<string, number>();
-        headerRow.forEach((cell: string, index: number) => {
-            if (cell && index > 0) {
-                const monthName = String(cell).trim();
-                if (monthNames.includes(monthName)) {
-                    monthToColumn.set(monthName, index);
-                }
-            }
-        });
-
-        // Determine which month column to use (previous month relative to selected date)
-        const selectedMonth = selectedDate.getMonth(); // 0-11
-        const previousMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
-        const previousMonthName = monthNames[previousMonth];
-
-        // Try to find the column for the previous month, with fallback logic
-        let columnIndex = monthToColumn.get(previousMonthName);
-
-        // If not found or column is empty, try earlier months as fallback
-        if (columnIndex === undefined) {
-            // Try to find any available column, preferring most recent
-            const availableMonths = Array.from(monthToColumn.keys());
-            if (availableMonths.length > 0) {
-                // Find the closest previous month that has data
-                for (let offset = 1; offset <= 12; offset++) {
-                    const fallbackMonth = (previousMonth - offset + 12) % 12;
-                    const fallbackMonthName = monthNames[fallbackMonth];
-                    if (monthToColumn.has(fallbackMonthName)) {
-                        columnIndex = monthToColumn.get(fallbackMonthName);
-                        console.log(`Sales rankings: Using ${fallbackMonthName} as fallback for ${previousMonthName}`);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // If still no column found, use the first available month column
-        if (columnIndex === undefined && monthToColumn.size > 0) {
-            columnIndex = Array.from(monthToColumn.values())[0];
-        }
-
-        if (columnIndex === undefined) {
-            console.warn('No valid month columns found in sales rankings sheet');
-            return rankMap;
-        }
-
-        // Check if the selected column has data, if not try previous months
-        const dataRows = values.slice(1);
-        let hasData = dataRows.some((row: any[]) => row[columnIndex!] && String(row[columnIndex!]).trim());
-
-        if (!hasData) {
-            // Try earlier months until we find data
-            const monthOrder = Array.from(monthToColumn.entries()).sort((a, b) => {
-                const aMonth = monthNames.indexOf(a[0]);
-                const bMonth = monthNames.indexOf(b[0]);
-                return bMonth - aMonth; // Sort descending (most recent first)
-            });
-
-            for (const [monthName, colIdx] of monthOrder) {
-                if (colIdx !== columnIndex) {
-                    hasData = dataRows.some((row: any[]) => row[colIdx] && String(row[colIdx]).trim());
-                    if (hasData) {
-                        columnIndex = colIdx;
-                        console.log(`Sales rankings: Using ${monthName} (has data) instead of empty column`);
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Iterate through data rows and build the rankings from the selected column
+        // Simple ordered list: each row is a rep name, position = rank
         let rank = 1;
-        dataRows.forEach((row: any[]) => {
-            const name = row[columnIndex!];
+        for (const row of values) {
+            const name = row[0];
             if (name && String(name).trim()) {
                 const nameStr = String(name).trim();
-                // Skip header-like rows
-                if (nameStr.toLowerCase().includes('sales order')) return;
-
                 const normalized = normalizeName(nameStr);
-                // Only set if not already present (in case of duplicates, first one wins as higher rank)
                 if (normalized && !rankMap.has(normalized)) {
                     rankMap.set(normalized, rank);
                     rank++;
                 }
             }
-        });
+        }
+        console.log(`Fetched sales rankings for ${rankMap.size} reps from Appointment Summary`);
     } catch (error) {
         console.error("Error fetching sales rankings:", error);
     }
@@ -487,52 +444,40 @@ async function fetchRepSkills(): Promise<Map<string, { skills: Record<string, nu
 }
 
 /**
- * Fetches Job IDs and addresses from the Roofr sheet to build a lookup map.
+ * Fetches Job IDs and addresses from the Apt Outcome Tracker via our Vercel API route.
+ * The API route uses service account auth so the sheet doesn't need to be public.
  * @returns A promise resolving to a Map where the key is a normalized address and the value is the Roofr Job ID.
  */
 export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
     const addressToIdMap = new Map<string, string>();
     try {
-        // Fetch from both 'Main' and 'Import' tabs
-        const sheets = [ROOFR_JOBS_SHEET_TITLE, 'Import'];
-
-        for (const sheetName of sheets) {
-            const url = `https://sheets.googleapis.com/v4/spreadsheets/${ROOFR_JOBS_SPREADSHEET_ID}/values/'${encodeURIComponent(sheetName)}'!${ROOFR_JOBS_DATA_RANGE}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
-            const response = await fetchWithRetry(url);
-            if (!response.ok) {
-                console.warn(`Failed to fetch Roofr job IDs from ${sheetName}: ${response.statusText}`);
-                continue; // Try next sheet
-            }
-            const data = await response.json();
-            const values = data.values;
-
-            if (!values || values.length === 0) {
-                console.warn(`${sheetName} sheet appears to be empty.`);
-                continue; // Try next sheet
-            }
-
-
-            let successCount = 0;
-            let failCount = 0;
-
-            values.forEach((row: any[], index: number) => {
-                const [jobId, address] = row;
-
-                if (jobId && address) {
-                    const normalizedAddress = normalizeAddressForMatching(String(address));
-                    if (normalizedAddress) {
-                        // Avoid overwriting with empty IDs if a duplicate address exists
-                        if (!addressToIdMap.has(normalizedAddress)) {
-                            addressToIdMap.set(normalizedAddress, String(jobId));
-                            successCount++;
-                        }
-                    } else {
-                        failCount++;
-                    }
-                }
-            });
-
+        const response = await fetchWithRetry('/api/roofr-jobs');
+        if (!response.ok) {
+            console.warn(`Failed to fetch Roofr job IDs: ${response.statusText}`);
+            return addressToIdMap;
         }
+        const data = await response.json();
+        const values = data.values; // Array of [address, jobId] pairs
+
+        if (!values || values.length === 0) {
+            console.warn('No Roofr job IDs returned from API.');
+            return addressToIdMap;
+        }
+
+        let successCount = 0;
+
+        values.forEach((row: any[]) => {
+            const [address, jobId] = row;
+            if (jobId && address) {
+                const normalizedAddress = normalizeAddressForMatching(String(address));
+                if (normalizedAddress && !addressToIdMap.has(normalizedAddress)) {
+                    addressToIdMap.set(normalizedAddress, String(jobId));
+                    successCount++;
+                }
+            }
+        });
+
+        console.log(`Loaded ${successCount} Roofr job IDs from Apt Outcome Tracker`);
     } catch (error) {
         console.error("Error fetching Roofr job IDs:", error);
     }
@@ -547,9 +492,9 @@ export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
 export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string }> {
     let sheetName = '';
     try {
-        // 0. Fetch skills and closing rate rankings data in parallel
+        // 0. Fetch skills and sales rankings data in parallel
         const skillsPromise = fetchRepSkills();
-        const ranksPromise = fetchClosingRates(); // Use closing rate from Apt Outcome Tracker
+        const ranksPromise = fetchSalesRankings(); // Use manual best-closer order from Appointment Blocks A69:A82
 
         // 1. Get spreadsheet metadata to find the current sheet name
         const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?key=${GOOGLE_API_KEY}`;
@@ -800,5 +745,47 @@ export async function fetchAnnouncementMessage(): Promise<string> {
     } catch (err) {
         console.error(`Error fetching announcement data from ${sheetName}:`, err);
         return '';
+    }
+}
+
+/**
+ * Appointment data returned from the roofr-appointments API endpoint.
+ */
+export interface SheetAppointment {
+    eventId: string;
+    jobId: string;
+    address: string;
+    title: string;
+    start: string;    // "YYYY-MM-DD HH:MM:SS"
+    end: string;      // "YYYY-MM-DD HH:MM:SS"
+    allDay: string;
+    category: string;
+    type: string;
+    attendees: string; // comma-separated rep names
+    customerName: string;
+    masterAddress: string;
+    jobOwner: string;
+    workflow: string;
+    tags: string;
+}
+
+/**
+ * Fetches sales appointments for a given date from the Calendar Events sheet
+ * via the roofr-appointments API endpoint (service account auth).
+ * @param date Date string in YYYY-MM-DD format
+ * @returns Array of SheetAppointment objects
+ */
+export async function fetchAppointmentsFromSheet(date: string): Promise<SheetAppointment[]> {
+    try {
+        const response = await fetchWithRetry(`/api/roofr-appointments?date=${encodeURIComponent(date)}`);
+        if (!response.ok) {
+            console.warn(`Failed to fetch appointments from sheet: ${response.statusText}`);
+            return [];
+        }
+        const data = await response.json();
+        return data.appointments || [];
+    } catch (error) {
+        console.error("Error fetching appointments from sheet:", error);
+        return [];
     }
 }

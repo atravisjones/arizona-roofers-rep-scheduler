@@ -310,6 +310,12 @@ const SchedulesPanel: React.FC = () => {
                                 // London Smith always appears (special rules - always available except Sundays)
                                 if (isLondon(rep)) return true;
 
+                                // Hide reps that are fully unavailable for this day (0 available slots, 0 jobs)
+                                const unavailableSlotsToday = rep.unavailableSlots?.[selectedDay] || [];
+                                const availableSlots = 4 - unavailableSlotsToday.length;
+                                const jobCount = rep.schedule.flatMap(s => s.jobs).length;
+                                if (availableSlots === 0 && jobCount === 0) return false;
+
                                 // If time slot filter is active, hide reps unavailable or with job in that slot
                                 if (selectedSlotFilter) {
                                     const isUnavailable = rep.unavailableSlots?.[selectedDay]?.includes(selectedSlotFilter) ?? false;
@@ -320,10 +326,7 @@ const SchedulesPanel: React.FC = () => {
                                     if (hasJobInSlot) return false;
                                 }
 
-                                // Only show available reps in the filter section (hide fully unavailable reps)
-                                const unavailableSlots = rep.unavailableSlots?.[selectedDay] || [];
-                                const isFullyUnavailable = unavailableSlots.length >= 4;
-                                return !isFullyUnavailable;
+                                return true;
                             })
                             .sort((a, b) => {
                                 // Sort by salesRank (lower rank = better = comes first)
@@ -370,6 +373,12 @@ const SchedulesPanel: React.FC = () => {
                                 // London Smith always shows 4 available slots regardless of sheet data
                                 const unavailableSlotsToday = rep.unavailableSlots?.[selectedDay] || [];
                                 const availableSlots = isLondon(rep) ? 4 : 4 - unavailableSlotsToday.length;
+                                const isChipUnavailable = availableSlots === 0 && !isLondon(rep) && jobCount === 0;
+
+                                // Desaturate unavailable reps (but keep them visible for auto-assignment)
+                                if (isChipUnavailable && !swapSourceRepId) {
+                                    chipClass += ' opacity-50 grayscale';
+                                }
 
                                 return (
                                     <button

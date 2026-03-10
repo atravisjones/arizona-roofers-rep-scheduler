@@ -87,7 +87,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const [internalRouteInfo, setInternalRouteInfo] = useState<RouteInfo | null>(null);
   const [mappableJobs, setMappableJobs] = useState<DisplayJob[]>([]);
 
-  const effectiveRouteInfo = preloadedRouteInfo !== undefined ? preloadedRouteInfo : internalRouteInfo;
+  const effectiveRouteInfo = preloadedRouteInfo ?? internalRouteInfo;
   const addresses = useMemo(() => jobs.map(j => {
     // Combine address, city, and zipCode for accurate geocoding
     const parts = [j.address];
@@ -263,70 +263,16 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   useEffect(() => {
     if (!mapRef.current || !featureGroupRef.current) return;
 
-    if (preloadedRouteInfo !== undefined) {
-      setMappableJobs(jobs);
-      setInternalRouteInfo(null);
-      setError(null);
-      return;
-    }
-
-    if (featureGroupRef.current) featureGroupRef.current.clearLayers();
-    if (jobs.length === 0) {
-      setIsLoading(false);
-      setError(null);
-      setInternalRouteInfo(null);
-      setMappableJobs([]);
-      if (mapRef.current) mapRef.current.setView(PHOENIX_COORDS, DEFAULT_ZOOM);
-      return;
-    }
-
-    const fetchAndSetRoute = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const coordsWithNulls = await geocodeAddresses(addresses);
-        if (!mapRef.current) return;
-
-        const newMappableJobs: DisplayJob[] = [];
-        const validCoords: Coordinates[] = [];
-        jobs.forEach((job, index) => {
-          const result = coordsWithNulls[index];
-          if (result?.coordinates) {
-            newMappableJobs.push(job);
-            validCoords.push(result.coordinates);
-          }
-        });
-
-        setMappableJobs(newMappableJobs);
-
-        if (validCoords.length === 0) {
-          throw new Error('Could not find locations for any of the provided addresses.');
-        }
-
-        if (validCoords.length < addresses.length) {
-          setError(`Warning: Could only locate ${validCoords.length} of ${addresses.length} addresses.`);
-        }
-
-        const route = await fetchRoute(validCoords);
-        setInternalRouteInfo(route);
-
-      } catch (e: any) {
-        console.error("Geocoding/Routing failed:", e);
-        let message = "An unknown error occurred while fetching location data.";
-        if (e instanceof Error) {
-          message = e.message;
-        } else if (typeof e === 'string') {
-          message = e;
-        }
-        setError(message);
-        setInternalRouteInfo(null);
-        setMappableJobs([]);
-      } finally {
+    if (!preloadedRouteInfo) {
+        if (featureGroupRef.current) featureGroupRef.current.clearLayers();
+        setInternalRouteInfo(null); // Clear internal route info
+        setMappableJobs([]);      // Clear internal mappable jobs
         setIsLoading(false);
-      }
-    };
-
-    fetchAndSetRoute();
+        setError(null);
+        if (jobs.length === 0 && mapRef.current) {
+            mapRef.current.setView(PHOENIX_COORDS, DEFAULT_ZOOM);
+        }
+    }
 
   }, [addresses, preloadedRouteInfo, jobs]);
 
@@ -334,7 +280,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
     if (!mapRef.current || !featureGroupRef.current) return;
 
     const map = mapRef.current;
-    const jobsToDisplay = preloadedRouteInfo !== undefined ? jobs : mappableJobs;
+    const jobsToDisplay = preloadedRouteInfo ? jobs : mappableJobs;
     const coordsToDisplay = effectiveRouteInfo?.coordinates;
 
     // Calculate identity BEFORE clearing markers to prevent unnecessary rebuilds
@@ -346,7 +292,9 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
     const dimmedJobsId = jobsToDisplay.filter(j => j.isDimmed).map(j => j.id).sort().join(',');
     // Include custom colors so color changes trigger marker rebuild
     const repColorsId = reps?.filter(r => r.customColor).map(r => `${r.name}:${r.customColor}`).join(',') || '';
-    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}-${dimmedJobsId}-${repColorsId}`;
+    // Include job assignments so reassigning a job triggers marker rebuild
+    const jobAssignmentsId = jobsToDisplay.map(j => `${j.id}:${j.assignedRepName || ''}`).sort().join(',');
+    const currentIdentity = `${mapType}-${currentJobsId}-${currentRouteId}-${dimmedJobsId}-${repColorsId}-${jobAssignmentsId}`;
 
     // Skip rebuild if nothing meaningful changed (preserves hover highlighting)
     if (currentIdentity === dataIdentityRef.current) {
@@ -586,20 +534,14 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
         L.polyline(latLngs, { color: '#6366f1', weight: 4, opacity: 0.5, dashArray: '6, 8' }).addTo(featureGroupRef.current);
       }
 
-      if (dataIdentityRef.current !== currentIdentity) {
-        if (featureGroupRef.current.getLayers().length > 0) {
-          map.fitBounds(featureGroupRef.current.getBounds().pad(0.1));
-        } else if (coordsToDisplay.length === 1) {
-          map.setView([coordsToDisplay[0].lat, coordsToDisplay[0].lon], ROUTE_ZOOM);
-        }
-        dataIdentityRef.current = currentIdentity;
+      if (featureGroupRef.current.getLayers().length > 0) {
+        map.fitBounds(featureGroupRef.current.getBounds().pad(0.1));
+      } else if (coordsToDisplay.length === 1) {
+        map.setView([coordsToDisplay[0].lat, coordsToDisplay[0].lon], ROUTE_ZOOM);
       }
 
     } else {
-      if (dataIdentityRef.current !== currentIdentity) {
-        map.setView(PHOENIX_COORDS, DEFAULT_ZOOM);
-        dataIdentityRef.current = currentIdentity;
-      }
+      map.setView(PHOENIX_COORDS, DEFAULT_ZOOM);
     }
 
     const timer = setTimeout(() => {

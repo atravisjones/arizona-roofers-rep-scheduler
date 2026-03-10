@@ -372,7 +372,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
         if (!normalized) return null;
         const jobId = appState.roofrJobIdMap.get(normalized);
         if (!jobId) return null;
-        return `https://app.roofr.com/dashboard/team/239329/jobs/details/${jobId}`;
+        return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
     };
 
     return (

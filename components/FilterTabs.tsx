@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Job } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { MapPinIcon, XIcon, TagIcon, StarIcon, ClockIcon } from './icons';
@@ -238,9 +238,14 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
         };
     }, [unassignedJobs, cityFilters, timeFilters, tagFilters]);
 
-    // Effect to notify parent of filtered jobs
+    // Effect to notify parent of filtered jobs (with ID-hash guard to prevent infinite loops)
+    const prevFilteredIdsRef = useRef<string>('');
     useEffect(() => {
-        onFilterChange(filteredJobs);
+        const idsHash = filteredJobs.map(j => j.id).sort().join(',');
+        if (idsHash !== prevFilteredIdsRef.current) {
+            prevFilteredIdsRef.current = idsHash;
+            onFilterChange(filteredJobs);
+        }
     }, [filteredJobs, onFilterChange]);
 
     const handleClearFilters = () => {

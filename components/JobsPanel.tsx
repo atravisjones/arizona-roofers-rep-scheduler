@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import UnassignedJobs from './UnassignedJobs';
 import PasteJobsModal from './PasteJobsModal';
@@ -54,10 +54,15 @@ const JobsPanel: React.FC = () => {
         });
     }, [jobsFilteredByTabs, jobSearchTerm]);
 
-    // Push filtered unassigned jobs to context for synchronized map filtering
+    // Push filtered unassigned jobs to context for synchronized map filtering (with ID-hash guard)
+    const prevContextIdsRef = useRef<string>('');
     useEffect(() => {
         if (activeViewTab === 'unassigned') {
-            setFilteredUnassignedJobs(filteredJobs);
+            const idsHash = filteredJobs.map(j => j.id).sort().join(',');
+            if (idsHash !== prevContextIdsRef.current) {
+                prevContextIdsRef.current = idsHash;
+                setFilteredUnassignedJobs(filteredJobs);
+            }
         }
     }, [filteredJobs, setFilteredUnassignedJobs, activeViewTab]);
 
