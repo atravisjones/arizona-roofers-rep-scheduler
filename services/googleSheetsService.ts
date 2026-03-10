@@ -63,6 +63,9 @@ export const normalizeAddressForMatching = (address: string): string | null => {
         .replace(/\b(cir\.?|circle)\b/g, 'circle')
         .replace(/\b(wy\.?|way)\b/g, 'way');
 
+    // Transliterate accented characters to ASCII (e.g., Vía → Via, é → e)
+    streetPart = streetPart.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
     // Remove all non-alphanumeric characters (except spaces) and collapse whitespace.
     streetPart = streetPart.replace(/[^a-z0-9\s]/g, '');
     streetPart = streetPart.replace(/\s+/g, ' ').trim();

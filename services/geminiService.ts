@@ -239,6 +239,8 @@ export async function parseJobsFromText(
     for (const line of lines) {
         let trimmedLine = line.trim();
         if (!trimmedLine) continue;
+        // Normalize en-dash (–) and em-dash (—) to regular hyphen for consistent parsing
+        trimmedLine = trimmedLine.replace(/[\u2013\u2014]/g, '-');
         if (dateRegex.test(trimmedLine) && trimmedLine.split(' ').length < 6) continue;
 
         // Remove timestamp suffix (multiple formats):

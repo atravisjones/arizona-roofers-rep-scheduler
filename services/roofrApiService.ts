@@ -112,6 +112,14 @@ function buildIndex(jobs: RoofrJob[]): RoofrIndex {
       if (!addressToJobId.has(normAddr)) {
         addressToJobId.set(normAddr, job.jobId);
       }
+      // Also index by spaceless version to handle typos like "Link Heart" vs "Linkhart"
+      const spaceless = normAddr.replace(/\s/g, '');
+      if (!byAddress.has(spaceless)) {
+        byAddress.set(spaceless, job);
+      }
+      if (!addressToJobId.has(spaceless)) {
+        addressToJobId.set(spaceless, job.jobId);
+      }
     }
 
     // Index by normalized customer name (fallback when address doesn't match)
@@ -239,12 +247,16 @@ export function resolveRoofrJobId(
   customerName: string | undefined,
 ): string | null {
   if (!idMap || idMap.size === 0) return null;
-  // Try address match
+  // Try address match (exact normalized, then spaceless for typos)
   if (address) {
     const normAddr = normalizeAddressForMatching(address);
     if (normAddr) {
       const id = idMap.get(normAddr);
       if (id) return id;
+      // Try spaceless version (handles "Link Heart" vs "Linkhart")
+      const spaceless = normAddr.replace(/\s/g, '');
+      const id2 = idMap.get(spaceless);
+      if (id2) return id2;
     }
   }
   // Fallback: customer name
