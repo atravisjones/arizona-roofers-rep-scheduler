@@ -210,6 +210,10 @@ export const useAppLogic = () => {
     const [isCloudLoading, setIsCloudLoading] = useState(false);
     // Ref to ensure cloud load only happens once on initial mount
     const hasAutoLoadedRef = useRef(false);
+    // Ref to prevent overlapping auto-loads
+    const isAutoLoadingRef = useRef(false);
+    // Track which days have been sheet-loaded (to avoid redundant loads on tab switch)
+    const sheetLoadedDaysRef = useRef<Set<string>>(new Set());
     // Ref to trigger map refresh after load state fully propagates
     const pendingMapRefreshAfterLoad = useRef(false);
 
@@ -1967,15 +1971,14 @@ export const useAppLogic = () => {
         }
     }, [log, appState.reps, selectedDate, dailyStates, activeDayKeys, addActiveDay, updateGeoCache, _setSelectedDate, fetchSheetData, setActiveSheetName, setUsingMockData]);
 
-    const handleLoadFromSheet = useCallback(async () => {
-        log('ACTION: Load from Sheet clicked.');
-        setIsLoadingFromSheet(true);
+    const loadSheetForDate = useCallback(async (targetDate: Date, silent: boolean = false) => {
+        const dateKey = formatDateToKey(targetDate);
+        log(`Loading sheet for ${dateKey}${silent ? ' (auto)' : ''}...`);
         try {
-            const dateKey = formatDateToKey(selectedDate);
             const appointments = await fetchAppointmentsFromSheet(dateKey);
 
             if (appointments.length === 0) {
-                showToast(`No sales appointments found for ${dateKey}`, 'warning');
+                if (!silent) showToast(`No sales appointments found for ${dateKey}`, 'warning');
                 return;
             }
 
@@ -2025,7 +2028,7 @@ export const useAppLogic = () => {
             let baseState = dailyStates.get(dateKey);
             if (!baseState) {
                 log(`Loading reps for ${dateKey}...`);
-                const { reps: repData, sheetName } = await fetchSheetData(selectedDate);
+                const { reps: repData, sheetName } = await fetchSheetData(targetDate);
                 setActiveSheetName(sheetName);
                 if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
                 const repsWithSchedule = repData.map(rep => ({
@@ -2310,7 +2313,7 @@ export const useAppLogic = () => {
 
             // Add day tab if not already active
             if (!activeDayKeys.includes(dateKey)) {
-                addActiveDay(selectedDate);
+                addActiveDay(targetDate);
             }
 
             // Trigger geocoding for all loaded addresses
@@ -2319,16 +2322,56 @@ export const useAppLogic = () => {
 
             setAutoMapAction('show-all');
 
-            showToast(`Loaded ${appointments.length} appointments (${assignedCount} assigned, ${unassignedCount} unassigned)`, 'success');
-            log(`COMPLETE: Loaded ${appointments.length} appointments from sheet. ${assignedCount} assigned, ${unassignedCount} unassigned.`);
+            if (!silent) showToast(`Loaded ${appointments.length} appointments (${assignedCount} assigned, ${unassignedCount} unassigned)`, 'success');
+            log(`COMPLETE: Loaded ${appointments.length} appointments from sheet for ${dateKey}. ${assignedCount} assigned, ${unassignedCount} unassigned.`);
+
+            // Mark this day as sheet-loaded
+            sheetLoadedDaysRef.current.add(dateKey);
 
         } catch (error) {
-            console.error('Failed to load appointments from sheet:', error);
-            showToast('Failed to load appointments from sheet', 'error');
+            console.error(`Failed to load appointments from sheet for ${dateKey}:`, error);
+            if (!silent) showToast('Failed to load appointments from sheet', 'error');
         } finally {
-            setIsLoadingFromSheet(false);
+            if (!silent) setIsLoadingFromSheet(false);
         }
-    }, [log, selectedDate, dailyStates, activeDayKeys, addActiveDay, updateGeoCache, showToast, fetchSheetData, setActiveSheetName, setUsingMockData, roofrJobIdMap, setRoofrJobIdMap, setChangeLog]);
+    }, [log, dailyStates, activeDayKeys, addActiveDay, updateGeoCache, showToast, fetchSheetData, setActiveSheetName, setUsingMockData, roofrJobIdMap, setRoofrJobIdMap, setChangeLog]);
+
+    const handleLoadFromSheet = useCallback(async () => {
+        log('ACTION: Load from Sheet clicked.');
+        setIsLoadingFromSheet(true);
+        await loadSheetForDate(selectedDate);
+    }, [log, selectedDate, loadSheetForDate]);
+
+    // Auto-load sheet data when switching day tabs (if not already loaded)
+    useEffect(() => {
+        const dateKey = formatDateToKey(selectedDate);
+        if (!sheetLoadedDaysRef.current.has(dateKey) && !isAutoLoadingRef.current) {
+            loadSheetForDate(selectedDate, true);
+        }
+    }, [selectedDate, loadSheetForDate]);
+
+    const autoLoadAllDays = useCallback(async () => {
+        if (isAutoLoadingRef.current) return;
+        isAutoLoadingRef.current = true;
+        let loadedCount = 0;
+        try {
+            for (const dateKey of activeDayKeys) {
+                try {
+                    const [year, month, day] = dateKey.split('-').map(Number);
+                    const date = new Date(year, month - 1, day, 12, 0, 0);
+                    await loadSheetForDate(date, true);
+                    loadedCount++;
+                } catch (err) {
+                    console.error(`Auto-load failed for ${dateKey}:`, err);
+                }
+            }
+            if (loadedCount > 0) {
+                showToast(`Loaded ${loadedCount} day${loadedCount > 1 ? 's' : ''} from calendar`, 'success');
+            }
+        } finally {
+            isAutoLoadingRef.current = false;
+        }
+    }, [activeDayKeys, loadSheetForDate, showToast]);
 
     const handleClearAllSchedules = useCallback(() => {
         const dateKey = formatDateToKey(selectedDate);
@@ -3894,16 +3937,26 @@ export const useAppLogic = () => {
         }
     }, [dailyStates, activeDayKeys, log, showToast, closeLoadOptionsModal]);
 
-    // Show load options modal on initial mount
+    // Auto-load all days from calendar sheet on initial mount
     useEffect(() => {
-        if (!hasAutoLoadedRef.current) {
+        if (!hasAutoLoadedRef.current && activeDayKeys.length > 0) {
             hasAutoLoadedRef.current = true;
-            // Use setTimeout to ensure the UI has rendered before showing the modal
+            // Delay to ensure activeDayKeys and UI are ready
             setTimeout(() => {
-                showLoadOptionsModal();
-            }, 500);
+                autoLoadAllDays();
+            }, 1000);
         }
-    }, [showLoadOptionsModal]);
+    }, [activeDayKeys, autoLoadAllDays]);
+
+    // Refresh all days from calendar sheet every 5 minutes
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!isAutoLoadingRef.current) {
+                autoLoadAllDays();
+            }
+        }, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [autoLoadAllDays]);
 
     // Wrapped Handlers
     const _handleSaveStateToFile = handleSaveStateToFile;
