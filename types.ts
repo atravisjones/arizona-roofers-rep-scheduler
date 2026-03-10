@@ -1,5 +1,6 @@
 import React from 'react';
 import { Coordinates } from './services/osmService';
+import type { RoofrJob } from './services/roofrApiService';
 
 export interface ParsedJobsResult {
   date: string | null;
@@ -346,6 +347,9 @@ export interface AppContextType {
   // Roofr Job ID map
   roofrJobIdMap: Map<string, string>;
 
+  // Roofr enrichment data (normalizedAddress → full RoofrJob)
+  roofrEnrichmentMap: Map<string, RoofrJob>;
+
   // Announcement message
   announcement: string;
 
@@ -393,4 +397,8 @@ export interface AppContextType {
   routingApiError: string | null;
   routingApiSyncStatus: 'idle' | 'syncing' | 'synced' | 'error';
   loadJobsFromRoutingApi: () => Promise<void>;
+
+  // Load from Sheet
+  handleLoadFromSheet: () => Promise<void>;
+  isLoadingFromSheet: boolean;
 }

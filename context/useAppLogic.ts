@@ -4,9 +4,10 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, MAX_REP_ROW } from '../constants';
-import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage } from '../services/googleSheetsService';
+import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
+import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
-import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES } from '../services/geography';
+import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES, ALL_KNOWN_CITIES } from '../services/geography';
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
 import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStatesFromCloud } from '../services/cloudStorageServiceSheets';
@@ -104,9 +105,9 @@ export const DEFAULT_SETTINGS: Settings = {
     allowDoubleBooking: false,
     maxJobsPerSlot: 2,
     allowAssignOutsideAvailability: false,
-    maxJobsPerRep: 4,
-    minJobsPerRep: 3,
-    maxCitiesPerRep: 3,
+    maxJobsPerRep: 2,
+    minJobsPerRep: 1,
+    maxCitiesPerRep: 2,
     weightSameCity: 8,
     weightAdjacentCity: 6,
     weightSkillMatch: 5,
@@ -190,6 +191,7 @@ export const useAppLogic = () => {
 
     const [geoCache, setGeoCache] = useState<Map<string, Coordinates>>(new Map());
     const [roofrJobIdMap, setRoofrJobIdMap] = useState<Map<string, string>>(new Map());
+    const [roofrEnrichmentMap, setRoofrEnrichmentMap] = useState<Map<string, RoofrJob>>(new Map());
     const [announcement, setAnnouncement] = useState<string>('');
     const [changeLog, setChangeLog] = useState<JobChange[]>([]);
 
@@ -218,6 +220,9 @@ export const useAppLogic = () => {
     const fallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [isAutoSaving, setIsAutoSaving] = useState(false);
     const [lastAutoSaveTime, setLastAutoSaveTime] = useState<Date | null>(null);
+
+    // Load from Sheet state
+    const [isLoadingFromSheet, setIsLoadingFromSheet] = useState(false);
 
     // Routing API integration state
     const [useRoutingApi, setUseRoutingApi] = useState<boolean>(false);
@@ -386,10 +391,23 @@ export const useAppLogic = () => {
 
     useEffect(() => {
         const loadAuxiliaryData = async () => {
-            log('Fetching Roofr job IDs...');
-            const idMap = await fetchRoofrJobIds();
-            setRoofrJobIdMap(idMap);
-            log(`- COMPLETE: Loaded ${idMap.size} Roofr job IDs.`);
+            // Try new Roofr Search API first, fall back to Google Sheets
+            log('Fetching Roofr data via API...');
+            try {
+                const [idMap, enrichMap] = await Promise.all([
+                    fetchRoofrJobIdMap(),
+                    fetchRoofrEnrichmentMap(),
+                ]);
+                setRoofrJobIdMap(idMap);
+                setRoofrEnrichmentMap(enrichMap);
+                log(`- COMPLETE: Loaded ${idMap.size} Roofr jobs via API (${enrichMap.size} enriched).`);
+            } catch (apiError) {
+                log('- API failed, falling back to Google Sheets...');
+                console.warn('Roofr API failed, using Sheet fallback:', apiError);
+                const idMap = await fetchRoofrJobIds();
+                setRoofrJobIdMap(idMap);
+                log(`- FALLBACK: Loaded ${idMap.size} Roofr job IDs from Sheets.`);
+            }
 
             log('Fetching announcement message...');
             const message = await fetchAnnouncementMessage();
@@ -1685,6 +1703,8 @@ export const useAppLogic = () => {
 
         setIsRouting(true);
         setSelectedRepId(null);
+        // Set placeholder route immediately so LeafletMap doesn't start its own geocoding
+        setActiveRoute({ repName: 'Job Map', mappableJobs: [], unmappableJobs: [], routeInfo: { distance: 0, duration: 0, geometry: null, coordinates: [] } });
         try {
             const addresses = allJobs.map(j => j.address);
             const coordsResults = await geocodeAddresses(addresses);
@@ -1704,7 +1724,7 @@ export const useAppLogic = () => {
             };
 
             setActiveRoute({ repName: 'Job Map', mappableJobs, unmappableJobs, routeInfo });
-        } catch (error) { console.error("Failed to show all jobs on map:", error); } finally {
+        } catch (error) { console.error("handleShowAllJobsOnMap failed:", error); } finally {
             if (mapRequestRef.current === requestId) setIsRouting(false);
         }
     }, [allJobs, log]);
@@ -1730,6 +1750,23 @@ export const useAppLogic = () => {
             handleRefreshRouteRef.current?.();
         }
     }, [mapRefreshTrigger]);
+
+    // Auto-refresh map whenever job assignments change (live map updates)
+    const allJobsIdentity = useMemo(() => {
+        return allJobs.map(j => `${j.id}:${j.assignedRepName || ''}`).sort().join(',');
+    }, [allJobs]);
+
+    const prevJobsIdentityRef = useRef(allJobsIdentity);
+    useEffect(() => {
+        if (prevJobsIdentityRef.current !== allJobsIdentity && activeRoute) {
+            prevJobsIdentityRef.current = allJobsIdentity;
+            const timer = setTimeout(() => {
+                handleRefreshRouteRef.current?.();
+            }, 300);
+            return () => clearTimeout(timer);
+        }
+        prevJobsIdentityRef.current = allJobsIdentity;
+    }, [allJobsIdentity, activeRoute]);
 
     const handleParseJobs = useCallback(async (pastedText: string, onComplete: () => void) => {
         log('ACTION: Process Pasted Jobs clicked.');
@@ -1835,10 +1872,37 @@ export const useAppLogic = () => {
                 const jobsToLeaveUnassigned = jobsToAdd.filter(j => !assignedJobIds.has(j.id));
                 newDayState.unassignedJobs.push(...jobsToLeaveUnassigned);
 
-                // Process assignments (for new jobs only, existing jobs stay where they are)
+                // Process assignments (for both new and existing jobs with rep names)
                 for (const assignment of assignmentsToProcess) {
-                    const jobToMove = jobsToAdd.find(j => j.id === assignment.jobId);
-                    if (!jobToMove) continue; // Skip if it's an existing job
+                    // Find the job - either in new jobs or existing state
+                    let jobToMove = jobsToAdd.find(j => j.id === assignment.jobId);
+                    let isExisting = false;
+
+                    if (!jobToMove) {
+                        // Existing job - find it and move it to the assigned rep
+                        isExisting = true;
+                        // Find in unassigned
+                        jobToMove = newDayState.unassignedJobs.find(j => j.id === assignment.jobId);
+                        if (!jobToMove) {
+                            // Find in any rep's schedule
+                            for (const rep of newDayState.reps) {
+                                for (const slot of rep.schedule) {
+                                    const found = slot.jobs.find(j => (j as Job).id === assignment.jobId);
+                                    if (found) { jobToMove = found as Job; break; }
+                                }
+                                if (jobToMove) break;
+                            }
+                        }
+                        if (!jobToMove) continue;
+
+                        // Remove from current location before re-assigning
+                        newDayState.unassignedJobs = newDayState.unassignedJobs.filter(j => j.id !== assignment.jobId);
+                        for (const rep of newDayState.reps) {
+                            for (const slot of rep.schedule) {
+                                slot.jobs = slot.jobs.filter(j => (j as Job).id !== assignment.jobId);
+                            }
+                        }
+                    }
 
                     const rep = newDayState.reps.find(r => r.id === assignment.repId);
                     if (!rep) { newDayState.unassignedJobs.push(jobToMove); continue; };
@@ -1899,6 +1963,364 @@ export const useAppLogic = () => {
             setIsParsing(false);
         }
     }, [log, appState.reps, selectedDate, dailyStates, activeDayKeys, addActiveDay, updateGeoCache, _setSelectedDate, fetchSheetData, setActiveSheetName, setUsingMockData]);
+
+    const handleLoadFromSheet = useCallback(async () => {
+        log('ACTION: Load from Sheet clicked.');
+        setIsLoadingFromSheet(true);
+        try {
+            const dateKey = formatDateToKey(selectedDate);
+            const appointments = await fetchAppointmentsFromSheet(dateKey);
+
+            if (appointments.length === 0) {
+                showToast(`No sales appointments found for ${dateKey}`, 'warning');
+                return;
+            }
+
+            log(`Loaded ${appointments.length} sales appointments from sheet for ${dateKey}`);
+
+            // Helper to format time from "YYYY-MM-DD HH:MM:SS" to "10:00am"
+            const formatTime = (dateTimeStr: string): string => {
+                const timePart = dateTimeStr.split(' ')[1]; // "HH:MM:SS"
+                if (!timePart) return '';
+                const [hourStr, minuteStr] = timePart.split(':');
+                let hour = parseInt(hourStr, 10);
+                const minute = minuteStr || '00';
+                const period = hour >= 12 ? 'pm' : 'am';
+                if (hour > 12) hour -= 12;
+                if (hour === 0) hour = 12;
+                return minute === '00' ? `${hour}${period}` : `${hour}:${minute}${period}`;
+            };
+
+            // Helper to extract hour from "YYYY-MM-DD HH:MM:SS"
+            const extractHour = (dateTimeStr: string): number | null => {
+                const timePart = dateTimeStr.split(' ')[1];
+                if (!timePart) return null;
+                return parseInt(timePart.split(':')[0], 10);
+            };
+
+            // Helper to extract city from address by checking known cities
+            const knownCitiesList = Array.from(ALL_KNOWN_CITIES).sort((a, b) => b.length - a.length);
+            const extractCity = (address: string): string => {
+                const addrUpper = address.toUpperCase();
+                for (const city of knownCitiesList) {
+                    if (addrUpper.includes(city)) {
+                        return city.charAt(0) + city.slice(1).toLowerCase();
+                    }
+                }
+                // Try parsing from comma-separated parts
+                const parts = address.split(',');
+                if (parts.length > 1) {
+                    const potentialCity = parts[parts.length - 2]?.trim();
+                    if (potentialCity && !/^[A-Z]{2}(\s\d{5})?$/i.test(potentialCity)) {
+                        return potentialCity;
+                    }
+                }
+                return 'UNKNOWN';
+            };
+
+            // Get or create day state
+            let baseState = dailyStates.get(dateKey);
+            if (!baseState) {
+                log(`Loading reps for ${dateKey}...`);
+                const { reps: repData, sheetName } = await fetchSheetData(selectedDate);
+                setActiveSheetName(sheetName);
+                if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
+                const repsWithSchedule = repData.map(rep => ({
+                    ...rep,
+                    schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
+                    isLocked: false,
+                    isOptimized: false,
+                }));
+                baseState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
+            }
+
+            const newDayState = JSON.parse(JSON.stringify(baseState)) as AppState;
+
+            // Build a lookup of rep names (lowercase) to rep objects for attendee matching
+            const repNameMap = new Map<string, Rep>();
+            for (const rep of newDayState.reps) {
+                // Store by full name and by first name for flexible matching
+                repNameMap.set(rep.name.toLowerCase(), rep);
+                const firstName = rep.name.split(' ')[0]?.toLowerCase();
+                if (firstName && !repNameMap.has(firstName)) {
+                    repNameMap.set(firstName, rep);
+                }
+                // Also by "First Last" without middle names etc
+                const nameParts = rep.name.split(' ');
+                if (nameParts.length > 1) {
+                    const firstLast = `${nameParts[0]} ${nameParts[nameParts.length - 1]}`.toLowerCase();
+                    if (!repNameMap.has(firstLast)) {
+                        repNameMap.set(firstLast, rep);
+                    }
+                }
+            }
+
+            let assignedCount = 0;
+            let unassignedCount = 0;
+            const seenJobIds = new Set<string>();
+            const newRoofrIdMap = new Map(roofrJobIdMap);
+            let rMapChanged = false;
+
+            for (const apt of appointments) {
+                // Parse the title field which contains rich details
+                const title = apt.title || '';
+                const titleBeforeDash = title.includes(' - ') ? title.split(' - ')[0] : title;
+                const titleAfterDash = title.includes(' - ') ? title.split(' - ').slice(1).join(' - ') : '';
+
+                // Use address from Calendar Events, or extract from title, or Master Sheet
+                const address = apt.address || titleAfterDash || apt.masterAddress || '';
+                const city = extractCity(address || titleBeforeDash);
+
+                // Update Roofr Job ID map if we have a jobId
+                const normalizedAddr = normalizeAddressForMatching(apt.address || apt.masterAddress || '');
+                if (apt.jobId && normalizedAddr) {
+                    if (newRoofrIdMap.get(normalizedAddr) !== apt.jobId) {
+                        newRoofrIdMap.set(normalizedAddr, apt.jobId);
+                        rMapChanged = true;
+                    }
+                }
+
+                // Extract details from title + tags (Master Sheet col S has rich tag data)
+                // allTagText: search roof type, age, insurance keywords across all text sources
+                const allTagText = [titleBeforeDash, titleAfterDash, apt.tags || '']
+                    .filter(Boolean)
+                    .join(' ');
+                // safeTagText: excludes titleAfterDash (address) to avoid sqft/stories false positives
+                const safeTagText = [apt.tags || '', titleBeforeDash]
+                    .filter(Boolean)
+                    .join(' ');
+
+                const titleRoofAge = allTagText.match(/\b(\d+)\s*yrs?\b/i);
+                const titleSqft = safeTagText.match(/\b(\d{3,6})\s*(?:sq\.?\s*(?:ft)?|sf)\b/i);
+                const titleStories = safeTagText.match(/\b([1-4])\s*(?:s|stor(?:y|ies))\b/i);
+                const hasShingle = /\bshingle\b/i.test(allTagText);
+                const hasTile = /\btile\b/i.test(allTagText);
+                const hasFlat = /\bflat\b/i.test(allTagText);
+                const hasMetal = /\bmetal\b/i.test(allTagText);
+                const hasInsurance = /\binsurance\b/i.test(allTagText);
+                const hasCommercial = /\bcommercial\b/i.test(allTagText);
+
+                // Preserve # priority markers — skip titleAfterDash (address can have "Unit #5")
+                const priorityMatch =
+                    titleBeforeDash.match(/#+\s*(?:\([^)]*\))?/) ||
+                    (apt.tags || '').match(/#+\s*(?:\([^)]*\))?/);
+                const priorityPrefix = priorityMatch ? priorityMatch[0].trim() : '';
+
+                // Build notes from parsed fields (no raw apt.tags — parsed fields prevent duplication)
+                const notesParts: string[] = [];
+                if (priorityPrefix) notesParts.push(priorityPrefix);
+                if (hasTile) notesParts.push('Tile');
+                if (hasShingle) notesParts.push('Shingle');
+                if (hasFlat) notesParts.push('Flat');
+                if (hasMetal) notesParts.push('Metal');
+                if (hasInsurance || apt.workflow === 'Insurance') notesParts.push('Insurance');
+                if (hasCommercial) notesParts.push('Commercial');
+                const sqft = titleSqft ? titleSqft[1].replace(/,/g, '') : '';
+                const stories = titleStories ? titleStories[1] : '';
+                const roofAge = titleRoofAge ? titleRoofAge[1] : '';
+                if (sqft) notesParts.push(`${sqft}sq`);
+                if (stories) notesParts.push(`${stories}S`);
+                if (roofAge) notesParts.push(`${roofAge}yrs`);
+                const notes = notesParts.join(' ');
+
+                // Format timeframe
+                const startFormatted = formatTime(apt.start);
+                const endFormatted = formatTime(apt.end);
+                const originalTimeframe = startFormatted && endFormatted
+                    ? `${startFormatted} - ${endFormatted}`
+                    : startFormatted || undefined;
+
+                // Extract zip code from address
+                const zipMatch = address.match(/\b(\d{5})\b/);
+                const zipCode = zipMatch ? zipMatch[1] : undefined;
+
+                // Parse roof age for job value
+                const roofAgeNum = roofAge ? parseInt(roofAge, 10) : undefined;
+                const repairKeywords = /\b(repair|leak|patch|inspect)\b/i;
+                const isRepairJob = repairKeywords.test(notes);
+                const highValueKeywords = /\b(reroof|new\s*roof|replacement)\b/i;
+                const isHighValueJob = highValueKeywords.test(notes);
+                let jobValue = 50;
+                if (roofAgeNum !== undefined && !isNaN(roofAgeNum)) {
+                    if (roofAgeNum >= 20) jobValue += 30;
+                    else if (roofAgeNum >= 15) jobValue += 20;
+                    else if (roofAgeNum >= 10) jobValue += 10;
+                    else if (roofAgeNum < 5) jobValue -= 10;
+                }
+                if (isHighValueJob) jobValue += 20;
+                if (isRepairJob) jobValue -= 20;
+                jobValue = Math.max(0, Math.min(100, jobValue));
+
+                const tempJob: Job = {
+                    id: 'temp',
+                    customerName: apt.customerName || city,
+                    address,
+                    originalAddress: address,
+                    notes,
+                    city,
+                    originalTimeframe,
+                    zipCode,
+                    roofAge: roofAgeNum && !isNaN(roofAgeNum) ? roofAgeNum : undefined,
+                    jobValue,
+                    isRepairJob,
+                };
+
+                // Check if this job already exists in the state
+                const existingMatch = findMatchingJob(tempJob, newDayState);
+                let job: Job;
+
+                if (existingMatch) {
+                    job = existingMatch.job;
+                    // Update the existing job with new data from sheet
+                    Object.assign(job, {
+                        customerName: tempJob.customerName,
+                        address: tempJob.address,
+                        notes: tempJob.notes,
+                        city: tempJob.city,
+                        originalTimeframe: tempJob.originalTimeframe,
+                        zipCode: tempJob.zipCode,
+                        roofAge: tempJob.roofAge,
+                        jobValue: tempJob.jobValue,
+                        isRepairJob: tempJob.isRepairJob
+                    });
+
+                    // Remove from current position so it can be re-assigned according to sheet
+                    newDayState.unassignedJobs = newDayState.unassignedJobs.filter(j => j.id !== job.id);
+                    for (const rep of newDayState.reps) {
+                        for (const slot of rep.schedule) {
+                            slot.jobs = slot.jobs.filter(j => (j as Job).id !== job.id);
+                        }
+                    }
+                } else {
+                    // New job - generate a fresh ID
+                    job = {
+                        ...tempJob,
+                        id: `job-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                    };
+                }
+
+                seenJobIds.add(job.id);
+
+                // Map start hour to time slot
+                const startHour = extractHour(apt.start);
+                let slotId: string | null = null;
+                if (startHour !== null) {
+                    if (startHour >= 7 && startHour < 10) slotId = 'ts-1';
+                    else if (startHour >= 10 && startHour < 13) slotId = 'ts-2';
+                    else if (startHour >= 13 && startHour < 16) slotId = 'ts-3';
+                    else if (startHour >= 16 && startHour < 19) slotId = 'ts-4';
+                }
+
+                // Match attendees, jobOwner, or rep name in the title to reps
+                let assignedRep: Rep | null = null;
+                const namesToTry = apt.attendees
+                    ? apt.attendees.split(',').map(n => n.trim().toLowerCase())
+                    : [];
+                if (apt.jobOwner) namesToTry.push(apt.jobOwner.trim().toLowerCase());
+
+                for (const attendeeName of namesToTry) {
+                    if (!attendeeName) continue;
+                    const match = repNameMap.get(attendeeName) ||
+                        repNameMap.get(attendeeName.split(' ').slice(0, 2).join(' '));
+                    if (match) {
+                        assignedRep = match;
+                        break;
+                    }
+                    const firstName = attendeeName.split(' ')[0];
+                    if (firstName) {
+                        const firstNameMatch = repNameMap.get(firstName);
+                        if (firstNameMatch) {
+                            assignedRep = firstNameMatch;
+                            break;
+                        }
+                    }
+                }
+
+                // If no rep found from attendees/owner, scan the title for rep names
+                if (!assignedRep && title) {
+                    const titleLower = title.toLowerCase();
+                    for (const rep of newDayState.reps) {
+                        const cleanedName = rep.name.toLowerCase()
+                            .replace(/"/g, '')
+                            .replace(/\s+\(.*\)$/, '')
+                            .replace(/\s+(phoenix|tucson)$/i, '')
+                            .trim();
+                        if (cleanedName && cleanedName.includes(' ')) {
+                            const escapedName = cleanedName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                            if (new RegExp(`\\b${escapedName}\\b`, 'i').test(titleLower)) {
+                                assignedRep = rep;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Assign the job
+                if (assignedRep && slotId) {
+                    const rep = newDayState.reps.find(r => r.id === assignedRep!.id);
+                    const slot = rep?.schedule.find(s => s.id === slotId);
+                    if (rep && slot) {
+                        job.originalRepId = rep.id;
+                        job.originalRepName = rep.name;
+                        job.notes = `${job.notes} (Rep: ${rep.name})`.trim();
+                        slot.jobs.push(job as DisplayJob);
+                        assignedCount++;
+                        continue;
+                    }
+                }
+
+                newDayState.unassignedJobs.push(job);
+                unassignedCount++;
+            }
+
+            // Remove stale jobs (those not found in the current sheet import)
+            newDayState.unassignedJobs = newDayState.unassignedJobs.filter(j => seenJobIds.has(j.id));
+            for (const rep of newDayState.reps) {
+                for (const slot of rep.schedule) {
+                    slot.jobs = slot.jobs.filter(j => seenJobIds.has((j as Job).id));
+                }
+            }
+
+            // Update Roofr Job ID map if any changes were found
+            if (rMapChanged) {
+                setRoofrJobIdMap(newRoofrIdMap);
+            }
+
+            // Detect changes between old and new state
+            const oldState = dailyStates.get(dateKey) || null;
+            const changes = detectJobChanges(dateKey, oldState, newDayState, new Date().toISOString());
+            if (changes.length > 0) {
+                setChangeLog(prev => [...prev, ...changes]);
+                log(`Detected ${changes.length} changes from sheet load for ${dateKey}`);
+            }
+
+            // Save the state
+            const newDailyStates = new Map(dailyStates);
+            newDailyStates.set(dateKey, newDayState);
+            setHistory([newDailyStates]);
+            setHistoryIndex(0);
+
+            // Add day tab if not already active
+            if (!activeDayKeys.includes(dateKey)) {
+                addActiveDay(selectedDate);
+            }
+
+            // Trigger geocoding for all loaded addresses
+            const addresses = appointments.map(a => a.address || a.masterAddress).filter(Boolean);
+            if (addresses.length > 0) updateGeoCache(addresses);
+
+            setAutoMapAction('show-all');
+
+            showToast(`Loaded ${appointments.length} appointments (${assignedCount} assigned, ${unassignedCount} unassigned)`, 'success');
+            log(`COMPLETE: Loaded ${appointments.length} appointments from sheet. ${assignedCount} assigned, ${unassignedCount} unassigned.`);
+
+        } catch (error) {
+            console.error('Failed to load appointments from sheet:', error);
+            showToast('Failed to load appointments from sheet', 'error');
+        } finally {
+            setIsLoadingFromSheet(false);
+        }
+    }, [log, selectedDate, dailyStates, activeDayKeys, addActiveDay, updateGeoCache, showToast, fetchSheetData, setActiveSheetName, setUsingMockData, roofrJobIdMap, setRoofrJobIdMap, setChangeLog]);
 
     const handleClearAllSchedules = useCallback(() => {
         const dateKey = formatDateToKey(selectedDate);
@@ -2976,12 +3398,8 @@ export const useAppLogic = () => {
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
-            // Hide reps that are fully unavailable for the selected day (unless they have jobs assigned)
-            const unavailableSlots = getEffectiveUnavailableSlots(rep, selectedDayString);
-            const isFullyUnavailable = unavailableSlots.length === TIME_SLOTS.length;
-            const hasJobsAssigned = rep.schedule.some(slot => slot.jobs.length > 0);
-            if (isFullyUnavailable && !hasJobsAssigned && !rep.isOptimized) return false;
-
+            // Show all reps including unavailable ones (they'll be visually desaturated)
+            // This allows auto-assigned jobs with rep names to still appear on their column
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
             if (!rep.name.toLowerCase().includes(repSearchTerm.toLowerCase())) return false;
             if (lockFilter === 'locked' && !rep.isLocked) return false;
@@ -3009,6 +3427,7 @@ export const useAppLogic = () => {
 
     useEffect(() => {
         if (!hasInitializedMap && allJobs.length > 0) {
+            pendingMapRefreshAfterLoad.current = false; // Clear pending — initial map handles it
             handleShowAllJobsOnMap();
             setHasInitializedMap(true);
         }
@@ -3027,11 +3446,11 @@ export const useAppLogic = () => {
 
     // Trigger map refresh after load/assign once allJobs has actually updated
     useEffect(() => {
-        if (pendingMapRefreshAfterLoad.current && allJobs.length > 0) {
+        if (pendingMapRefreshAfterLoad.current && allJobs.length > 0 && hasInitializedMap) {
             pendingMapRefreshAfterLoad.current = false;
             handleShowAllJobsOnMap();
         }
-    }, [allJobs, handleShowAllJobsOnMap]);
+    }, [allJobs, handleShowAllJobsOnMap, hasInitializedMap]);
 
     const handleSaveStateToCloud = useCallback(async (dateKey?: string) => {
         log('ACTION: Manual save to cloud (versioned backup).');
@@ -3573,6 +3992,7 @@ export const useAppLogic = () => {
         hoveredRepId, setHoveredRepId,
         repSettingsModalRepId, setRepSettingsModalRepId,
         roofrJobIdMap,
+        roofrEnrichmentMap,
         announcement,
         setFilteredAssignedJobs,
         setFilteredUnassignedJobs,
@@ -3614,5 +4034,9 @@ export const useAppLogic = () => {
         routingApiError,
         routingApiSyncStatus,
         loadJobsFromRoutingApi,
+
+        // Load from Sheet
+        handleLoadFromSheet,
+        isLoadingFromSheet,
     };
 };

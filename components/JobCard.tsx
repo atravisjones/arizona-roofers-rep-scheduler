@@ -3,6 +3,7 @@ import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
+import { normalizeAddressForMatching } from '../services/googleSheetsService';
 import { JobEditModal } from './JobEditModal';
 
 const TAG_CLASSES: Record<string, string> = {
@@ -37,7 +38,7 @@ interface JobCardProps {
 export const JobCard: React.FC<JobCardProps> = ({
     job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false, currentRepId, currentSlotId
 }) => {
-    const { setHoveredJobId } = useAppContext();
+    const { setHoveredJobId, roofrJobIdMap, roofrEnrichmentMap } = useAppContext();
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
@@ -264,29 +265,52 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         e.stopPropagation();
         e.preventDefault();
 
+        // Try direct job ID link first
+        const normalized = normalizeAddressForMatching(job.address);
+        const jobId = normalized ? roofrJobIdMap?.get(normalized) : null;
+
+        if (jobId) {
+            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${jobId}`, '_blank');
+            return;
+        }
+
+        // Fallback: search by formatted address
         const formattedAddress = formatAddressForRoofr(job.address);
 
-        // Copy to clipboard as backup for manual search
         try {
             await navigator.clipboard.writeText(formattedAddress);
         } catch (err) {
             console.error('Failed to copy address:', err);
         }
 
-        // Build the Roofr search URL with the formatted address
         const encodedAddress = encodeURIComponent(formattedAddress);
         const searchUrl = `https://app.roofr.com/dashboard/team/239329/jobs/list-view?page=1&filter%5Bq%5D=${encodedAddress}`;
         window.open(searchUrl, '_blank');
     };
 
     const RoofrLink = () => {
-        const formattedAddress = formatAddressForRoofr(job.address);
+        const normalized = normalizeAddressForMatching(job.address);
+        const hasDirectLink = normalized ? roofrJobIdMap?.has(normalized) : false;
+        const enrichment = normalized ? roofrEnrichmentMap?.get(normalized) : null;
+
+        // Build enrichment tooltip
+        let tooltipText = hasDirectLink ? 'Open Roofr job card' : `Search Roofr for "${job.address}"`;
+        if (enrichment) {
+            const parts = [enrichment.stage, enrichment.leadSource];
+            if (enrichment.value) parts.push(`$${enrichment.value.toLocaleString()}`);
+            tooltipText = parts.filter(Boolean).join(' · ');
+        }
+
         return (
             <button
                 type="button"
                 onClick={handleRoofrClick}
-                className="flex items-center space-x-1 bg-bg-primary border border-border-secondary hover:bg-bg-tertiary hover:border-border-tertiary text-text-tertiary px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5"
-                title={`Search Roofr for "${formattedAddress}" (also copied to clipboard)`}
+                className={`flex items-center space-x-1 border px-1.5 py-0.5 rounded shadow-sm transition-all text-[9px] font-semibold leading-none whitespace-nowrap h-5 ${
+                    hasDirectLink
+                        ? 'bg-tag-green-bg border-tag-green-border text-tag-green-text hover:bg-tag-emerald-bg'
+                        : 'bg-bg-primary border-border-secondary hover:bg-bg-tertiary hover:border-border-tertiary text-text-tertiary'
+                }`}
+                title={tooltipText}
             >
                 <ExternalLinkIcon className="h-3 w-3" />
                 <span className="inline">Job Card</span>
