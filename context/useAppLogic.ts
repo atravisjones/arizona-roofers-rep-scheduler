@@ -2066,13 +2066,18 @@ export const useAppLogic = () => {
 
             for (const apt of appointments) {
                 // Parse the title field which contains rich details
-                const title = apt.title || '';
+                // Normalize en-dash/em-dash to regular hyphen for consistent splitting
+                const title = (apt.title || '').replace(/[\u2013\u2014]/g, '-');
                 const titleBeforeDash = title.includes(' - ') ? title.split(' - ')[0] : title;
                 const titleAfterDash = title.includes(' - ') ? title.split(' - ').slice(1).join(' - ') : '';
 
                 // Use address from Calendar Events, or extract from title, or Master Sheet
                 const address = apt.address || titleAfterDash || apt.masterAddress || '';
-                const city = extractCity(address || titleBeforeDash);
+                // Try multiple sources for city: masterAddress (full with city/state/zip),
+                // then calendar address, then title prefix (e.g. "MESA Tile 2s ...")
+                let city = extractCity(apt.masterAddress || '');
+                if (city === 'UNKNOWN') city = extractCity(address);
+                if (city === 'UNKNOWN') city = extractCity(titleBeforeDash);
 
                 // Update Roofr Job ID map if we have a jobId
                 const normalizedAddr = normalizeAddressForMatching(apt.address || apt.masterAddress || '');
