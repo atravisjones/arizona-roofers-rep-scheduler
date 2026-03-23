@@ -1,12 +1,13 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
-import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, MAX_REP_ROW } from '../constants';
+import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, MAX_REP_ROW } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
+import { fetchInstalls, matchCrewToReps } from '../services/installService';
 import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES, ALL_KNOWN_CITIES } from '../services/geography';
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
@@ -195,6 +196,8 @@ export const useAppLogic = () => {
     const [roofrCustomerMap, setRoofrCustomerMap] = useState<Map<string, RoofrJob>>(new Map());
     const [announcement, setAnnouncement] = useState<string>('');
     const [changeLog, setChangeLog] = useState<JobChange[]>([]);
+    const [installJobs, setInstallJobs] = useState<InstallJob[]>([]);
+    const [installsByRep, setInstallsByRep] = useState<Map<string, InstallJob[]>>(new Map());
 
     // State to track visible jobs from filters
     const [filteredAssignedJobs, setFilteredAssignedJobs] = useState<DisplayJob[]>([]);
@@ -370,11 +373,93 @@ export const useAppLogic = () => {
         }
     }, [history, historyIndex, selectedDate, updateGeoCache]);
 
-
     const dailyStates = useMemo(() => history[historyIndex] || new Map(), [history, historyIndex]);
+
     // Ref that always holds the latest dailyStates — used by async functions to avoid stale closures
     const dailyStatesRef = useRef(dailyStates);
     dailyStatesRef.current = dailyStates;
+
+    // Load installs for the selected date — runs once per date change, not on every dailyStates update
+    const installsFetchedForDate = useRef<string>('');
+    useEffect(() => {
+        const dateString = formatDateToKey(selectedDate);
+        if (installsFetchedForDate.current === dateString) return;
+        installsFetchedForDate.current = dateString;
+
+        const loadInstalls = async () => {
+            try {
+                const installs = await fetchInstalls(dateString);
+                setInstallJobs(installs);
+            } catch (error) {
+                console.error('Failed to load installs:', error);
+                setInstallJobs([]);
+            }
+        };
+        loadInstalls();
+    }, [selectedDate]);
+
+    // Re-match installs to reps whenever installJobs change OR when real reps load
+    // We derive a stable signal: the number of non-mock reps for today
+    const currentDateKey = formatDateToKey(selectedDate);
+    const currentDayState = dailyStates.get(currentDateKey);
+    const realRepCount = currentDayState && currentDayState.reps.length > 0 && !currentDayState.reps[0].isMock
+        ? currentDayState.reps.length : 0;
+
+    useEffect(() => {
+        if (installJobs.length === 0) {
+            setInstallsByRep(new Map());
+            return;
+        }
+        if (realRepCount === 0) return; // reps not loaded yet
+        const dayState = dailyStatesRef.current.get(currentDateKey);
+        if (dayState) {
+            const byRep = matchCrewToReps(installJobs, dayState.reps);
+            setInstallsByRep(byRep);
+        }
+    }, [installJobs, currentDateKey, realRepCount]);
+
+    // Helper to inject install jobs as pinned DisplayJobs into rep schedules
+    // Only injects the highest-value install per rep as an anchor point
+    const injectInstallJobs = (state: AppState, installs: Map<string, InstallJob[]>): AppState => {
+        if (installs.size === 0) return state;
+
+        return {
+            ...state,
+            reps: state.reps.map(rep => {
+                const repInstalls = installs.get(rep.id) || [];
+                if (repInstalls.length === 0) return rep;
+
+                // Pick only the highest-value install as the anchor
+                const topInstall = repInstalls.reduce((best, cur) => {
+                    const curVal = typeof cur.value === 'number' ? cur.value : parseFloat(String(cur.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                    const bestVal = typeof best.value === 'number' ? best.value : parseFloat(String(best.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                    return curVal > bestVal ? cur : best;
+                }, repInstalls[0]);
+
+                const updatedSchedule = rep.schedule.map((slot, slotIndex) => {
+                    if (slotIndex === 0) {
+                        const installJob: DisplayJob = {
+                            id: `install-${topInstall.jobId}`,
+                            customerName: `INSTALL: ${topInstall.customerName}`,
+                            address: topInstall.address,
+                            city: topInstall.city || '',
+                            notes: `Crew: ${topInstall.crewNames.length > 0 ? topInstall.crewNames.join(', ') : topInstall.jobOwner}`,
+                            originalTimeframe: topInstall.scheduledDate,
+                            isStartLocation: false,
+                            isDimmed: false,
+                        };
+                        return {
+                            ...slot,
+                            jobs: [installJob, ...slot.jobs],
+                        };
+                    }
+                    return slot;
+                });
+
+                return { ...rep, schedule: updatedSchedule };
+            }),
+        };
+    };
 
     const appState = useMemo(() => {
         return dailyStates.get(formatDateToKey(selectedDate)) || EMPTY_STATE;
@@ -2024,20 +2109,11 @@ export const useAppLogic = () => {
                 return 'UNKNOWN';
             };
 
-            // Get or create day state
-            let baseState = dailyStates.get(dateKey);
+            // Get existing day state — if reps haven't loaded yet, skip (loadReps will handle it)
+            const baseState = dailyStates.get(dateKey);
             if (!baseState) {
-                log(`Loading reps for ${dateKey}...`);
-                const { reps: repData, sheetName } = await fetchSheetData(targetDate);
-                setActiveSheetName(sheetName);
-                if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
-                const repsWithSchedule = repData.map(rep => ({
-                    ...rep,
-                    schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
-                    isLocked: false,
-                    isOptimized: false,
-                }));
-                baseState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
+                log(`Reps not loaded yet for ${dateKey}, deferring sheet load.`);
+                return;
             }
 
             const newDayState = JSON.parse(JSON.stringify(baseState)) as AppState;
@@ -2149,6 +2225,7 @@ export const useAppLogic = () => {
                 const roofAgeNum = roofAge ? parseInt(roofAge, 10) : undefined;
                 const repairKeywords = /\b(repair|leak|patch|inspect)\b/i;
                 const isRepairJob = repairKeywords.test(notes);
+                const isPaintJob = /\bpaint\b/i.test(notes);
                 const highValueKeywords = /\b(reroof|new\s*roof|replacement)\b/i;
                 const isHighValueJob = highValueKeywords.test(notes);
                 let jobValue = 50;
@@ -2174,6 +2251,7 @@ export const useAppLogic = () => {
                     roofAge: roofAgeNum && !isNaN(roofAgeNum) ? roofAgeNum : undefined,
                     jobValue,
                     isRepairJob,
+                    isPaintJob,
                 };
 
                 // Check if this job already exists in the state
@@ -2192,7 +2270,8 @@ export const useAppLogic = () => {
                         zipCode: tempJob.zipCode,
                         roofAge: tempJob.roofAge,
                         jobValue: tempJob.jobValue,
-                        isRepairJob: tempJob.isRepairJob
+                        isRepairJob: tempJob.isRepairJob,
+                        isPaintJob: tempJob.isPaintJob
                     });
 
                     // Remove from current position so it can be re-assigned according to sheet
@@ -2297,12 +2376,14 @@ export const useAppLogic = () => {
                 setRoofrJobIdMap(newRoofrIdMap);
             }
 
-            // Detect changes between old and new state
+            // Detect changes between old and new state (skip initial load — no old state means first load, not a change)
             const oldState = dailyStates.get(dateKey) || null;
-            const changes = detectJobChanges(dateKey, oldState, newDayState, new Date().toISOString());
-            if (changes.length > 0) {
-                setChangeLog(prev => [...prev, ...changes]);
-                log(`Detected ${changes.length} changes from sheet load for ${dateKey}`);
+            if (oldState) {
+                const changes = detectJobChanges(dateKey, oldState, newDayState, new Date().toISOString());
+                if (changes.length > 0) {
+                    setChangeLog(prev => [...prev, ...changes]);
+                    log(`Detected ${changes.length} changes from sheet load for ${dateKey}`);
+                }
             }
 
             // Save the state
@@ -2343,12 +2424,14 @@ export const useAppLogic = () => {
     }, [log, selectedDate, loadSheetForDate]);
 
     // Auto-load sheet data when switching day tabs (if not already loaded)
+    // Wait until loadReps has finished (dailyStates has the date) to avoid
+    // a duplicate fetchSheetData call that causes Google Sheets 429 rate limits.
     useEffect(() => {
         const dateKey = formatDateToKey(selectedDate);
-        if (!sheetLoadedDaysRef.current.has(dateKey) && !isAutoLoadingRef.current) {
+        if (!sheetLoadedDaysRef.current.has(dateKey) && !isAutoLoadingRef.current && !isLoadingReps && dailyStates.has(dateKey)) {
             loadSheetForDate(selectedDate, true);
         }
-    }, [selectedDate, loadSheetForDate]);
+    }, [selectedDate, loadSheetForDate, isLoadingReps, dailyStates]);
 
     const autoLoadAllDays = useCallback(async () => {
         if (isAutoLoadingRef.current) return;
@@ -2884,8 +2967,31 @@ export const useAppLogic = () => {
                 }
 
                 const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
-                let jobsToAssign = [...newState.unassignedJobs];
-                newState.unassignedJobs = [];
+
+                // Skip jobs that need details (≤1 data tag) — keep them unassigned
+                const countJobTags = (job: Job): number => {
+                    const notes = (job.notes || '').toLowerCase();
+                    let count = 0;
+                    TAG_KEYWORDS.forEach(tag => {
+                        if (new RegExp(`\\b${tag.toLowerCase()}\\b`).test(notes)) count++;
+                    });
+                    if (/\b\d+\s*sq/i.test(notes)) count++;
+                    if (/\b\d+\s*yrs\b/i.test(notes)) count++;
+                    if (/\b\d+S\b/i.test(notes)) count++;
+                    return count;
+                };
+                const needsDetails: Job[] = [];
+                const readyJobs: Job[] = [];
+                for (const job of newState.unassignedJobs) {
+                    if (countJobTags(job) <= 1) {
+                        needsDetails.push(job);
+                    } else {
+                        readyJobs.push(job);
+                    }
+                }
+
+                let jobsToAssign = readyJobs;
+                newState.unassignedJobs = [...needsDetails]; // keep needs-details jobs unassigned
                 let assignedCount = 0;
 
                 // ============================================================
@@ -3111,8 +3217,30 @@ export const useAppLogic = () => {
                     return currentDailyStates;
                 }
 
-                const jobsToAssign = [...newState.unassignedJobs];
-                newState.unassignedJobs = [];
+                // Skip jobs that need details (≤1 data tag) — keep them unassigned
+                const countJobTagsForRep = (job: Job): number => {
+                    const notes = (job.notes || '').toLowerCase();
+                    let count = 0;
+                    TAG_KEYWORDS.forEach(tag => {
+                        if (new RegExp(`\\b${tag.toLowerCase()}\\b`).test(notes)) count++;
+                    });
+                    if (/\b\d+\s*sq/i.test(notes)) count++;
+                    if (/\b\d+\s*yrs\b/i.test(notes)) count++;
+                    if (/\b\d+S\b/i.test(notes)) count++;
+                    return count;
+                };
+                const needsDetailsForRep: Job[] = [];
+                const readyJobsForRep: Job[] = [];
+                for (const job of newState.unassignedJobs) {
+                    if (countJobTagsForRep(job) <= 1) {
+                        needsDetailsForRep.push(job);
+                    } else {
+                        readyJobsForRep.push(job);
+                    }
+                }
+
+                const jobsToAssign = readyJobsForRep;
+                newState.unassignedJobs = [...needsDetailsForRep];
                 let assignedCount = 0;
 
                 const cityOrder = EAST_TO_WEST_CITIES.reduce((acc, city, index) => {
@@ -3215,7 +3343,21 @@ export const useAppLogic = () => {
         setIsAiAssigning(true);
         clearAiThoughts();
         try {
-            const result = await assignJobsWithAi(appState.reps, appState.unassignedJobs, selectedDayString, appState.settings, addAiThought);
+            // Filter out jobs needing details (≤1 data tag)
+            const countTagsForAi = (job: Job): number => {
+                const notes = (job.notes || '').toLowerCase();
+                let count = 0;
+                TAG_KEYWORDS.forEach(tag => {
+                    if (new RegExp(`\\b${tag.toLowerCase()}\\b`).test(notes)) count++;
+                });
+                if (/\b\d+\s*sq/i.test(notes)) count++;
+                if (/\b\d+\s*yrs\b/i.test(notes)) count++;
+                if (/\b\d+S\b/i.test(notes)) count++;
+                return count;
+            };
+            const assignableJobs = appState.unassignedJobs.filter(j => countTagsForAi(j) > 1);
+            if (assignableJobs.length === 0) { log('- INFO: All unassigned jobs need details. Aborting.'); setIsAiAssigning(false); return; }
+            const result = await assignJobsWithAi(appState.reps, assignableJobs, selectedDayString, appState.settings, addAiThought);
             addAiThought("Applying assignments...");
             const dateKey = formatDateToKey(selectedDate);
             recordChange(currentDailyStates => {
@@ -4056,6 +4198,8 @@ export const useAppLogic = () => {
         roofrEnrichmentMap,
         roofrCustomerMap,
         announcement,
+        installJobs,
+        installsByRep,
         setFilteredAssignedJobs,
         setFilteredUnassignedJobs,
         filteredAssignedJobs,

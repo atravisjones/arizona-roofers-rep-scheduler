@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
-import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon } from './icons';
+import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon, HardHatIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
 import { normalizeCustomerName } from '../services/roofrApiService';
@@ -14,6 +14,7 @@ const TAG_CLASSES: Record<string, string> = {
     'Metal': 'bg-tag-slate-bg text-tag-slate-text border-tag-slate-border',
     'Insurance': 'bg-tag-emerald-bg text-tag-emerald-text border-tag-emerald-border',
     'Commercial': 'bg-tag-purple-bg text-tag-purple-text border-tag-purple-border',
+    'Paint': 'bg-tag-sky-bg text-tag-sky-text border-tag-sky-border',
     'stories': 'bg-tag-teal-bg text-tag-teal-text border-tag-teal-border',
     'sqft': 'bg-tag-sky-bg text-tag-sky-text border-tag-sky-border',
     'yrs': 'bg-tag-stone-bg text-tag-stone-text border-tag-stone-border',
@@ -42,8 +43,15 @@ export const JobCard: React.FC<JobCardProps> = ({
     const { setHoveredJobId, roofrJobIdMap, roofrEnrichmentMap, roofrCustomerMap } = useAppContext();
     const [isModalOpen, setIsModalOpen] = useState(false);
 
+    // Detect install jobs (pinned jobs with id starting with "install-")
+    const isInstallJob = job.id.startsWith('install-');
+    // Detect paint jobs
+    const isPaintJob = !!(job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '');
+    // Install jobs are not draggable
+    const effectiveDraggable = isDraggable && !isInstallJob;
+
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-        if (isModalOpen || !isDraggable) {
+        if (isModalOpen || !effectiveDraggable) {
             e.preventDefault();
             return;
         }
@@ -96,12 +104,16 @@ export const JobCard: React.FC<JobCardProps> = ({
 
     const cardClasses = useMemo(() => {
         const base = "border rounded-lg shadow-sm transition-all duration-200 relative group overflow-hidden";
-        const stateClasses = isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer';
+        const stateClasses = effectiveDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer';
         let backgroundClasses = '';
         let highlightClasses = '';
 
-        // Determine base background color. Errors take precedence.
-        if (isActuallyMismatched) {
+        // Determine base background color. Install jobs take highest precedence.
+        if (isInstallJob) {
+            backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
+        } else if (isPaintJob) {
+            backgroundClasses = "bg-gradient-to-r from-sky-200 to-cyan-300 border-cyan-400 text-gray-900";
+        } else if (isActuallyMismatched) {
             backgroundClasses = "bg-tag-red-bg border-tag-red-border";
         } else if (isReschedule) {
             backgroundClasses = "bg-tag-blue-bg border-tag-blue-border";
@@ -111,8 +123,8 @@ export const JobCard: React.FC<JobCardProps> = ({
             backgroundClasses = "bg-bg-primary border-border-primary";
         }
 
-        // Layer on priority styles.
-        if (priorityLevel > 0) {
+        // Layer on priority styles (but not for install jobs).
+        if (!isInstallJob && priorityLevel > 0) {
             // If it's NOT an error, priority styling dictates the background.
             if (!isActuallyMismatched && !isReschedule) {
                 if (priorityLevel >= 3) {
@@ -132,13 +144,18 @@ export const JobCard: React.FC<JobCardProps> = ({
             } else { // priorityLevel === 1
                 highlightClasses = "ring-2 ring-amber-500/80 ring-offset-2 ring-offset-bg-primary shadow-md shadow-amber-500/20";
             }
+        } else if (isInstallJob) {
+            // Install jobs get a subtle shine effect
+            highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
+        } else if (isPaintJob) {
+            highlightClasses = "ring-2 ring-cyan-500/60 ring-offset-2 ring-offset-white shadow-lg shadow-cyan-500/40";
         } else {
             // Only add hover shadow if not a priority job (which has its own shadow effects)
             highlightClasses = "hover:shadow-md";
         }
 
         return `${base} ${stateClasses} ${backgroundClasses} ${highlightClasses}`;
-    }, [priorityLevel, isActuallyMismatched, isReschedule, isDraggable, isEliteMatch]);
+    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob]);
 
     const googleMapsUrl = useMemo(() => {
         const addressParts = [job.address, job.city, job.zipCode].filter(Boolean);
@@ -341,24 +358,86 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
 
     return (
         <div
-            draggable={isDraggable}
+            draggable={effectiveDraggable}
             onDragStart={handleDragStart}
             onDragEnd={onDragEnd}
             onClick={handleCardClick}
             onMouseEnter={() => setHoveredJobId(job.id)}
             onMouseLeave={() => setHoveredJobId(null)}
             className={cardClasses}
-            title={mismatchTitle}
+            title={isInstallJob ? '📍 Install anchor - This is a scheduled installation job.' : mismatchTitle}
         >
+            {/* Compact install card */}
+            {isInstallJob ? (
+                <div className="px-1.5 py-1 flex items-center gap-1.5 min-w-0">
+                    <HardHatIcon className="h-4 w-4 text-orange-800 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                        <span className="text-[10px] font-bold text-gray-900 truncate block leading-tight">{job.city || 'Unknown'} — {job.customerName.replace(/^INSTALL:\s*/i, '')}</span>
+                        <span className="text-[9px] text-gray-700 truncate block leading-tight">{job.address}</span>
+                    </div>
+                    {(job as any).installValue != null && (
+                        <span className="text-[9px] font-bold text-orange-900 bg-orange-100 border border-orange-300 px-1.5 py-0.5 rounded whitespace-nowrap shrink-0">
+                            ${Number((job as any).installValue).toLocaleString()}
+                        </span>
+                    )}
+                </div>
+            ) : isPaintJob ? (
+                <div className="px-1.5 py-1">
+                    {/* Paint job header: City + PAINT badge + time */}
+                    <div className="flex justify-between items-center mb-0.5">
+                        <h3 className="font-extrabold text-xs uppercase tracking-tight text-gray-900 truncate leading-none">
+                            {job.city || 'Unknown City'}
+                        </h3>
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-cyan-600 text-white border-cyan-700 whitespace-nowrap leading-none shadow-sm">
+                                PAINT
+                            </span>
+                            <span className="text-[9px] font-bold px-1 rounded-full border bg-white/60 border-cyan-400 text-gray-800 leading-none">
+                                {displayTimeLabel}
+                            </span>
+                        </div>
+                    </div>
+                    {/* Customer name */}
+                    <p className="text-[10px] font-semibold text-gray-800 truncate leading-tight">{job.customerName}</p>
+                    {/* Address */}
+                    <p className="text-[9px] text-gray-600 truncate leading-tight">{job.address}</p>
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-end gap-1 mt-0.5">
+                        <MapsLink />
+                        {onUnassign && (
+                            <ActionBtn onClick={(e) => { e.stopPropagation(); onUnassign(job.id); }} icon={UnassignJobIcon} label="Unassign" />
+                        )}
+                        {onUpdateJob && (
+                            <ActionBtn onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }} icon={EditIcon} label="Edit" />
+                        )}
+                    </div>
+                    {showAssignment && (job as any).assignedRepName && (
+                        <div className="flex items-center gap-1 mt-0.5 pt-0.5 border-t border-cyan-300/50">
+                            <UserIcon className="h-2.5 w-2.5 text-cyan-700" />
+                            <span className="text-[9px] font-bold text-cyan-700 truncate">{(job as any).assignedRepName}</span>
+                        </div>
+                    )}
+                    {onUpdateJob && (
+                        <JobEditModal job={job} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={onUpdateJob} onRemove={onRemove} onUnassign={onUnassign} currentRepId={currentRepId} currentSlotId={currentSlotId} />
+                    )}
+                </div>
+            ) : (
+            <>
             {/* Header: City & Status */}
             <div className={`px-1.5 py-0.5 flex justify-between items-start ${isCompact ? 'flex-col gap-0.5' : ''}`}>
                 <div className="min-w-0 flex-1 mr-1">
-                    <h3 className="font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-none">
+                    <h3 className={`font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-none`}>
                         {job.city || 'Unknown City'}
                     </h3>
                 </div>
                 <div className="flex items-center gap-0.5 flex-shrink-0">
-                    {priorityLevel > 0 && (
+                    {isInstallJob && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-orange-600 text-white border-orange-700 whitespace-nowrap leading-none shadow-sm">
+                            INSTALL
+                        </span>
+                    )}
+
+                    {priorityLevel > 0 && !isInstallJob && (
                         <div className="flex">
                             {[...Array(Math.min(priorityLevel, 3))].map((_, i) => (
                                 <StarIcon key={i} className={`h-3 w-3 drop-shadow-sm ${priorityLevel >= 3 ? 'text-tag-red-text' :
@@ -370,7 +449,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     )}
 
                     <span
-                        className={`text-[9px] font-bold px-1 rounded-full border leading-none ${displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'}`}
+                        className={`text-[9px] font-bold px-1 rounded-full border leading-none ${isInstallJob ? 'bg-white/30 border-orange-700 text-gray-900' : displayTimeLabel !== 'Anytime' ? 'bg-bg-primary/80 border-border-primary text-text-secondary shadow-sm' : 'bg-bg-tertiary text-text-tertiary border-transparent'}`}
                         title={showOriginalTime ? `Original Request: ${job.originalTimeframe}` : undefined}
                     >
                         {displayTimeLabel}
@@ -480,6 +559,8 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     currentRepId={currentRepId}
                     currentSlotId={currentSlotId}
                 />
+            )}
+            </>
             )}
         </div>
     );

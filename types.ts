@@ -149,6 +149,7 @@ export interface Job {
   roofAge?: number;      // Parsed from "20yrs" in notes
   jobValue?: number;     // Calculated score (0-100) - higher = better lead for top reps
   isRepairJob?: boolean; // True if contains repair/leak/patch/inspect keywords
+  isPaintJob?: boolean;  // True if contains "paint" keyword — different service line
 }
 
 export interface DisplayJob extends Job {
@@ -215,6 +216,22 @@ export interface LoadOptionsModalState {
   autoBackup: BackupListItem | null;
   selectedBackupId: string | null;
   isLoading: boolean;
+}
+
+export interface InstallJob {
+  jobId: string;
+  address: string;
+  city?: string;
+  stage: string;
+  customerName: string;
+  crewNames: string[];
+  scheduledDate: string;
+  startTime?: string;
+  endTime?: string;
+  jobOwner: string;
+  value?: number;
+  lat?: number;
+  lon?: number;
 }
 
 export const BACKUP_CONFIG = {
@@ -355,6 +372,10 @@ export interface AppContextType {
 
   // Announcement message
   announcement: string;
+
+  // Install jobs from /api/installs
+  installJobs: InstallJob[];
+  installsByRep: Map<string, InstallJob[]>;
 
   // Map Filter State Pushing
   setFilteredAssignedJobs: (jobs: DisplayJob[]) => void;

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { geocodeAddresses, Coordinates, fetchRoute } from '../services/osmService';
 import { LoadingIcon } from './icons';
-import { RouteInfo, DisplayJob, Rep } from '../types';
+import { RouteInfo, DisplayJob, Rep, InstallJob } from '../types';
 import { JobCard } from './JobCard';
 import { useAppContext, AppContext } from '../context/AppContext';
 import { TAG_KEYWORDS } from '../constants';
@@ -44,6 +44,7 @@ interface LeafletMapProps {
   placementJobId?: string | null;
   onPlaceJob?: (jobId: string, lat: number, lon: number) => void;
   showRepHomes?: boolean;
+  showInstalls?: boolean;
   reps?: Rep[];
 }
 
@@ -51,7 +52,7 @@ const PHOENIX_COORDS: [number, number] = [33.4484, -112.0740];
 const DEFAULT_ZOOM = 9;
 const ROUTE_ZOOM = 12;
 
-const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob, showRepHomes, reps }) => {
+const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob, showRepHomes, showInstalls, reps }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const featureGroupRef = useRef<any>(null);
@@ -63,7 +64,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const contextValueRef = useRef(contextValue);
   contextValueRef.current = contextValue;
 
-  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd, hoveredJobId, hoveredRepId, appState } = contextValue;
+  const { handleUnassignJob, handleUpdateJob, handleRemoveJob, setDraggedJob, handleJobDragEnd, hoveredJobId, hoveredRepId, appState, installJobs, installsByRep } = contextValue;
 
   // Create a lookup from repId to repName for hover filtering
   const repIdToNameMap = useMemo(() => {
@@ -81,6 +82,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const previousHoveredRepIdRef = useRef<string | null>(null);
   const jobRepNameMapRef = useRef<Map<string, string | undefined>>(new Map()); // Map jobId to assignedRepName
   const repHomesLayerRef = useRef<any>(null); // Separate layer for rep home markers
+  const installsLayerRef = useRef<any>(null); // Separate layer for install markers
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -371,6 +373,17 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           markerHtml = `<div style="width: 16px; height: 16px; background-color: ${color}; border-radius: 50%; border: 2px dashed white; ${shadow} ${dimFilter}"></div>`;
           iconSize = [20, 20];
           iconAnchor = [10, 10];
+        } else if ((job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '')) {
+          // Paint jobs get a triangle marker
+          markerHtml = `
+            <div style="${dimFilter}">
+              <svg viewBox="0 0 28 28" width="28" height="28" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">
+                <polygon points="14,2 26,26 2,26" fill="${color}" stroke="white" stroke-width="2"/>
+                ${job.markerLabel ? `<text x="14" y="20" text-anchor="middle" fill="white" font-size="10" font-weight="bold">${job.markerLabel}</text>` : ''}
+              </svg>
+            </div>`;
+          iconSize = [28, 28];
+          iconAnchor = [14, 26];
         } else if (mapType === 'unassigned') {
           markerHtml = `<div style="width: 14px; height: 14px; background-color: ${color}; border-radius: 50%; ${border} ${shadow} ${dimFilter}"></div>`;
           iconSize = [18, 18];
@@ -616,6 +629,97 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
       }
     };
   }, [showRepHomes, reps]);
+
+  // Separate effect for install markers overlay
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Remove existing installs layer
+    if (installsLayerRef.current) {
+      mapRef.current.removeLayer(installsLayerRef.current);
+      installsLayerRef.current = null;
+    }
+
+    if (!showInstalls || !installJobs || installJobs.length === 0) return;
+
+    // Build set of top-value install job IDs per rep
+    const topIds = new Set<string>();
+    installsByRep.forEach((repInstalls: InstallJob[]) => {
+      if (repInstalls.length === 0) return;
+      const top = repInstalls.reduce((best: InstallJob, cur: InstallJob) => {
+        const curVal = typeof cur.value === 'number' ? cur.value : 0;
+        const bestVal = typeof best.value === 'number' ? best.value : 0;
+        return curVal > bestVal ? cur : best;
+      }, repInstalls[0]);
+      topIds.add(top.jobId);
+    });
+
+    // Geocode all install addresses
+    const addresses = installJobs.map(i => i.address);
+    const layer = L.featureGroup();
+    installsLayerRef.current = layer;
+
+    const allRepNames = reps?.map(r => r.name) || [];
+
+    geocodeAddresses(addresses).then((results: any[]) => {
+      if (installsLayerRef.current !== layer) return;
+
+      installJobs.forEach((install: InstallJob, i: number) => {
+        const coord = results[i]?.coordinates;
+        if (!coord) return;
+
+        const isTop = topIds.has(install.jobId);
+        // Find rep color via jobOwner matching
+        const ownerRep = reps?.find(r => r.name.toLowerCase().includes(install.jobOwner.toLowerCase()) || install.jobOwner.toLowerCase().includes(r.name.toLowerCase()));
+        const color = ownerRep
+          ? (ownerRep.customColor || getRepColorByPosition(ownerRep.name, allRepNames))
+          : '#ea580c'; // fallback orange
+
+        const size = isTop ? 16 : 12;
+        const opacity = isTop ? 1 : 0.5;
+        const border = isTop ? '2px solid white' : '1.5px solid rgba(255,255,255,0.6)';
+        const shadow = isTop
+          ? 'box-shadow: 0 0 0 2px ' + color + '40, 0 2px 6px rgba(0,0,0,0.4);'
+          : 'box-shadow: 0 1px 3px rgba(0,0,0,0.2);';
+
+        const markerHtml = `<div style="width: ${size}px; height: ${size}px; background-color: ${color}; border-radius: 3px; border: ${border}; ${shadow} opacity: ${opacity};"></div>`;
+
+        const icon = L.divIcon({
+          html: markerHtml,
+          className: 'custom-div-icon',
+          iconSize: [size + 4, size + 4],
+          iconAnchor: [(size + 4) / 2, (size + 4) / 2],
+        });
+
+        const valueStr = install.value != null ? `$${Number(install.value).toLocaleString()}` : '';
+        const tooltipContent = `
+          <div style="text-align: center; line-height: 1.3; min-width: 100px;">
+            <div style="font-weight: bold; font-size: 10px; color: #ea580c; text-transform: uppercase;">Install${isTop ? ' (Top Value)' : ''}</div>
+            <div style="font-weight: 800; font-size: 12px;">${install.customerName}</div>
+            <div style="font-size: 10px; color: #666;">${install.city || ''} — ${install.address}</div>
+            ${valueStr ? `<div style="font-weight: bold; font-size: 11px; color: #c2410c; margin-top: 2px;">${valueStr}</div>` : ''}
+            <div style="font-size: 9px; color: #888; margin-top: 2px;">${install.jobOwner}</div>
+          </div>`;
+
+        L.marker([coord.lat, coord.lon], { icon, zIndexOffset: isTop ? 800 : 400 })
+          .bindTooltip(tooltipContent, { direction: 'top', offset: [0, -8] })
+          .addTo(layer);
+      });
+
+      if (mapRef.current && installsLayerRef.current === layer) {
+        layer.addTo(mapRef.current);
+      }
+    }).catch((err: any) => {
+      console.error('Failed to geocode install locations:', err);
+    });
+
+    return () => {
+      if (mapRef.current && installsLayerRef.current) {
+        mapRef.current.removeLayer(installsLayerRef.current);
+        installsLayerRef.current = null;
+      }
+    };
+  }, [showInstalls, installJobs, installsByRep, reps]);
 
   return (
     <div className="w-full h-full relative rounded-lg overflow-hidden bg-bg-tertiary">

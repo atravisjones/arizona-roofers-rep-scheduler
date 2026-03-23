@@ -441,6 +441,7 @@ export async function parseJobsFromText(
         // Detect repair-type keywords (lower value jobs)
         const repairKeywords = /\b(repair|leak|patch|inspect)\b/i;
         const isRepairJob = repairKeywords.test(notes);
+        const isPaintJob = /\bpaint\b/i.test(notes);
 
         // Detect high-value keywords (reroof, new roof, replacement)
         const highValueKeywords = /\b(reroof|new\s*roof|replacement)\b/i;
@@ -472,6 +473,7 @@ export async function parseJobsFromText(
             roofAge,
             jobValue,
             isRepairJob,
+            isPaintJob,
         };
         jobs.push(newJob);
 
