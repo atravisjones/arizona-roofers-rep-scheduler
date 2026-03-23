@@ -112,7 +112,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         if (isInstallJob) {
             backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
         } else if (isPaintJob) {
-            backgroundClasses = "bg-gradient-to-r from-sky-200 to-cyan-300 border-cyan-400 text-gray-900";
+            backgroundClasses = "bg-tag-sky-bg border-tag-cyan-border text-text-primary";
         } else if (isActuallyMismatched) {
             backgroundClasses = "bg-tag-red-bg border-tag-red-border";
         } else if (isReschedule) {
@@ -148,7 +148,7 @@ export const JobCard: React.FC<JobCardProps> = ({
             // Install jobs get a subtle shine effect
             highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
         } else if (isPaintJob) {
-            highlightClasses = "ring-2 ring-cyan-500/60 ring-offset-2 ring-offset-white shadow-lg shadow-cyan-500/40";
+            highlightClasses = "ring-2 ring-tag-cyan-border ring-offset-2 ring-offset-bg-primary shadow-lg";
         } else {
             // Only add hover shadow if not a priority job (which has its own shadow effects)
             highlightClasses = "hover:shadow-md";
@@ -385,22 +385,22 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                 <div className="px-1.5 py-1">
                     {/* Paint job header: City + PAINT badge + time */}
                     <div className="flex justify-between items-center mb-0.5">
-                        <h3 className="font-extrabold text-xs uppercase tracking-tight text-gray-900 truncate leading-none">
+                        <h3 className="font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-none">
                             {job.city || 'Unknown City'}
                         </h3>
                         <div className="flex items-center gap-1">
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-cyan-600 text-white border-cyan-700 whitespace-nowrap leading-none shadow-sm">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-tag-cyan-bg text-tag-cyan-text border-tag-cyan-border whitespace-nowrap leading-none shadow-sm">
                                 PAINT
                             </span>
-                            <span className="text-[9px] font-bold px-1 rounded-full border bg-white/60 border-cyan-400 text-gray-800 leading-none">
+                            <span className="text-[9px] font-bold px-1 rounded-full border bg-bg-primary/80 border-tag-cyan-border text-text-secondary leading-none">
                                 {displayTimeLabel}
                             </span>
                         </div>
                     </div>
                     {/* Customer name */}
-                    <p className="text-[10px] font-semibold text-gray-800 truncate leading-tight">{job.customerName}</p>
+                    <p className="text-[10px] font-semibold text-text-primary truncate leading-tight">{job.customerName}</p>
                     {/* Address */}
-                    <p className="text-[9px] text-gray-600 truncate leading-tight">{job.address}</p>
+                    <p className="text-[9px] text-text-tertiary truncate leading-tight">{job.address}</p>
                     {/* Action buttons */}
                     <div className="flex items-center justify-end gap-1 mt-0.5">
                         <MapsLink />
@@ -412,9 +412,9 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         )}
                     </div>
                     {showAssignment && (job as any).assignedRepName && (
-                        <div className="flex items-center gap-1 mt-0.5 pt-0.5 border-t border-cyan-300/50">
-                            <UserIcon className="h-2.5 w-2.5 text-cyan-700" />
-                            <span className="text-[9px] font-bold text-cyan-700 truncate">{(job as any).assignedRepName}</span>
+                        <div className="flex items-center gap-1 mt-0.5 pt-0.5 border-t border-tag-cyan-border/50">
+                            <UserIcon className="h-2.5 w-2.5 text-tag-cyan-text" />
+                            <span className="text-[9px] font-bold text-tag-cyan-text truncate">{(job as any).assignedRepName}</span>
                         </div>
                     )}
                     {onUpdateJob && (
