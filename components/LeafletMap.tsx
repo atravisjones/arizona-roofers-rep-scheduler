@@ -374,16 +374,16 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
           iconSize = [20, 20];
           iconAnchor = [10, 10];
         } else if ((job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '')) {
-          // Paint jobs get a triangle marker
+          // Paint jobs get a triangle marker — sized to match circle markers
+          const triSize = mapType === 'unassigned' ? 14 : 18;
           markerHtml = `
             <div style="${dimFilter}">
-              <svg viewBox="0 0 28 28" width="28" height="28" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">
-                <polygon points="14,2 26,26 2,26" fill="${color}" stroke="white" stroke-width="2"/>
-                ${job.markerLabel ? `<text x="14" y="20" text-anchor="middle" fill="white" font-size="10" font-weight="bold">${job.markerLabel}</text>` : ''}
+              <svg viewBox="0 0 20 20" width="${triSize}" height="${triSize}" style="filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));">
+                <polygon points="10,1 19,18 1,18" fill="${color}" stroke="white" stroke-width="2"/>
               </svg>
             </div>`;
-          iconSize = [28, 28];
-          iconAnchor = [14, 26];
+          iconSize = [triSize, triSize];
+          iconAnchor = [triSize / 2, triSize];
         } else if (mapType === 'unassigned') {
           markerHtml = `<div style="width: 14px; height: 14px; background-color: ${color}; border-radius: 50%; ${border} ${shadow} ${dimFilter}"></div>`;
           iconSize = [18, 18];
