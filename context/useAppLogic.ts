@@ -2186,6 +2186,7 @@ export const useAppLogic = () => {
                 const hasMetal = /\bmetal\b/i.test(allTagText);
                 const hasInsurance = /\binsurance\b/i.test(allTagText);
                 const hasCommercial = /\bcommercial\b/i.test(allTagText);
+                const hasPaint = /\bpaint\b/i.test(allTagText);
 
                 // Preserve # priority markers — skip titleAfterDash (address can have "Unit #5")
                 const priorityMatch =
@@ -2202,6 +2203,7 @@ export const useAppLogic = () => {
                 if (hasMetal) notesParts.push('Metal');
                 if (hasInsurance || apt.workflow === 'Insurance') notesParts.push('Insurance');
                 if (hasCommercial) notesParts.push('Commercial');
+                if (hasPaint) notesParts.push('Paint');
                 const sqft = titleSqft ? titleSqft[1].replace(/,/g, '') : '';
                 const stories = titleStories ? titleStories[1] : '';
                 const roofAge = titleRoofAge ? titleRoofAge[1] : '';
