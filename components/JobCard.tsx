@@ -102,22 +102,15 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
     };
 
-    // Roofr calendar category colors (left border + background)
-    const roofrCategoryStyle = useMemo(() => {
-        if (isInstallJob) return { borderColor: '#28A745', bgColor: '#E9F6EC' }; // Production = green
-        if (isPaintJob) return { borderColor: '#1373E3', bgColor: '#E7F1FC' };   // Sales = blue (paint is still a sales appt)
-        return { borderColor: '#1373E3', bgColor: '#E7F1FC' };                    // Sales = blue (default)
-    }, [isInstallJob, isPaintJob]);
-
     const cardClasses = useMemo(() => {
-        const base = "border rounded-lg shadow-sm transition-all duration-200 relative group overflow-hidden border-l-4";
+        const base = "border rounded-lg shadow-sm transition-all duration-200 relative group overflow-hidden";
         const stateClasses = effectiveDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer';
         let backgroundClasses = '';
         let highlightClasses = '';
 
         // Determine base background color. Install jobs take highest precedence.
         if (isInstallJob) {
-            backgroundClasses = "border-border-primary text-gray-900";
+            backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
         } else if (isPaintJob) {
             backgroundClasses = "bg-blue-900 border-blue-800 text-white";
         } else if (isActuallyMismatched) {
@@ -152,10 +145,12 @@ export const JobCard: React.FC<JobCardProps> = ({
                 highlightClasses = "ring-2 ring-amber-500/80 ring-offset-2 ring-offset-bg-primary shadow-md shadow-amber-500/20";
             }
         } else if (isInstallJob) {
-            highlightClasses = "ring-1 ring-green-400/40 shadow-md";
+            // Install jobs get a subtle shine effect
+            highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
         } else if (isPaintJob) {
             highlightClasses = "ring-2 ring-blue-700 ring-offset-2 ring-offset-bg-primary shadow-lg";
         } else {
+            // Only add hover shadow if not a priority job (which has its own shadow effects)
             highlightClasses = "hover:shadow-md";
         }
 
@@ -370,7 +365,6 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             onMouseEnter={() => setHoveredJobId(job.id)}
             onMouseLeave={() => setHoveredJobId(null)}
             className={cardClasses}
-            style={{ borderLeftColor: roofrCategoryStyle.borderColor, ...(isInstallJob ? { backgroundColor: roofrCategoryStyle.bgColor } : {}) }}
             title={isInstallJob ? '📍 Install anchor - This is a scheduled installation job.' : mismatchTitle}
         >
             {/* Compact install card */}
