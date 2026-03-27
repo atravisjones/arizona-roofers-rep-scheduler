@@ -782,8 +782,9 @@ export async function fetchAppointmentsFromSheet(date: string): Promise<SheetApp
     try {
         const response = await fetchWithRetry(`/api/roofr-appointments?date=${encodeURIComponent(date)}`);
         if (!response.ok) {
-            console.warn(`Failed to fetch appointments from sheet: ${response.statusText}`);
-            return [];
+            const errorText = await response.text();
+            console.error(`Failed to fetch appointments: ${response.status} ${response.statusText} - ${errorText}`);
+            throw new Error(`API Error (${response.status}): ${response.statusText || 'Unknown error'}`);
         }
         const data = await response.json();
         return data.appointments || [];

@@ -373,7 +373,7 @@ const MainLayout: React.FC = () => {
     event.target.value = '';
   };
 
-  // Logic to count jobs needing details for badge
+  // Logic to count jobs needing details for badge — includes ALL jobs (unassigned + assigned)
   const needsDetailsCount = useMemo(() => {
     const countTags = (job: Job) => {
       const notes = (job.notes || '').toLowerCase();
@@ -386,8 +386,12 @@ const MainLayout: React.FC = () => {
       if (/\b\d+S\b/i.test(notes)) count++;
       return count;
     };
-    return context.appState.unassignedJobs.filter(job => countTags(job) <= 1).length;
-  }, [context.appState.unassignedJobs]);
+    const allJobs = [
+      ...context.appState.unassignedJobs,
+      ...context.appState.reps.flatMap(rep => rep.schedule.flatMap(slot => slot.jobs))
+    ];
+    return allJobs.filter(job => countTags(job as Job) <= 1).length;
+  }, [context.appState.unassignedJobs, context.appState.reps]);
 
   const jobsNeedingRescheduleCount = useMemo(() => {
     let count = 0;

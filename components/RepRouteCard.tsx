@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { DisplayJob, RouteInfo, ItineraryItem } from '../types';
+import { DisplayJob, RouteInfo, ItineraryItem, InstallJob } from '../types';
 import { geocodeAddresses, fetchRoute, Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
 import LeafletMap from './LeafletMap';
@@ -49,7 +49,7 @@ const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean
 };
 
 const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
-    const { setHoveredJobId, selectedDate, appState } = useAppContext();
+    const { setHoveredJobId, selectedDate, appState, installsByRep } = useAppContext();
     const [orderedJobs, setOrderedJobs] = useState<DisplayJob[]>(jobs);
     const [mappableJobs, setMappableJobs] = useState<DisplayJob[]>([]);
     const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -321,28 +321,69 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
         return `https://www.google.com/maps/dir/${waypoints.join('/')}`;
     }, [orderedJobs, homeZip]);
 
-    const handleCopyItinerary = () => {
+    const handleCopyItinerary = async () => {
         if (itinerary.length === 0) return;
+
+        // Find rep's top install for proximity
+        const matchingRep = appState.reps.find(r => r.name === repName);
+        const repInstalls = matchingRep ? (installsByRep.get(matchingRep.id) || []) : [];
+        let topInstall: InstallJob | null = null;
+        if (repInstalls.length > 0) {
+            topInstall = repInstalls.reduce((best: InstallJob, cur: InstallJob) => {
+                const curVal = typeof cur.value === 'number' ? cur.value : 0;
+                const bestVal = typeof best.value === 'number' ? best.value : 0;
+                return curVal > bestVal ? cur : best;
+            }, repInstalls[0]);
+        }
+
+        // Geocode install + job addresses for proximity
+        const jobItems = itinerary.filter(i => i.type === 'job' && i.job);
+        let distanceMap = new Map<string, string>();
+        if (topInstall) {
+            try {
+                const addressesToGeocode = [topInstall.address, ...jobItems.map(i => i.job!.address)];
+                const results = await geocodeAddresses(addressesToGeocode);
+                const installCoord = results[0]?.coordinates;
+                if (installCoord) {
+                    jobItems.forEach((item, idx) => {
+                        const jobCoord = results[idx + 1]?.coordinates;
+                        if (jobCoord && item.job) {
+                            const distKm = haversineDistance(installCoord, jobCoord);
+                            const distMiles = distKm * 0.621371;
+                            distanceMap.set(item.job.id, `${distMiles.toFixed(1)} mi from install`);
+                        }
+                    });
+                }
+            } catch (e) {
+                // Geocoding failed — skip proximity
+            }
+        }
 
         const dateStr = selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
         let text = `Route for ${repName} - ${dateStr}\n\n`;
 
+        if (topInstall) {
+            text += `ACTIVE INSTALL: ${topInstall.city || ''} — ${topInstall.customerName}\n`;
+            text += `${topInstall.address}\n\n`;
+        }
+
         itinerary.forEach(item => {
             if (item.type === 'job' && item.job) {
-                // Use original timeframe if available for the display, otherwise the scheduled time
                 const timeDisplay = item.job.originalTimeframe || item.timeRange;
 
                 text += `${timeDisplay}: ${item.job.city?.toUpperCase() || 'LOCATION'}`;
 
-                // Check overlap between Original Request and Scheduled Slot
-                // If they do NOT overlap, show warning.
                 if (item.job.originalTimeframe && item.job.timeSlotLabel) {
                     const overlaps = doTimesOverlap(item.job.originalTimeframe, item.job.timeSlotLabel);
-
                     if (!overlaps) {
                         text += ` (Scheduled: ${item.timeRange})`;
                         text += ` - WARNING: POTENTIAL RESCHEDULE NECESSARY`;
                     }
+                }
+
+                const dist = distanceMap.get(item.job.id);
+                if (dist) {
+                    text += ` [${dist}]`;
                 }
                 text += `\n`;
 
@@ -350,10 +391,6 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
                 if (item.job.notes) text += `Notes: ${item.job.notes}\n`;
                 if (item.job.customerName) text += `Customer: ${item.job.customerName}\n`;
                 text += `\n`;
-            } else if (item.type === 'lunch') {
-                // No lunch block
-            } else if (item.type === 'travel') {
-                // Optional: Include drive times in text
             }
         });
 

@@ -2063,11 +2063,11 @@ export const useAppLogic = () => {
             const appointments = await fetchAppointmentsFromSheet(dateKey);
 
             if (appointments.length === 0) {
-                if (!silent) showToast(`No sales appointments found for ${dateKey}`, 'warning');
+                if (!silent) showToast(`No appointments found for ${dateKey}`, 'warning');
                 return;
             }
 
-            log(`Loaded ${appointments.length} sales appointments from sheet for ${dateKey}`);
+            log(`Loaded ${appointments.length} appointments from sheet for ${dateKey}`);
 
             // Helper to format time from "YYYY-MM-DD HH:MM:SS" to "10:00am"
             const formatTime = (dateTimeStr: string): string => {

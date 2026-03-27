@@ -6,10 +6,11 @@ import PasteWeekModal from './PasteWeekModal';
 import { LoadingIcon, PasteIcon, AutoAssignIcon, SearchIcon, XIcon, MapPinIcon } from './icons';
 import FilterTabs from './FilterTabs';
 import { JobCard } from './JobCard';
-import { Job, DisplayJob } from '../types';
+import { Job, DisplayJob, InstallJob } from '../types';
 import { DaySchedule } from '../services/weekScheduleParser';
+import { HardHatIcon } from './icons';
 
-type JobsViewTab = 'unassigned' | 'all';
+type JobsViewTab = 'unassigned' | 'all' | 'installs';
 
 const JobsPanel: React.FC = () => {
     const {
@@ -17,7 +18,7 @@ const JobsPanel: React.FC = () => {
         handleParseJobs, handleAutoAssign,
         handleUpdateJob, handleRemoveJob, isLoadingReps, handleShowUnassignedJobsOnMap, handleJobDrop,
         setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs,
-        allJobs
+        allJobs, installJobs, installsByRep
     } = useAppContext();
 
     const [jobSearchTerm, setJobSearchTerm] = useState('');
@@ -81,6 +82,22 @@ const JobsPanel: React.FC = () => {
 
     const unassignedCount = appState.unassignedJobs.length;
     const allJobsCount = allJobs.length;
+    const installsCount = installJobs.length;
+
+    // Build a set of top-value install IDs per rep for highlighting
+    const topInstallIds = useMemo(() => {
+        const ids = new Set<string>();
+        installsByRep.forEach((repInstalls) => {
+            if (repInstalls.length === 0) return;
+            const top = repInstalls.reduce((best, cur) => {
+                const curVal = typeof cur.value === 'number' ? cur.value : 0;
+                const bestVal = typeof best.value === 'number' ? best.value : 0;
+                return curVal > bestVal ? cur : best;
+            }, repInstalls[0]);
+            ids.add(top.jobId);
+        });
+        return ids;
+    }, [installsByRep]);
 
     return (
         <>
@@ -152,6 +169,23 @@ const JobsPanel: React.FC = () => {
                         {allJobsCount}
                     </span>
                 </button>
+                <button
+                    onClick={() => setActiveViewTab('installs')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
+                        activeViewTab === 'installs'
+                            ? 'bg-orange-100 text-orange-800 shadow-sm ring-1 ring-orange-300'
+                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
+                    }`}
+                >
+                    Installs
+                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
+                        activeViewTab === 'installs'
+                            ? 'bg-orange-600 text-white'
+                            : 'bg-bg-quaternary text-text-tertiary'
+                    }`}>
+                        {installsCount}
+                    </span>
+                </button>
             </div>
 
             <FilterTabs
@@ -162,7 +196,48 @@ const JobsPanel: React.FC = () => {
             {parsingError && <p className="text-tag-red-text text-xs my-1 text-center bg-tag-red-bg p-1.5 rounded-md border border-tag-red-border">{parsingError}</p>}
 
             <div className="flex-grow overflow-y-auto min-h-0 pt-1 custom-scrollbar">
-                {activeViewTab === 'unassigned' ? (
+                {activeViewTab === 'installs' ? (
+                    <div className="h-full p-1.5 bg-bg-secondary rounded-lg border border-orange-200 overflow-y-auto custom-scrollbar">
+                        {installJobs.length > 0 ? (
+                            <div className="space-y-1">
+                                {installJobs
+                                    .slice()
+                                    .sort((a, b) => ((typeof b.value === 'number' ? b.value : 0) - (typeof a.value === 'number' ? a.value : 0)))
+                                    .map(install => {
+                                        const isTop = topInstallIds.has(install.jobId);
+                                        return (
+                                            <div key={install.jobId} className={`px-2 py-1.5 rounded-lg border ${isTop ? 'bg-gradient-to-r from-amber-100 to-orange-200 border-orange-400 ring-1 ring-orange-300' : 'bg-bg-primary border-border-primary'}`}>
+                                                <div className="flex items-center gap-1.5">
+                                                    <HardHatIcon className={`h-3.5 w-3.5 shrink-0 ${isTop ? 'text-orange-800' : 'text-text-quaternary'}`} />
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1">
+                                                            <span className={`text-[10px] font-bold truncate ${isTop ? 'text-orange-900' : 'text-text-primary'}`}>{install.city || 'Unknown'}</span>
+                                                            <span className="text-[9px] text-text-tertiary truncate">— {install.customerName}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] text-text-quaternary truncate">{install.address}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                                        {install.value != null && (
+                                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isTop ? 'bg-orange-700 text-white' : 'bg-bg-tertiary text-text-secondary border border-border-primary'}`}>
+                                                                ${Number(install.value).toLocaleString()}
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[8px] text-text-quaternary">{install.jobOwner}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <p className="text-text-tertiary">No active installs found.</p>
+                            </div>
+                        )}
+                    </div>
+                ) : activeViewTab === 'unassigned' ? (
                     <UnassignedJobs
                         jobs={filteredJobs}
                         onJobDrop={handleJobDrop}
