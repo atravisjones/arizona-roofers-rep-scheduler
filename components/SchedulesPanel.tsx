@@ -5,6 +5,7 @@ import { DayViewPanel } from './DayView';
 import { LoadingIcon, ErrorIcon, SearchIcon, ExpandAllIcon, CollapseAllIcon, UnassignAllIcon, LockIcon, UnlockIcon, XIcon, TrophyIcon, ListIcon, GridIcon } from './icons';
 import { SortKey, Job, Rep, DisplayJob } from '../types';
 import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
+import { fetchClosingRateDetails, ClosingRateDetail } from '../services/googleSheetsService';
 
 // Helper function to format rep names for the filter tags
 const formatRepNameForFilter = (fullName: string): string => {
@@ -84,6 +85,19 @@ const SchedulesPanel: React.FC = () => {
     const [lockFilter] = useState<'all' | 'locked' | 'unlocked'>('all');
     const [selectedRepFilters, setSelectedRepFilters] = useState<Set<string>>(new Set());
     const [selectedSlotFilter, setSelectedSlotFilter] = useState<string | null>(null);
+
+    // Closing rate leaderboard modal
+    const [showClosingRates, setShowClosingRates] = useState(false);
+    const [closingRateDays, setClosingRateDays] = useState(30);
+    const [closingRateData, setClosingRateData] = useState<ClosingRateDetail[]>([]);
+    const [closingRateLoading, setClosingRateLoading] = useState(false);
+
+    const loadClosingRates = async (days: number) => {
+        setClosingRateLoading(true);
+        const data = await fetchClosingRateDetails(days);
+        setClosingRateData(data);
+        setClosingRateLoading(false);
+    };
 
     // Determine the actual day name (e.g. "Monday") for the selected date to check availability correctly
     const selectedDay = useMemo(() => selectedDate.toLocaleDateString('en-US', { weekday: 'long' }), [selectedDate]);
@@ -496,7 +510,7 @@ const SchedulesPanel: React.FC = () => {
                                 onChange={handleSortChange}
                             >
                                 <option value="name">Name (A-Z)</option>
-                                <option value="salesRank">Sales Rank (Best First)</option>
+                                <option value="salesRank">Closing Rate (Best First)</option>
                                 <option value="jobCount">Most Jobs</option>
                                 <option value="cityCount">City Spread</option>
                                 <option value="availability">Availability</option>
@@ -510,8 +524,68 @@ const SchedulesPanel: React.FC = () => {
                                     <option value="skill-Commercial">Best Commercial</option>
                                 </optgroup>
                             </select>
+                            <button
+                                className="text-xs px-2 py-1 rounded border border-primary bg-secondary text-brand-primary hover:bg-tertiary font-semibold"
+                                title="View closing rate leaderboard"
+                                onClick={() => { setShowClosingRates(true); loadClosingRates(closingRateDays); }}
+                            >📊</button>
                         </div>
                     </div>
+
+                    {/* Closing Rate Leaderboard Modal */}
+                    {showClosingRates && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={() => setShowClosingRates(false)}>
+                            <div className="popup-surface p-5 w-[420px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-bold text-text-primary">Closing Rate Leaderboard</h3>
+                                    <button onClick={() => setShowClosingRates(false)} className="text-text-tertiary hover:text-text-primary">
+                                        <XIcon />
+                                    </button>
+                                </div>
+                                <div className="flex items-center gap-2 mb-4">
+                                    <span className="text-xs text-text-secondary">Period:</span>
+                                    {[30, 60, 90].map(d => (
+                                        <button
+                                            key={d}
+                                            className={`text-xs px-3 py-1 rounded-full border ${closingRateDays === d
+                                                ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                                : 'border-primary bg-secondary text-text-secondary hover:bg-tertiary'}`}
+                                            onClick={() => { setClosingRateDays(d); loadClosingRates(d); }}
+                                        >{d}d</button>
+                                    ))}
+                                </div>
+                                {closingRateLoading ? (
+                                    <div className="text-center py-8 text-text-tertiary">Loading...</div>
+                                ) : closingRateData.length === 0 ? (
+                                    <div className="text-center py-8 text-text-tertiary">No data (min 3 appointments)</div>
+                                ) : (
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-left text-text-tertiary border-b border-primary">
+                                                <th className="pb-2 pr-2">#</th>
+                                                <th className="pb-2">Rep</th>
+                                                <th className="pb-2 text-right">Won</th>
+                                                <th className="pb-2 text-right">Appts</th>
+                                                <th className="pb-2 text-right">Rate</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {closingRateData.map(r => (
+                                                <tr key={r.name} className="border-b border-primary/50">
+                                                    <td className="py-1.5 pr-2 text-text-quaternary">{r.rank}</td>
+                                                    <td className="py-1.5 font-medium text-text-primary">{r.name}</td>
+                                                    <td className="py-1.5 text-right text-tag-green-text">{r.won}</td>
+                                                    <td className="py-1.5 text-right text-text-secondary">{r.total}</td>
+                                                    <td className="py-1.5 text-right font-semibold text-text-primary">{(r.rate * 100).toFixed(1)}%</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                                <p className="text-[10px] text-text-quaternary mt-3">Won / appointments ran in last {closingRateDays} days (min 3 appts). Excludes sources: Self Gen, Door knocking. Excludes stages: Unqualified, Appointment Scheduled, Not Pitched, Needs Rescheduled, New Lead, Door Knocking Leads. Source: Supabase.</p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* List View Content */}
                     <div className="flex-grow overflow-y-auto min-h-0 space-y-2 pr-1 custom-scrollbar">

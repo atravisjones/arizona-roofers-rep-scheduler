@@ -40,15 +40,15 @@ interface SupabaseSchedule {
   assignment_score: number | null;
   score_breakdown: Record<string, number> | null;
   is_locked: boolean;
-  jobs?: SupabaseJob;
-  reps?: SupabaseRep;
+  scheduler_jobs?: SupabaseJob;
+  scheduler_reps?: SupabaseRep;
 }
 
 interface SupabaseUnassignedJob {
   id: string;
   date_key: string;
   job_id: string;
-  jobs?: SupabaseJob;
+  scheduler_jobs?: SupabaseJob;
 }
 
 // ============================================================================
@@ -99,7 +99,7 @@ function supabaseJobToDisplayJob(sj: SupabaseJob, schedule?: SupabaseSchedule): 
 export async function fetchReps(): Promise<{ success: boolean; reps?: Rep[]; error?: string }> {
   try {
     const { data, error } = await supabase
-      .from('reps')
+      .from('scheduler_reps')
       .select('*')
       .order('sales_rank', { ascending: true, nullsFirst: false });
 
@@ -128,7 +128,7 @@ export async function upsertReps(reps: Rep[]): Promise<{ success: boolean; error
     }));
 
     const { error } = await supabase
-      .from('reps')
+      .from('scheduler_reps')
       .upsert(supabaseReps, { onConflict: 'external_id' });
 
     if (error) throw error;
@@ -146,7 +146,7 @@ export async function upsertReps(reps: Rep[]): Promise<{ success: boolean; error
 export async function upsertJob(job: Job): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await supabase
-      .from('jobs')
+      .from('scheduler_jobs')
       .upsert({
         external_id: job.id,
         customer_name: job.customerName,
@@ -178,7 +178,7 @@ export async function upsertJobs(jobs: Job[]): Promise<{ success: boolean; error
     }));
 
     const { error } = await supabase
-      .from('jobs')
+      .from('scheduler_jobs')
       .upsert(supabaseJobs, { onConflict: 'external_id' });
 
     if (error) throw error;
@@ -219,7 +219,7 @@ export async function saveDailySchedule(
     // 3. Get job ID mappings (external_id -> uuid)
     const jobExternalIds = allJobs.map(j => j.id);
     const { data: jobMappings } = await supabase
-      .from('jobs')
+      .from('scheduler_jobs')
       .select('id, external_id')
       .in('external_id', jobExternalIds.length > 0 ? jobExternalIds : ['__none__']);
 
@@ -233,7 +233,7 @@ export async function saveDailySchedule(
     // 5. Get rep ID mappings
     const repExternalIds = state.reps.map(r => r.id);
     const { data: repMappings } = await supabase
-      .from('reps')
+      .from('scheduler_reps')
       .select('id, external_id')
       .in('external_id', repExternalIds.length > 0 ? repExternalIds : ['__none__']);
 
@@ -298,7 +298,7 @@ export async function saveDailySchedule(
 
     // 9. Save settings
     const { error: settingsError } = await supabase
-      .from('settings')
+      .from('scheduler_settings')
       .upsert({
         date_key: dateKey,
         config: state.settings,
@@ -321,7 +321,7 @@ export async function loadDailySchedule(
 
     // 1. Fetch all reps
     const { data: repsData, error: repsError } = await supabase
-      .from('reps')
+      .from('scheduler_reps')
       .select('*')
       .order('sales_rank', { ascending: true, nullsFirst: false });
 
@@ -332,8 +332,8 @@ export async function loadDailySchedule(
       .from('daily_schedules')
       .select(`
         *,
-        jobs (*),
-        reps (*)
+        scheduler_jobs (*),
+        scheduler_reps (*)
       `)
       .eq('date_key', dateKey);
 
@@ -344,7 +344,7 @@ export async function loadDailySchedule(
       .from('unassigned_jobs')
       .select(`
         *,
-        jobs (*)
+        scheduler_jobs (*)
       `)
       .eq('date_key', dateKey);
 
@@ -352,7 +352,7 @@ export async function loadDailySchedule(
 
     // 4. Fetch settings for this date (use maybeSingle to handle no rows gracefully)
     const { data: settingsData } = await supabase
-      .from('settings')
+      .from('scheduler_settings')
       .select('config')
       .eq('date_key', dateKey)
       .maybeSingle();
@@ -362,9 +362,9 @@ export async function loadDailySchedule(
     const lockedReps = new Set<string>();
 
     for (const schedule of (scheduleData || [])) {
-      if (!schedule.jobs || !schedule.reps) continue;
+      if (!schedule.scheduler_jobs || !schedule.scheduler_reps) continue;
 
-      const repExternalId = schedule.reps.external_id;
+      const repExternalId = schedule.scheduler_reps.external_id;
       if (!schedulesByRep.has(repExternalId)) {
         schedulesByRep.set(repExternalId, new Map());
       }
@@ -374,7 +374,7 @@ export async function loadDailySchedule(
         repSchedule.set(schedule.slot_id, []);
       }
 
-      repSchedule.get(schedule.slot_id)!.push(supabaseJobToDisplayJob(schedule.jobs, schedule));
+      repSchedule.get(schedule.slot_id)!.push(supabaseJobToDisplayJob(schedule.scheduler_jobs, schedule));
 
       if (schedule.is_locked) {
         lockedReps.add(repExternalId);
@@ -397,8 +397,8 @@ export async function loadDailySchedule(
 
     // 7. Build unassigned jobs
     const unassignedJobs: Job[] = (unassignedData || [])
-      .filter(u => u.jobs)
-      .map(u => supabaseJobToJob(u.jobs!));
+      .filter(u => u.scheduler_jobs)
+      .map(u => supabaseJobToJob(u.scheduler_jobs!));
 
     // 8. Build settings (use defaults if not found)
     const defaultSettings: Settings = {
@@ -458,7 +458,7 @@ export async function loadDailySchedule(
 export async function logChange(change: JobChange): Promise<{ success: boolean; error?: string }> {
   try {
     const { error } = await supabase
-      .from('change_log')
+      .from('scheduler_change_log')
       .insert({
         date_key: change.dateKey,
         job_external_id: change.jobId,
@@ -482,7 +482,7 @@ export async function fetchChangeLogs(
 ): Promise<{ success: boolean; changes?: JobChange[]; error?: string }> {
   try {
     const { data, error } = await supabase
-      .from('change_log')
+      .from('scheduler_change_log')
       .select('*')
       .eq('date_key', dateKey)
       .order('timestamp', { ascending: false });

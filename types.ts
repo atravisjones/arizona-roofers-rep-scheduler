@@ -414,14 +414,6 @@ export interface AppContextType {
   loadSelectedBackup: (backupId: string) => Promise<void>;
   closeLoadOptionsModal: () => void;
 
-  // Routing API Integration
-  useRoutingApi: boolean;
-  toggleRoutingApiMode: (enabled: boolean) => void;
-  isLoadingFromRoutingApi: boolean;
-  routingApiError: string | null;
-  routingApiSyncStatus: 'idle' | 'syncing' | 'synced' | 'error';
-  loadJobsFromRoutingApi: () => Promise<void>;
-
   // Load from Sheet
   handleLoadFromSheet: () => Promise<void>;
   isLoadingFromSheet: boolean;

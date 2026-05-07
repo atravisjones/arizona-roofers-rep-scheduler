@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { Rep, Job, DisplayJob } from '../types';
-import { ChevronDownIcon, ChevronUpIcon, PinIcon, ClipboardIcon, LockIcon, UnlockIcon, AutoAssignIcon, SwapIcon, OptimizeIcon, UndoIcon, SettingsIcon, TrophyIcon, XIcon, MenuIcon, MessageIcon } from './icons';
+import { Rep, Job, DisplayJob, InstallJob } from '../types';
+import { ChevronDownIcon, ChevronUpIcon, PinIcon, ClipboardIcon, LockIcon, UnlockIcon, AutoAssignIcon, SwapIcon, OptimizeIcon, UndoIcon, SettingsIcon, TrophyIcon, XIcon, MenuIcon, MessageIcon, HardHatIcon } from './icons';
 import { JobCard } from './JobCard';
 import { SwapScheduleModal } from './SwapScheduleModal';
 import { TAG_KEYWORDS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
@@ -97,7 +97,7 @@ const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, is
     };
 
     const hasJobs = jobs.length > 0;
-    const isDoubleBooked = jobs.length > 1;
+    const isDoubleBooked = jobs.filter(j => !j.id.startsWith('install-')).length > 1;
 
     if (isUnavailable) {
         return (
@@ -314,7 +314,7 @@ const ScoreDetailsModal: React.FC<ScoreDetailsModalProps> = ({ isOpen, onClose, 
 
 
 const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, onToggleLock, onUpdateJob, onRemoveJob, isSelected, onSelectRep, selectedDay, isExpanded, onToggleExpansion, draggedOverRepId, onSetDraggedOverRepId, onJobDragStart, onJobDragEnd, draggedJob, isInvalidDropTarget = false, invalidReason = '', isOverrideActive = false, isHighlighted = false, selectedRepName, isUnavailableForSlot = false }) => {
-    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate, setHoveredRepId, handleUpdateRep } = useAppContext();
+    const { appState, isAutoAssigning, isAiAssigning, isParsing, handleAutoAssignForRep, handleOptimizeRepRoute, handleUnoptimizeRepRoute, handleSwapSchedules, handleShowZipOnMap, setRepSettingsModalRepId, selectedDate, setHoveredRepId, handleUpdateRep, installsByRep } = useAppContext();
     const [isSwapModalOpen, setIsSwapModalOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -476,7 +476,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         return 'none';
     }, [isBeingHoveredWithJob, draggedJob, rep.skills]);
 
-    const isDoubleBooked = useMemo(() => { return rep.schedule.some(slot => slot.jobs.length > 1); }, [rep.schedule]);
+    const isDoubleBooked = useMemo(() => { return rep.schedule.some(slot => slot.jobs.filter(j => !j.id.startsWith('install-')).length > 1); }, [rep.schedule]);
 
     const containerClasses = useMemo(() => {
         const base = 'p-1.5 rounded-lg transition-all duration-300 border-2 min-w-0';
@@ -826,6 +826,44 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                     </div>
                 </>
             )}
+
+            {/* Active Installs — always visible, separate from sales appointments */}
+            {(() => {
+                const repInstalls = installsByRep.get(rep.id) || [];
+                if (repInstalls.length === 0) return null;
+                const topInstall = repInstalls.reduce((best, cur) => {
+                    const curVal = typeof cur.value === 'number' ? cur.value : parseFloat(String(cur.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                    const bestVal = typeof best.value === 'number' ? best.value : parseFloat(String(best.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                    return curVal > bestVal ? cur : best;
+                }, repInstalls[0]);
+                const installDisplayJob: DisplayJob & { installValue?: number } = {
+                    id: `install-${topInstall.jobId}`,
+                    customerName: `INSTALL: ${topInstall.customerName}`,
+                    address: topInstall.address,
+                    city: topInstall.city || '',
+                    notes: `Crew: ${topInstall.crewNames.length > 0 ? topInstall.crewNames.join(', ') : topInstall.jobOwner}`,
+                    originalTimeframe: topInstall.scheduledDate,
+                    isStartLocation: false,
+                    isDimmed: false,
+                    installValue: typeof topInstall.value === 'number' ? topInstall.value : parseFloat(String(topInstall.value || '0').replace(/[^0-9.]/g, '')) || undefined,
+                };
+                return (
+                    <div className="mt-1.5 pt-1 border-t border-dashed border-orange-300">
+                        <div className="flex items-center gap-1 mb-1">
+                            <HardHatIcon className="h-3.5 w-3.5 text-orange-700" />
+                            <span className="text-[10px] font-bold text-orange-800 uppercase tracking-wide">Active Install</span>
+                        </div>
+                        <JobCard
+                            job={installDisplayJob}
+                            isMismatch={false}
+                            isTimeMismatch={false}
+                            onDragStart={onJobDragStart}
+                            onDragEnd={onJobDragEnd}
+                            isDraggable={false}
+                        />
+                    </div>
+                );
+            })()}
 
             <ScoreDetailsModal
                 isOpen={isScoreDetailsOpen}

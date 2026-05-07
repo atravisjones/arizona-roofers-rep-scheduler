@@ -9,3 +9,4 @@ dist
 nul
 *.zip
 .env.local
+graphify-out/

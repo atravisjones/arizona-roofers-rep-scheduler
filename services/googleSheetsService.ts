@@ -1,8 +1,7 @@
 import { Rep } from '../types';
-import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE } from '../constants';
+import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
 import { MOCK_REPS_DATA } from './mockData';
 import { ALL_KNOWN_CITIES } from './geography';
-import { createAddressVariationMap } from './addressMatcher';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -316,79 +315,181 @@ async function fetchSalesRankings(): Promise<Map<string, number>> {
  * Returns a Map where key is normalized rep name and value is their rank based on closing rate.
  * Higher closing rate = lower rank number (rank 1 = best closer).
  */
+export type ClosingRateDetail = { name: string; won: number; total: number; rate: number; rank: number };
+
+export async function fetchClosingRateDetails(days: number = 30): Promise<ClosingRateDetail[]> {
+    const sbHeaders = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    };
+    try {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - days);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
+
+        const evtParams = new URLSearchParams({
+            select: 'job_id',
+            category: 'eq.sales',
+            'start_date': `gte.${cutoffStr}`,
+        });
+        const evtResp = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events?${evtParams}`, { headers: sbHeaders });
+        if (!evtResp.ok) return [];
+        const events: { job_id: string }[] = await evtResp.json();
+        const jobIds = [...new Set(events.map(e => e.job_id).filter(Boolean))];
+        if (jobIds.length === 0) return [];
+
+        type JobRow = { job_id: string; job_owner: string; lead_source: string | null; stage: string | null; status: string | null; stage_category: string | null };
+        const jobMap = new Map<string, JobRow>();
+        for (let i = 0; i < jobIds.length; i += 200) {
+            const chunk = jobIds.slice(i, i + 200);
+            const jobParams = new URLSearchParams({
+                select: 'job_id,job_owner,lead_source,stage,status,stage_category',
+                workflow: 'eq.Retail',
+                'job_id': `in.(${chunk.join(',')})`,
+                'job_owner': 'not.is.null',
+            });
+            const jobResp = await fetch(`${SUPABASE_URL}/rest/v1/jobs?${jobParams}`, { headers: sbHeaders });
+            if (jobResp.ok) {
+                const jobs: JobRow[] = await jobResp.json();
+                for (const j of jobs) jobMap.set(j.job_id, j);
+            }
+        }
+
+        const EXCLUDED_SOURCES = new Set(['self gen', 'door knocking']);
+        const EXCLUDED_STAGES = new Set(['unqualified', 'appointment scheduled', 'not pitched', 'needs rescheduled', 'new lead', 'door knocking leads']);
+        const repStats = new Map<string, { name: string; won: number; total: number }>();
+        for (const jobId of jobIds) {
+            const job = jobMap.get(jobId);
+            if (!job) continue;
+            if (job.lead_source && EXCLUDED_SOURCES.has(job.lead_source.toLowerCase())) continue;
+            if (job.stage && EXCLUDED_STAGES.has(job.stage.toLowerCase())) continue;
+            const key = job.job_owner;
+            if (!repStats.has(key)) {
+                repStats.set(key, { name: key, won: 0, total: 0 });
+            }
+            const stats = repStats.get(key)!;
+            stats.total++;
+            if (job.stage_category === 'won') stats.won++;
+        }
+
+        const results: ClosingRateDetail[] = [];
+        for (const stats of repStats.values()) {
+            if (stats.total >= 3) {
+                results.push({ name: stats.name, won: stats.won, total: stats.total, rate: stats.won / stats.total, rank: 0 });
+            }
+        }
+        results.sort((a, b) => b.rate - a.rate);
+        results.forEach((r, i) => { r.rank = i + 1; });
+        return results;
+    } catch (error) {
+        console.error("Error fetching closing rate details:", error);
+        return [];
+    }
+}
+
 async function fetchClosingRates(): Promise<Map<string, number>> {
     const rankMap = new Map<string, number>();
+    const sbHeaders = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    };
     try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${APT_OUTCOME_SPREADSHEET_ID}/values/'${encodeURIComponent(APT_OUTCOME_SHEET_TITLE)}'!${APT_OUTCOME_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
-        const response = await fetchWithRetry(url);
-        if (!response.ok) {
-            console.warn(`Failed to fetch closing rates: ${response.statusText}`);
+        // Closing rate = won / total appointments ran in last 30 days
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 30);
+        const cutoffStr = cutoff.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        // 1. Fetch sales appointments from last 30 days (unique job_ids)
+        const evtParams = new URLSearchParams({
+            select: 'job_id',
+            category: 'eq.sales',
+            'start_date': `gte.${cutoffStr}`,
+        });
+        const evtResp = await fetch(`${SUPABASE_URL}/rest/v1/calendar_events?${evtParams}`, { headers: sbHeaders });
+        if (!evtResp.ok) {
+            console.warn(`Failed to fetch calendar events: ${evtResp.statusText}`);
             return rankMap;
         }
-        const data = await response.json();
-        const values = data.values;
+        const events: { job_id: string }[] = await evtResp.json();
+        const jobIds = [...new Set(events.map(e => e.job_id).filter(Boolean))];
+        if (jobIds.length === 0) return rankMap;
 
-        if (!values || values.length < 2) {
-            console.warn('Appointment Summary sheet is empty or has only a header.');
-            return rankMap;
+        // 2. Fetch job outcomes for those job_ids (batch in chunks of 200)
+        type JobRow = { job_id: string; job_owner: string; lead_source: string | null; stage: string | null; status: string | null; stage_category: string | null };
+        const jobMap = new Map<string, JobRow>();
+        for (let i = 0; i < jobIds.length; i += 200) {
+            const chunk = jobIds.slice(i, i + 200);
+            const jobParams = new URLSearchParams({
+                select: 'job_id,job_owner,lead_source,stage,status,stage_category',
+                workflow: 'eq.Retail',
+                'job_id': `in.(${chunk.join(',')})`,
+                'job_owner': 'not.is.null',
+            });
+            const jobResp = await fetch(`${SUPABASE_URL}/rest/v1/jobs?${jobParams}`, { headers: sbHeaders });
+            if (jobResp.ok) {
+                const jobs: JobRow[] = await jobResp.json();
+                for (const j of jobs) jobMap.set(j.job_id, j);
+            }
         }
 
-        // Row 68 is the header row (index 0 in our range B68:N100)
-        // Column B (index 0) = Sales Rep
-        // Column M (index 11) = 30 days Close rate %
-        const REP_COL_INDEX = 0;  // Column B = Sales Rep
-        const CLOSE_RATE_COL_INDEX = 11;  // Column M = 30 days Close rate %
-
-        // Collect rep names and their closing rates
-        const repRates: { name: string; normalized: string; rate: number }[] = [];
-
-        // Start from row 1 (skip header at index 0)
-        for (let i = 1; i < values.length; i++) {
-            const row = values[i];
-            if (!row || row.length === 0) continue;
-
-            const repName = row[REP_COL_INDEX];
-            const closeRateStr = row[CLOSE_RATE_COL_INDEX];
-
-            if (!repName || !String(repName).trim()) continue;
-
-            // Skip total/summary rows
-            if (String(repName).trim().toLowerCase() === 'total') continue;
-
-            const normalized = normalizeName(String(repName));
+        // 3. Group by rep: count won vs total appointments (apply source/stage exclusions)
+        const EXCLUDED_SOURCES = new Set(['self gen', 'door knocking']);
+        const EXCLUDED_STAGES = new Set(['unqualified', 'appointment scheduled', 'not pitched', 'needs rescheduled', 'new lead', 'door knocking leads']);
+        const repStats = new Map<string, { won: number; total: number }>();
+        for (const jobId of jobIds) {
+            const job = jobMap.get(jobId);
+            if (!job) continue;
+            if (job.lead_source && EXCLUDED_SOURCES.has(job.lead_source.toLowerCase())) continue;
+            if (job.stage && EXCLUDED_STAGES.has(job.stage.toLowerCase())) continue;
+            const normalized = normalizeName(job.job_owner);
             if (!normalized) continue;
-
-            // Parse percentage (e.g., "61.54%", "0.6154", "61.54")
-            let rate = 0;
-            if (closeRateStr) {
-                const rateStr = String(closeRateStr).replace('%', '').trim();
-                rate = parseFloat(rateStr);
-                // If it's a decimal like 0.6154, convert to percentage
-                if (!isNaN(rate) && rate > 0 && rate < 1) {
-                    rate = rate * 100;
-                }
-                if (isNaN(rate)) rate = 0;
+            if (!repStats.has(normalized)) {
+                repStats.set(normalized, { won: 0, total: 0 });
             }
-
-            // Only add if not already present (first occurrence wins)
-            if (!repRates.some(r => r.normalized === normalized)) {
-                repRates.push({ name: String(repName), normalized, rate });
-            }
+            const stats = repStats.get(normalized)!;
+            stats.total++;
+            if (job.stage_category === 'won') stats.won++;
         }
 
-        // Sort by closing rate descending (highest rate = best = rank 1)
+        // 4. Rank by closing rate (min 3 appointments)
+        const repRates: { normalized: string; rate: number }[] = [];
+        for (const [name, stats] of repStats) {
+            if (stats.total >= 3) {
+                repRates.push({ normalized: name, rate: stats.won / stats.total });
+            }
+        }
         repRates.sort((a, b) => b.rate - a.rate);
 
-        // Assign ranks
         repRates.forEach((rep, index) => {
             rankMap.set(rep.normalized, index + 1);
         });
 
-        console.log(`Fetched closing rates for ${rankMap.size} reps from Appointment Summary (30 days)`);
+        console.log(`Fetched closing rates for ${rankMap.size} reps from Supabase (30-day appointments)`);
     } catch (error) {
         console.error("Error fetching closing rates:", error);
     }
     return rankMap;
+}
+
+async function fetchAssignmentRankings(): Promise<Map<string, number>> {
+    const [manualRankings, closingRateRankings] = await Promise.all([
+        fetchSalesRankings(),
+        fetchClosingRates(),
+    ]);
+
+    if (manualRankings.size === 0) {
+        return closingRateRankings;
+    }
+
+    const combinedRankings = new Map(manualRankings);
+    for (const [normalizedName, closingRateRank] of closingRateRankings) {
+        if (!combinedRankings.has(normalizedName)) {
+            combinedRankings.set(normalizedName, manualRankings.size + closingRateRank);
+        }
+    }
+
+    console.log(`Loaded assignment rankings: ${manualRankings.size} manual priority reps, ${closingRateRankings.size} close-rate reps`);
+    return combinedRankings;
 }
 
 // Fetches and parses the rep skills from the 'Appointment Blocks' sheet.
@@ -497,7 +598,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
     try {
         // 0. Fetch skills and sales rankings data in parallel
         const skillsPromise = fetchRepSkills();
-        const ranksPromise = fetchSalesRankings(); // Use manual best-closer order from Appointment Blocks A69:A82
+        const ranksPromise = fetchAssignmentRankings(); // Manual closer order first, then 30-day close rate fallback
 
         // 1. Get spreadsheet metadata to find the current sheet name
         const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?key=${GOOGLE_API_KEY}`;
@@ -551,7 +652,11 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
 
         // 4. Parse data rows into Rep structure
         const repsMap = new Map<string, { name: string; unavailableSlots: Record<string, Set<string>>; firstRowIndex: number }>();
-        const timeSlotLabelsToIds = new Map(TIME_SLOTS.map(slot => [slot.label.trim().toLowerCase(), slot.id]));
+        // Dynamic time range detection — matches any "Xam - Ypm" pattern regardless of specific times
+        const timeRangeRegex = /(\d{1,2}(?::\d{2})?\s*[ap]m\s*-\s*\d{1,2}(?::\d{2})?\s*[ap]m)\s*$/i;
+        // Auto-assign slot IDs (ts-1, ts-2, ...) in order of first appearance
+        const timeSlotLabelsToIds = new Map<string, string>();
+        let nextSlotNum = 1;
         const dataRows = values.slice(1);
 
         let currentRepContext: string | null = null;
@@ -570,11 +675,14 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
 
             let wasRowProcessed = false;
 
-            for (const [label, id] of timeSlotLabelsToIds.entries()) {
-                const labelRegex = new RegExp(label.replace(/(\s-\s)/, '\\s?-\\s?') + '$', 'i');
-                if (labelRegex.test(firstCol)) {
-                    const slotId = id;
-                    let repName = firstCol.replace(labelRegex, '').trim().replace(/:$/, '').trim();
+            const timeMatch = firstCol.match(timeRangeRegex);
+            if (timeMatch) {
+                    const matchedLabel = timeMatch[1].toLowerCase().replace(/\s+/g, ' ');
+                    if (!timeSlotLabelsToIds.has(matchedLabel)) {
+                        timeSlotLabelsToIds.set(matchedLabel, `ts-${nextSlotNum++}`);
+                    }
+                    const slotId = timeSlotLabelsToIds.get(matchedLabel)!;
+                    let repName = firstCol.replace(timeRangeRegex, '').trim().replace(/:$/, '').trim();
 
                     if (!repName && currentRepContext) {
                         repName = currentRepContext;
@@ -582,8 +690,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
 
                     if (!repName) {
                         wasRowProcessed = true;
-                        break;
-                    }
+                    } else {
 
                     currentRepContext = repName;
 
@@ -614,8 +721,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
                     });
 
                     wasRowProcessed = true;
-                    break;
-                }
+                    } // end else (repName exists)
             }
 
             if (!wasRowProcessed && firstCol) {

@@ -12,20 +12,11 @@ import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOU
 import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
 import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStatesFromCloud } from '../services/cloudStorageServiceSheets';
-import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup } from '../services/backupService';
-import { saveState, loadState } from '../services/saveLoadService';
+import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate } from '../services/backupService';
+// saveLoadService (Google Apps Script) removed — all save/load now via Supabase backupService
 import { doTimesOverlap } from '../utils/timeUtils';
 import { isLondon, getEffectiveUnavailableSlots } from '../utils/repUtils';
-import {
-    fetchUnassignedJobs,
-    fetchAppointmentsByDate,
-    fetchDaySchedule,
-    createAppointment,
-    mapRoutingApiJobToAppJob,
-    RoutingApiJob,
-    DayScheduleResponse,
-} from '../services/routingApiService';
-import { ROUTING_API_SYNC_DEBOUNCE_MS } from '../constants';
+// routingApiService removed — deleted Vercel project
 
 // Helpers
 const norm = (city: string | null | undefined): string => (city || '').toLowerCase().trim();
@@ -140,13 +131,7 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
 
 const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS };
 
-// Type for Routing API sync queue items
-interface RoutingApiSyncItem {
-    jobId: string;
-    repId: string;
-    slotId: string;
-    dateKey: string;
-}
+
 
 export const useAppLogic = () => {
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
@@ -232,13 +217,7 @@ export const useAppLogic = () => {
     // Load from Sheet state
     const [isLoadingFromSheet, setIsLoadingFromSheet] = useState(false);
 
-    // Routing API integration state
-    const [useRoutingApi, setUseRoutingApi] = useState<boolean>(false);
-    const [isLoadingFromRoutingApi, setIsLoadingFromRoutingApi] = useState(false);
-    const [routingApiError, setRoutingApiError] = useState<string | null>(null);
-    const [routingApiSyncStatus, setRoutingApiSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
-    const routingApiSyncQueueRef = useRef<Map<string, RoutingApiSyncItem>>(new Map());
-    const routingApiSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
     // Toast notification state
     const [toasts, setToasts] = useState<ToastData[]>([]);
@@ -755,49 +734,9 @@ export const useAppLogic = () => {
                 setExpandedRepIds(new Set());
             }
 
-            // Attempt to load saved state from Google Sheets API
-            try {
-                log('Checking for saved state on server...');
-                const savedState = await loadState(dateKey);
-                if (savedState.success && savedState.data) {
-                    log('Found saved state! Merging...');
-                    const loadedData = savedState.data;
-
-                    // Merge settings
-                    if (loadedData.settings) {
-                        newDayState.settings = { ...newDayState.settings, ...loadedData.settings };
-                    }
-
-                    // Merge unassigned jobs
-                    if (loadedData.unassignedJobs) {
-                        newDayState.unassignedJobs = loadedData.unassignedJobs;
-                    }
-
-                    // Merge rep schedules
-                    // We iterate over the *loaded* reps to find their assignments,
-                    // and map them to the *freshly fetched* reps (repsWithSchedule) to ensure we have latest metadata.
-                    if (loadedData.reps) {
-                        const savedRepsMap = new Map(loadedData.reps.map(r => [r.id, r]));
-
-                        newDayState.reps = newDayState.reps.map(currentRep => {
-                            const savedRep = savedRepsMap.get(currentRep.id);
-                            if (savedRep && savedRep.schedule) {
-                                return {
-                                    ...currentRep,
-                                    schedule: savedRep.schedule,
-                                    // Preserve other dynamic properties if needed, or overwrite if saved state is source of truth
-                                };
-                            }
-                            return currentRep;
-                        });
-                    }
-                } else {
-                    log('No saved state found (or empty). Using defaults.');
-                }
-            } catch (loadErr) {
-                console.warn('Background load failed (non-fatal):', loadErr);
-                log('Background load failed. Using fresh data.');
-            }
+            // Auto-restore from Supabase backup DISABLED — app starts with empty schedules.
+            // User can manually "Load from Cloud" or "Load from Sheet" when ready.
+            log('Skipping auto-restore (disabled). Use Load from Cloud/Sheet manually.');
 
             // Final check before committing - abort if cloud loaded this day
             if (cloudLoadedDaysRef.current.has(dateKey)) {
@@ -855,190 +794,7 @@ export const useAppLogic = () => {
         }
     }, [selectedDate, log, recordChange]);
 
-    // ============ Routing API Integration Functions ============
-
-    /**
-     * Flush the sync queue - send all pending assignments to the Routing API.
-     */
-    const flushRoutingApiSyncQueue = useCallback(async () => {
-        const queue: RoutingApiSyncItem[] = Array.from(routingApiSyncQueueRef.current.values());
-        if (queue.length === 0) return;
-
-        log(`[RoutingAPI] Syncing ${queue.length} assignments...`);
-        setRoutingApiSyncStatus('syncing');
-
-        let successCount = 0;
-        let errorCount = 0;
-
-        for (const item of queue) {
-            try {
-                await createAppointment({
-                    jobId: item.jobId,
-                    repId: item.repId,
-                    date: item.dateKey,
-                    timeSlotId: item.slotId,
-                });
-                successCount++;
-                log(`[RoutingAPI] Synced: ${item.jobId} -> rep ${item.repId}`);
-            } catch (error) {
-                errorCount++;
-                console.error(`[RoutingAPI] Failed to sync job ${item.jobId}:`, error);
-                log(`[RoutingAPI] ERROR syncing ${item.jobId}: ${error}`);
-            }
-        }
-
-        routingApiSyncQueueRef.current.clear();
-
-        if (errorCount > 0) {
-            setRoutingApiSyncStatus('error');
-            showToast(`Sync completed with ${errorCount} errors`, 'error');
-        } else {
-            setRoutingApiSyncStatus('synced');
-            showToast(`Synced ${successCount} assignments to Routing API`, 'success');
-        }
-
-        log(`[RoutingAPI] Sync complete: ${successCount} success, ${errorCount} errors`);
-    }, [log, showToast]);
-
-    /**
-     * Queue a job assignment for syncing to the Routing API.
-     */
-    const queueRoutingApiSync = useCallback((item: { jobId: string; repId: string; slotId: string; dateKey: string }) => {
-        routingApiSyncQueueRef.current.set(item.jobId, item);
-        log(`[RoutingAPI] Queued sync for job ${item.jobId}`);
-
-        // Clear existing timer and set a new debounced one
-        if (routingApiSyncTimerRef.current) {
-            clearTimeout(routingApiSyncTimerRef.current);
-        }
-
-        routingApiSyncTimerRef.current = setTimeout(() => {
-            flushRoutingApiSyncQueue();
-        }, ROUTING_API_SYNC_DEBOUNCE_MS);
-    }, [log, flushRoutingApiSyncQueue]);
-
-    /**
-     * Load jobs from the Routing API for all active days.
-     * Uses the day schedule endpoint which returns jobs with their assignments.
-     */
-    const loadJobsFromRoutingApi = useCallback(async () => {
-        // Note: Don't check useRoutingApi here - state may not be updated yet when called from toggle
-        try {
-            setIsLoadingFromRoutingApi(true);
-            setRoutingApiError(null);
-            log('[RoutingAPI] Fetching day schedules for active days...');
-
-            let totalAssigned = 0;
-
-            // Load schedule for each active day
-            for (const dateKey of activeDayKeys) {
-                try {
-                    log(`[RoutingAPI] Fetching schedule for ${dateKey}...`);
-                    const daySchedule = await fetchDaySchedule(dateKey);
-
-                    // Count jobs
-                    const assignedCount = daySchedule.reps?.reduce(
-                        (sum, rep) => sum + rep.schedule?.reduce(
-                            (slotSum, slot) => slotSum + (slot.jobs?.length || 0), 0
-                        ) || 0, 0
-                    ) || 0;
-
-                    totalAssigned += assignedCount;
-
-                    log(`[RoutingAPI] ${dateKey}: ${assignedCount} assigned jobs`);
-
-                    // Update the day's state with the Routing API data
-                    recordChange(currentDailyStates => {
-                        const newDailyStates = new Map<string, AppState>(currentDailyStates);
-                        const existingDayState = newDailyStates.get(dateKey);
-
-                        if (!existingDayState) {
-                            log(`[RoutingAPI] No existing state for ${dateKey}, skipping`);
-                            return currentDailyStates;
-                        }
-
-                        // Create a new state with merged data
-                        const newState: AppState = JSON.parse(JSON.stringify(existingDayState));
-
-                        // Merge jobs from Routing API into existing reps
-                        if (daySchedule.reps && daySchedule.reps.length > 0) {
-                            const apiRepsMap = new Map(daySchedule.reps.map(r => [r.name.toLowerCase().trim(), r]));
-
-                            for (const rep of newState.reps) {
-                                const apiRep = apiRepsMap.get(rep.name.toLowerCase().trim());
-                                if (apiRep && apiRep.schedule) {
-                                    // Merge jobs from API into rep's schedule
-                                    for (const apiSlot of apiRep.schedule) {
-                                        const repSlot = rep.schedule.find(s => s.id === apiSlot.id);
-                                        if (repSlot && apiSlot.jobs && apiSlot.jobs.length > 0) {
-                                            // Add jobs that don't already exist
-                                            const existingJobIds = new Set(repSlot.jobs.map(j => j.id));
-                                            for (const apiJob of apiSlot.jobs) {
-                                                if (!existingJobIds.has(apiJob.id)) {
-                                                    const mappedJob = mapRoutingApiJobToAppJob(apiJob);
-                                                    repSlot.jobs.push({
-                                                        ...mappedJob,
-                                                        assignedRepName: rep.name,
-                                                        timeSlotLabel: repSlot.label,
-                                                    } as DisplayJob);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // NOTE: We intentionally skip unassignedJobs from the Routing API
-                        // because they aren't date-filtered (returns ALL pending jobs in database).
-                        // Scanner jobs are auto-assigned, so they appear in reps' schedules above.
-
-                        newDailyStates.set(dateKey, newState);
-                        return newDailyStates;
-                    }, 'Load from Routing API');
-
-                } catch (dayError) {
-                    console.error(`[RoutingAPI] Failed to load ${dateKey}:`, dayError);
-                    log(`[RoutingAPI] ERROR loading ${dateKey}: ${dayError}`);
-                }
-            }
-
-            if (totalAssigned > 0) {
-                showToast(`Loaded ${totalAssigned} assigned jobs from Routing API`, 'success');
-            } else {
-                showToast('No assigned jobs found in Routing API for active days', 'info');
-            }
-
-        } catch (error) {
-            console.error('[RoutingAPI] Failed to load jobs:', error);
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            setRoutingApiError(errorMsg);
-            showToast(`Failed to load from Routing API: ${errorMsg}`, 'error');
-            log(`[RoutingAPI] ERROR: ${errorMsg}`);
-        } finally {
-            setIsLoadingFromRoutingApi(false);
-        }
-    }, [useRoutingApi, activeDayKeys, log, showToast, recordChange]);
-
-    /**
-     * Toggle Routing API mode on/off.
-     */
-    const toggleRoutingApiMode = useCallback((enabled: boolean) => {
-        setUseRoutingApi(enabled);
-        log(`[RoutingAPI] Mode ${enabled ? 'enabled' : 'disabled'}`);
-
-        if (enabled) {
-            // Load jobs when enabling
-            loadJobsFromRoutingApi();
-        } else {
-            // Clear sync queue when disabling
-            if (routingApiSyncTimerRef.current) {
-                clearTimeout(routingApiSyncTimerRef.current);
-            }
-            routingApiSyncQueueRef.current.clear();
-            setRoutingApiSyncStatus('idle');
-        }
-    }, [log, loadJobsFromRoutingApi]);
+    // Routing API removed (deleted Vercel project)
 
     const setSelectedDate = useCallback((date: Date) => {
         const dateKey = formatDateToKey(date);
@@ -1082,7 +838,7 @@ export const useAppLogic = () => {
         log(`Removed day ${dateKeyToRemove} from workspace.`);
     }, [activeDayKeys, selectedDate, log]);
 
-    // Initialize next 7 days on app startup
+    // Initialize today + tomorrow on app startup (user can add more days via Add button)
     useEffect(() => {
         // Only run if activeDayKeys is empty (first load)
         if (activeDayKeys.length > 0) return;
@@ -1090,44 +846,20 @@ export const useAppLogic = () => {
         const today = new Date();
         today.setHours(12, 0, 0, 0); // Noon to avoid timezone issues
 
-        const next7Days: string[] = [];
-        for (let i = 0; i < 7; i++) {
+        const initialDays: string[] = [];
+        for (let i = 0; i < 2; i++) {
             const date = new Date(today);
             date.setDate(today.getDate() + i);
-            next7Days.push(formatDateToKey(date));
+            initialDays.push(formatDateToKey(date));
         }
 
-        setActiveDayKeys(next7Days);
-        log('Initialized next 7 days on startup');
+        setActiveDayKeys(initialDays);
+        log('Initialized today + tomorrow on startup');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Run once on mount
 
-    // Auto-save effect
-    const saveTimeoutRef = useRef<any>(null);
-
-    useEffect(() => {
-        const dateKey = formatDateToKey(selectedDate);
-        if (isLoadingReps || isParsing || usingMockData) return;
-
-        const currentAppState = dailyStates.get(dateKey);
-        if (!currentAppState) return;
-
-        // Debounce save
-        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-
-        saveTimeoutRef.current = setTimeout(async () => {
-            // Basic check to see if we have anything meaningful to save
-            const hasData = currentAppState.reps.some(r => r.schedule.some(s => s.jobs.length > 0)) || currentAppState.unassignedJobs.length > 0;
-            if (!hasData) return;
-
-            // log('Auto-saving state...'); // Commented out to avoid log spam
-            await saveState(dateKey, currentAppState);
-        }, 3000);
-
-        return () => {
-            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        };
-    }, [dailyStates, selectedDate, isLoadingReps, isParsing, usingMockData]);
+    // Auto-save effect — removed old Google Apps Script save (dead endpoint).
+    // Auto-save is now handled by performAutoSave (Supabase) triggered below.
 
     useEffect(() => {
         // Don't trigger loadReps if cloud loading is in progress
@@ -1211,23 +943,18 @@ export const useAppLogic = () => {
         const isPriority = job.notes.includes('#');
         const rank = rep.salesRank || 99;
 
-        if (isPriority) {
-            // For priority leads, rank matters a lot
-            if (rank === 1) performanceScore = 100;
-            else if (rank === 2) performanceScore = 95;
-            else if (rank === 3) performanceScore = 90;
-            else if (rank <= 5) performanceScore = 85;
-            else if (rank <= 10) performanceScore = 75;
-            else if (rank <= 20) performanceScore = 50;
-            else performanceScore = Math.max(10, 50 - ((rank - 20) * 2));
-        } else {
-            // Non-priority leads - rank still matters but less
-            // We want to spread work evenly, so unranked/lower reps get more regular jobs
-            if (rank <= 10) performanceScore = 70; // Top reps still get slight preference
-            else if (rank <= 20) performanceScore = 80; // Mid-tier reps are good for regular
-            else performanceScore = 90; // Unranked reps should get regular jobs
-            // Reduce weight for non-priority
-            weights.performance = weights.performance * 0.3;
+        // Best closers get the best jobs — rank always matters
+        if (rank === 1) performanceScore = 100;
+        else if (rank === 2) performanceScore = 95;
+        else if (rank === 3) performanceScore = 90;
+        else if (rank <= 5) performanceScore = 85;
+        else if (rank <= 10) performanceScore = 75;
+        else if (rank <= 20) performanceScore = 50;
+        else performanceScore = Math.max(10, 50 - ((rank - 20) * 2));
+
+        if (!isPriority) {
+            // Non-priority: still favor top closers, just slightly less aggressively
+            weights.performance = weights.performance * 0.6;
         }
 
         // ============================================================
@@ -1473,16 +1200,7 @@ export const useAppLogic = () => {
         setSelectedRepId(target.repId);
         setExpandedRepIds(prev => new Set(prev).add(target.repId));
 
-        // Queue sync to Routing API if enabled
-        if (useRoutingApi) {
-            queueRoutingApiSync({
-                jobId,
-                repId: target.repId,
-                slotId: target.slotId,
-                dateKey: formatDateToKey(selectedDate),
-            });
-        }
-    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute, useRoutingApi, queueRoutingApiSync]);
+    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute]);
 
     const handleShowFilteredJobsOnMap = useCallback(async (jobs: DisplayJob[], title: string) => {
         const requestId = ++mapRequestRef.current;
@@ -2258,6 +1976,8 @@ export const useAppLogic = () => {
 
                 // Check if this job already exists in the state
                 const existingMatch = findMatchingJob(tempJob, newDayState);
+                const previousRepId = existingMatch?.repId;
+                const previousSlotId = existingMatch?.slotId;
                 let job: Job;
 
                 if (existingMatch) {
@@ -2361,6 +2081,18 @@ export const useAppLogic = () => {
                     }
                 }
 
+                // Sheet didn't resolve a rep — preserve prior manual placement if this job
+                // already existed (so re-loading the sheet doesn't wipe Travis's assignments)
+                if (previousRepId && previousSlotId) {
+                    const rep = newDayState.reps.find(r => r.id === previousRepId);
+                    const slot = rep?.schedule.find(s => s.id === previousSlotId);
+                    if (rep && slot) {
+                        slot.jobs.push(job as DisplayJob);
+                        assignedCount++;
+                        continue;
+                    }
+                }
+
                 newDayState.unassignedJobs.push(job);
                 unassignedCount++;
             }
@@ -2425,15 +2157,13 @@ export const useAppLogic = () => {
         await loadSheetForDate(selectedDate);
     }, [log, selectedDate, loadSheetForDate]);
 
-    // Auto-load sheet data when switching day tabs (if not already loaded)
-    // Wait until loadReps has finished (dailyStates has the date) to avoid
-    // a duplicate fetchSheetData call that causes Google Sheets 429 rate limits.
-    useEffect(() => {
-        const dateKey = formatDateToKey(selectedDate);
-        if (!sheetLoadedDaysRef.current.has(dateKey) && !isAutoLoadingRef.current && !isLoadingReps && dailyStates.has(dateKey)) {
-            loadSheetForDate(selectedDate, true);
-        }
-    }, [selectedDate, loadSheetForDate, isLoadingReps, dailyStates]);
+    // Auto-load on tab switch DISABLED — Travis prefers manual "Load from Sheet" click.
+    // useEffect(() => {
+    //     const dateKey = formatDateToKey(selectedDate);
+    //     if (!sheetLoadedDaysRef.current.has(dateKey) && !isAutoLoadingRef.current && !isLoadingReps && dailyStates.has(dateKey)) {
+    //         loadSheetForDate(selectedDate, true);
+    //     }
+    // }, [selectedDate, loadSheetForDate, isLoadingReps, dailyStates]);
 
     const autoLoadAllDays = useCallback(async () => {
         if (isAutoLoadingRef.current) return;
@@ -2441,6 +2171,8 @@ export const useAppLogic = () => {
         let loadedCount = 0;
         try {
             for (const dateKey of activeDayKeys) {
+                // Skip days already loaded — prevents overwriting manual assignments
+                if (sheetLoadedDaysRef.current.has(dateKey)) continue;
                 try {
                     const [year, month, day] = dateKey.split('-').map(Number);
                     const date = new Date(year, month - 1, day, 12, 0, 0);
@@ -3124,9 +2856,6 @@ export const useAppLogic = () => {
                         const { violated } = checkCityRuleViolation(rep, job.city);
                         if (violated) continue;
 
-                        const currentJobCount = rep.schedule.flatMap(s => s.jobs).length;
-                        const isUnderMinTarget = currentJobCount < newState.settings.minJobsPerRep;
-
                         // Check if rep has at least one available slot today (for override logic)
                         // Use effective unavailable slots (handles London Smith special case)
                         const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDayString);
@@ -3151,9 +2880,11 @@ export const useAppLogic = () => {
                             // STRICT SKILL CHECK: Score of -1 means ineligible.
                             if (score <= 0) continue;
 
+                            // Top closers get a bonus so they fill up first (better rank = higher bonus)
+                            const rank = rep.salesRank || 99;
                             let finalScore = score;
-                            if (isUnderMinTarget) {
-                                finalScore += 10000;
+                            if (rank <= 20) {
+                                finalScore += Math.round((21 - rank) * 50); // rank 1 = +1000, rank 10 = +550
                             }
 
                             if (!bestAssignment || finalScore > bestAssignment.score) {
@@ -3475,87 +3206,21 @@ export const useAppLogic = () => {
             const allChanges: JobChange[] = [];
 
             for (const [dateKey, loadedDayState] of validEntries) {
+                // Replace the day state entirely with the saved file version.
+                // The saved file is the authoritative state — it has the user's
+                // manual rep assignments which would be lost in a merge.
+                log(`Restoring saved state for ${dateKey}...`);
+
                 const existingState = mergedDailyStates.get(dateKey);
-
                 if (existingState) {
-                    // Merge the loaded state with existing state
-                    log(`Merging loaded data for ${dateKey}...`);
-
-                    // Start with a copy of existing state
-                    const mergedState = JSON.parse(JSON.stringify(existingState)) as AppState;
-
-                    // Update rep properties (locked, optimized) from loaded state
-                    for (const loadedRep of loadedDayState.reps) {
-                        const mergedRep = mergedState.reps.find(r => r.id === loadedRep.id);
-                        if (mergedRep) {
-                            if (loadedRep.isLocked !== undefined) mergedRep.isLocked = loadedRep.isLocked;
-                            if (loadedRep.isOptimized !== undefined) mergedRep.isOptimized = loadedRep.isOptimized;
-                        }
-                    }
-
-                    // Process each job from loaded state
-                    const loadedJobs: Job[] = [
-                        ...loadedDayState.unassignedJobs,
-                        ...loadedDayState.reps.flatMap(rep => rep.schedule.flatMap(slot => slot.jobs))
-                    ];
-
-                    for (const loadedJob of loadedJobs) {
-                        const existingMatch = findMatchingJob(loadedJob, mergedState);
-
-                        if (existingMatch) {
-                            // Update existing job
-                            const differences = compareJobs(existingMatch.job, loadedJob);
-                            if (differences.length > 0) {
-                                Object.assign(existingMatch.job, {
-                                    customerName: loadedJob.customerName,
-                                    address: loadedJob.address,
-                                    city: loadedJob.city,
-                                    notes: loadedJob.notes,
-                                    originalTimeframe: loadedJob.originalTimeframe,
-                                    zipCode: loadedJob.zipCode
-                                });
-                                log(`Updated job from save file: ${loadedJob.address}`);
-                            }
-                        } else {
-                            // Add new job - check where it was in loaded state
-                            let jobAdded = false;
-                            for (const loadedRep of loadedDayState.reps) {
-                                for (const loadedSlot of loadedRep.schedule) {
-                                    if (loadedSlot.jobs.find(j => getJobIdentifier(j) === getJobIdentifier(loadedJob))) {
-                                        // Find corresponding rep and slot in merged state
-                                        const mergedRep = mergedState.reps.find(r => r.name === loadedRep.name);
-                                        if (mergedRep) {
-                                            const mergedSlot = mergedRep.schedule.find(s => s.id === loadedSlot.id);
-                                            if (mergedSlot) {
-                                                mergedSlot.jobs.push(loadedJob);
-                                                log(`Added new job from save file: ${loadedJob.address} to ${mergedRep.name}`);
-                                                jobAdded = true;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                                if (jobAdded) break;
-                            }
-
-                            if (!jobAdded) {
-                                // Add to unassigned if not found in any rep's schedule
-                                mergedState.unassignedJobs.push(loadedJob);
-                                log(`Added new unassigned job from save file: ${loadedJob.address}`);
-                            }
-                        }
-                    }
-
-                    // Detect changes
-                    const changes = detectJobChanges(dateKey, existingState, mergedState, new Date().toISOString());
+                    const changes = detectJobChanges(dateKey, existingState, loadedDayState, new Date().toISOString());
                     allChanges.push(...changes);
-
-                    mergedDailyStates.set(dateKey, mergedState);
-                } else {
-                    // No existing state for this date, just add it
-                    log(`Adding new day from save file: ${dateKey}`);
-                    mergedDailyStates.set(dateKey, loadedDayState);
                 }
+
+                mergedDailyStates.set(dateKey, loadedDayState);
+
+                // Mark as loaded so auto-load won't overwrite
+                sheetLoadedDaysRef.current.add(dateKey);
             }
 
             // Merge active day keys
@@ -3703,20 +3368,11 @@ export const useAppLogic = () => {
         setIsCloudLoading(true);
 
         try {
-            // Generate rolling 7-day window: yesterday through 5 days from now
-            // This matches the ROLLING_DAYS_CONFIG in cloudStorageServiceSheets.ts
-            const today = new Date();
-            const rollingDays: string[] = [];
-            for (let i = -1; i <= 5; i++) {  // -1 = yesterday, 0 = today, 1-5 = next 5 days
-                const date = new Date(today);
-                date.setDate(today.getDate() + i);
-                const dateKey = date.toISOString().split('T')[0];
-                rollingDays.push(dateKey);
-            }
+            // Load only active days (today + tomorrow by default)
+            const rollingDays = [...activeDayKeys];
 
-            log(`Loading rolling 7-day window: ${rollingDays.join(', ')}`);
+            log(`Loading ${rollingDays.length} day(s) from cloud: ${rollingDays.join(', ')}`);
 
-            // Load all 7 days
             const result = await loadAllStatesFromCloud(rollingDays);
             if (result.success && result.results) {
                 // Start fresh - don't merge with existing state, replace it entirely
@@ -3802,26 +3458,21 @@ export const useAppLogic = () => {
         }
 
         setIsAutoSaving(true);
-        log('[AutoSave] Starting debounced auto-save...');
+        // Only auto-save the currently selected day (not all active days)
+        const dateKey = formatDateToKey(selectedDate);
+        log(`[AutoSave] Saving ${dateKey}...`);
 
         try {
-            let successCount = 0;
-            for (const dateKey of activeDayKeys) {
-                const state = dailyStates.get(dateKey);
-                if (state) {
-                    const result = await upsertAutoBackup(dateKey, state);
-                    if (result.success) {
-                        successCount++;
-                    } else {
-                        log(`[AutoSave] Error saving ${dateKey}: ${result.error}`);
-                    }
+            const state = dailyStates.get(dateKey);
+            if (state) {
+                const result = await upsertAutoBackup(dateKey, state);
+                if (result.success) {
+                    log(`[AutoSave] Saved ${dateKey}`);
+                    hasUnsavedChangesRef.current = false;
+                    setLastAutoSaveTime(new Date());
+                } else {
+                    log(`[AutoSave] Error saving ${dateKey}: ${result.error}`);
                 }
-            }
-
-            if (successCount > 0) {
-                log(`[AutoSave] Saved ${successCount}/${activeDayKeys.length} days`);
-                hasUnsavedChangesRef.current = false;
-                setLastAutoSaveTime(new Date());
             }
         } catch (error) {
             const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -3829,7 +3480,7 @@ export const useAppLogic = () => {
         } finally {
             setIsAutoSaving(false);
         }
-    }, [dailyStates, activeDayKeys, isCloudLoading, log]);
+    }, [dailyStates, selectedDate, isCloudLoading, log]);
 
     // Trigger debounced auto-save (called on state changes)
     const triggerDebouncedAutoSave = useCallback(() => {
@@ -4081,26 +3732,18 @@ export const useAppLogic = () => {
         }
     }, [dailyStates, activeDayKeys, log, showToast, closeLoadOptionsModal]);
 
-    // Auto-load all days from calendar sheet on initial mount
-    useEffect(() => {
-        if (!hasAutoLoadedRef.current && activeDayKeys.length > 0) {
-            hasAutoLoadedRef.current = true;
-            // Delay to ensure activeDayKeys and UI are ready
-            setTimeout(() => {
-                autoLoadAllDays();
-            }, 1000);
-        }
-    }, [activeDayKeys, autoLoadAllDays]);
+    // Auto-load on mount DISABLED — Travis prefers manual "Load from Sheet" click.
+    // useEffect(() => {
+    //     if (!hasAutoLoadedRef.current && activeDayKeys.length > 0) {
+    //         hasAutoLoadedRef.current = true;
+    //         setTimeout(() => { autoLoadAllDays(); }, 1000);
+    //     }
+    // }, [activeDayKeys, autoLoadAllDays]);
 
-    // Refresh all days from calendar sheet every 5 minutes
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (!isAutoLoadingRef.current) {
-                autoLoadAllDays();
-            }
-        }, 5 * 60 * 1000);
-        return () => clearInterval(interval);
-    }, [autoLoadAllDays]);
+    // NOTE: Auto-refresh disabled — it was overwriting manual rep assignments
+    // every 5 minutes by re-running loadSheetForDate which removes jobs from
+    // their assigned reps and re-assigns based on API attendees/jobOwner.
+    // Users should click "Load from Sheet" manually to refresh appointments.
 
     // Wrapped Handlers
     const _handleSaveStateToFile = handleSaveStateToFile;
@@ -4234,14 +3877,6 @@ export const useAppLogic = () => {
         showLoadOptionsModal,
         loadSelectedBackup,
         closeLoadOptionsModal,
-
-        // Routing API Integration
-        useRoutingApi,
-        toggleRoutingApiMode,
-        isLoadingFromRoutingApi,
-        routingApiError,
-        routingApiSyncStatus,
-        loadJobsFromRoutingApi,
 
         // Load from Sheet
         handleLoadFromSheet,
