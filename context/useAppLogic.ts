@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, MAX_REP_ROW } from '../constants';
-import { fetchSheetData, fetchRoofrJobIds, fetchAnnouncementMessage, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
+import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
 import { fetchInstalls, matchCrewToReps } from '../services/installService';
@@ -179,7 +179,6 @@ export const useAppLogic = () => {
     const [roofrJobIdMap, setRoofrJobIdMap] = useState<Map<string, string>>(new Map());
     const [roofrEnrichmentMap, setRoofrEnrichmentMap] = useState<Map<string, RoofrJob>>(new Map());
     const [roofrCustomerMap, setRoofrCustomerMap] = useState<Map<string, RoofrJob>>(new Map());
-    const [announcement, setAnnouncement] = useState<string>('');
     const [changeLog, setChangeLog] = useState<JobChange[]>([]);
     const [installJobs, setInstallJobs] = useState<InstallJob[]>([]);
     const [installsByRep, setInstallsByRep] = useState<Map<string, InstallJob[]>>(new Map());
@@ -478,13 +477,6 @@ export const useAppLogic = () => {
                 const idMap = await fetchRoofrJobIds();
                 setRoofrJobIdMap(idMap);
                 log(`- FALLBACK: Loaded ${idMap.size} Roofr job IDs from Sheets.`);
-            }
-
-            log('Fetching announcement message...');
-            const message = await fetchAnnouncementMessage();
-            if (message && !/^\d+$/.test(message.trim())) {
-                setAnnouncement(message);
-                log(`- ANNOUNCEMENT: "${message}"`);
             }
         };
         loadAuxiliaryData();
@@ -3842,7 +3834,6 @@ export const useAppLogic = () => {
         roofrJobIdMap,
         roofrEnrichmentMap,
         roofrCustomerMap,
-        announcement,
         installJobs,
         installsByRep,
         setFilteredAssignedJobs,

@@ -370,8 +370,6 @@ export interface AppContextType {
   // Roofr customer name lookup (normalizedName → full RoofrJob)
   roofrCustomerMap: Map<string, RoofrJob>;
 
-  // Announcement message
-  announcement: string;
 
   // Install jobs from /api/installs
   installJobs: InstallJob[];

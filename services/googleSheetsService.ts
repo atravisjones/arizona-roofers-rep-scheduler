@@ -839,33 +839,6 @@ export async function fetchSheetCell(cell: string, sheetName: string): Promise<s
 }
 
 /**
- * Fetches an announcement message from cell A2 of the Roofr jobs sheet.
- * @returns The value of the cell as a string, or an empty string.
- */
-export async function fetchAnnouncementMessage(): Promise<string> {
-    const cell = 'A2';
-    const sheetName = ROOFR_JOBS_SHEET_TITLE;
-    const spreadsheetId = ROOFR_JOBS_SPREADSHEET_ID;
-
-    const url = buildSheetsUrl(spreadsheetId, `'${sheetName}'!${cell}`, 'FORMATTED_VALUE');
-
-    try {
-        const response = await fetchWithRetry(url);
-        if (!response.ok) {
-            console.warn(`Failed to fetch announcement cell ${cell} (Status: ${response.status})`);
-            return '';
-        }
-        const data = await response.json();
-        const value = data.values?.[0]?.[0];
-
-        return value ? String(value) : '';
-    } catch (err) {
-        console.error(`Error fetching announcement data from ${sheetName}:`, err);
-        return '';
-    }
-}
-
-/**
  * Appointment data returned from the roofr-appointments API endpoint.
  */
 export interface SheetAppointment {

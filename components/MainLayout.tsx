@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, MegaphoneIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import JobsPanel from './JobsPanel';
@@ -808,13 +808,6 @@ const MainLayout: React.FC = () => {
                 </span>
               )}
             </button>
-
-            {context.announcement && (
-              <div className="bg-brand-bg-light border border-brand-primary/20 text-brand-text-light text-[10px] font-semibold px-2 py-1 rounded flex items-center gap-1.5 animate-fade-in max-w-xs truncate ml-2">
-                <MegaphoneIcon className="h-3 w-3 text-brand-primary flex-shrink-0" />
-                <span className="truncate">{context.announcement}</span>
-              </div>
-            )}
           </div>
 
           {/* Right: Date Navigation */}
