@@ -1,5 +1,13 @@
 import { Rep } from '../types';
-import { GOOGLE_API_KEY, SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
+import { SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
+
+// All Sheets API reads go through /api/sheets (Vercel function) so the API key stays server-side.
+function buildSheetsUrl(spreadsheetId: string, range?: string, valueRenderOption?: string): string {
+    const params = new URLSearchParams({ spreadsheetId });
+    if (range) params.set('range', range);
+    if (valueRenderOption) params.set('valueRenderOption', valueRenderOption);
+    return `/api/sheets?${params}`;
+}
 import { MOCK_REPS_DATA } from './mockData';
 import { ALL_KNOWN_CITIES } from './geography';
 
@@ -276,7 +284,7 @@ const cleanDisplayName = (name: string): string => {
 async function fetchSalesRankings(): Promise<Map<string, number>> {
     const rankMap = new Map<string, number>();
     try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${APT_OUTCOME_SPREADSHEET_ID}/values/'${encodeURIComponent(APT_OUTCOME_SHEET_TITLE)}'!${SALES_ORDER_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
+        const url = buildSheetsUrl(APT_OUTCOME_SPREADSHEET_ID, `'${APT_OUTCOME_SHEET_TITLE}'!${SALES_ORDER_DATA_RANGE}`);
         const response = await fetchWithRetry(url);
         if (!response.ok) {
             console.warn(`Failed to fetch sales rankings: ${response.statusText}`);
@@ -496,7 +504,7 @@ async function fetchAssignmentRankings(): Promise<Map<string, number>> {
 async function fetchRepSkills(): Promise<Map<string, { skills: Record<string, number>, zipCodes: string[] }>> {
     const skillsMap = new Map<string, { skills: Record<string, number>, zipCodes: string[] }>();
     try {
-        const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(SKILLS_SHEET_TITLE)}'!${SKILLS_DATA_RANGE}?key=${GOOGLE_API_KEY}`;
+        const url = buildSheetsUrl(SPREADSHEET_ID, `'${SKILLS_SHEET_TITLE}'!${SKILLS_DATA_RANGE}`);
         const response = await fetchWithRetry(url);
         if (!response.ok) {
             console.error(`Failed to fetch skills sheet: ${response.statusText}`);
@@ -601,7 +609,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         const ranksPromise = fetchAssignmentRankings(); // Manual closer order first, then 30-day close rate fallback
 
         // 1. Get spreadsheet metadata to find the current sheet name
-        const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?key=${GOOGLE_API_KEY}`;
+        const metaUrl = buildSheetsUrl(SPREADSHEET_ID);
         const metaResponse = await fetchWithRetry(metaUrl);
         if (!metaResponse.ok) {
             throw new Error(`Failed to fetch spreadsheet metadata (Status: ${metaResponse.status}). Is the spreadsheet ID correct and public?`);
@@ -616,7 +624,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         sheetName = foundSheetName;
 
         // 2. Fetch the data from the specified range, getting the formatted values.
-        const dataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(sheetName)}'!${DATA_RANGE}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+        const dataUrl = buildSheetsUrl(SPREADSHEET_ID, `'${sheetName}'!${DATA_RANGE}`, 'FORMATTED_VALUE');
         const dataResponse = await fetchWithRetry(dataUrl);
         if (!dataResponse.ok) {
             throw new Error(`Failed to fetch sheet data (Status: ${dataResponse.status}). Check API key and spreadsheet permissions.`);
@@ -810,7 +818,7 @@ export async function fetchSheetCell(cell: string, sheetName: string): Promise<s
     if (!sheetName) {
         throw new Error('Sheet name must be provided to fetch a cell.');
     }
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/'${encodeURIComponent(sheetName)}'!${encodeURIComponent(cell)}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+    const url = buildSheetsUrl(SPREADSHEET_ID, `'${sheetName}'!${cell}`, 'FORMATTED_VALUE');
 
     try {
         const response = await fetchWithRetry(url);
@@ -839,7 +847,7 @@ export async function fetchAnnouncementMessage(): Promise<string> {
     const sheetName = ROOFR_JOBS_SHEET_TITLE;
     const spreadsheetId = ROOFR_JOBS_SPREADSHEET_ID;
 
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/'${encodeURIComponent(sheetName)}'!${encodeURIComponent(cell)}?key=${GOOGLE_API_KEY}&valueRenderOption=FORMATTED_VALUE`;
+    const url = buildSheetsUrl(spreadsheetId, `'${sheetName}'!${cell}`, 'FORMATTED_VALUE');
 
     try {
         const response = await fetchWithRetry(url);

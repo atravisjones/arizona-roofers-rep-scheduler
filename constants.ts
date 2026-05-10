@@ -1,9 +1,8 @@
 
 import { TimeSlot } from './types';
 
-// WARNING: Storing API keys in client-side code is insecure.
-// This is for demonstration purposes only. The API key is used for Google Maps and Google Sheets.
-export const GOOGLE_API_KEY = "AIzaSyAUU9vrRIAepLUJedcIrmmfJDyVKjGhINI";
+// Google Sheets API key removed from client — all reads now go through /api/sheets (Vercel function)
+// which holds GOOGLE_SHEETS_API_KEY server-side. See api/sheets.js for the allowlisted proxy.
 
 // Supabase Configuration (KPI database — shared with roofr-search, speed-to-lead)
 export const SUPABASE_URL = "https://ucfqgkbkxbztxlyniuph.supabase.co";
