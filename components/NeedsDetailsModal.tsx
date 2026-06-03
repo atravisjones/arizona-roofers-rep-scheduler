@@ -107,6 +107,7 @@ const NeedsDetailsModal: React.FC<NeedsDetailsModalProps> = ({ isOpen, onClose }
                                     onRemove={handleRemoveJob}
                                     isCompact={false}
                                     isDraggable={false} // Disable drag in modal to focus on editing
+                                    showBookedBy={true} // Show who to chase for missing notes
                                 />
                             ))}
                         </div>

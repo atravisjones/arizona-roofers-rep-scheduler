@@ -33,12 +33,13 @@ interface JobCardProps {
     isCompact?: boolean;
     isDraggable?: boolean;
     showAssignment?: boolean;
+    showBookedBy?: boolean;
     currentRepId?: string;
     currentSlotId?: string;
 }
 
 export const JobCard: React.FC<JobCardProps> = ({
-    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false, currentRepId, currentSlotId
+    job, isMismatch, isTimeMismatch, onDragStart, onDragEnd, onUnassign, onUpdateJob, onRemove, onPlaceOnMap, isCompact = false, isDraggable = true, showAssignment = false, showBookedBy = false, currentRepId, currentSlotId
 }) => {
     const { setHoveredJobId, roofrJobIdMap, roofrEnrichmentMap, roofrCustomerMap } = useAppContext();
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -127,22 +128,30 @@ export const JobCard: React.FC<JobCardProps> = ({
         if (!isInstallJob && priorityLevel > 0) {
             // If it's NOT an error, priority styling dictates the background.
             if (!isActuallyMismatched && !isReschedule) {
-                if (priorityLevel >= 3) {
+                if (priorityLevel >= 5) {
                     backgroundClasses = "bg-gradient-to-br from-yellow-200 via-yellow-400 to-amber-500 border-amber-600 text-amber-950 shadow-amber-400/50";
+                } else if (priorityLevel === 4) {
+                    backgroundClasses = "bg-tag-purple-bg border-tag-purple-border";
+                } else if (priorityLevel === 3) {
+                    backgroundClasses = "bg-tag-red-bg border-tag-red-border";
                 } else if (priorityLevel === 2) {
-                    backgroundClasses = "bg-gradient-to-br from-tag-amber-bg to-tag-red-bg border-tag-red-border";
+                    backgroundClasses = "bg-tag-orange-bg border-tag-orange-border";
                 } else { // priorityLevel === 1
                     backgroundClasses = "bg-tag-amber-bg border-tag-amber-border";
                 }
             }
 
             // Add "shine" via ring, shadow, and pulse. This is always additive.
-            if (priorityLevel >= 3) {
+            if (priorityLevel >= 5) {
                 highlightClasses = "animate-pulse ring-2 ring-amber-500 ring-offset-2 ring-offset-white shadow-xl shadow-amber-500/60 z-10 scale-[1.01]";
+            } else if (priorityLevel === 4) {
+                highlightClasses = "ring-2 ring-tag-purple-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-purple-500/30";
+            } else if (priorityLevel === 3) {
+                highlightClasses = "ring-2 ring-tag-red-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-red-500/30";
             } else if (priorityLevel === 2) {
-                highlightClasses = "ring-2 ring-red-500/80 ring-offset-2 ring-offset-bg-primary shadow-md shadow-red-500/20";
+                highlightClasses = "ring-2 ring-tag-orange-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-orange-500/20";
             } else { // priorityLevel === 1
-                highlightClasses = "ring-2 ring-amber-500/80 ring-offset-2 ring-offset-bg-primary shadow-md shadow-amber-500/20";
+                highlightClasses = "ring-2 ring-tag-amber-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-amber-500/20";
             }
         } else if (isInstallJob) {
             // Install jobs get a subtle shine effect
@@ -439,10 +448,13 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
 
                     {priorityLevel > 0 && !isInstallJob && (
                         <div className="flex">
-                            {[...Array(Math.min(priorityLevel, 3))].map((_, i) => (
-                                <StarIcon key={i} className={`h-3 w-3 drop-shadow-sm ${priorityLevel >= 3 ? 'text-tag-red-text' :
+                            {[...Array(Math.min(priorityLevel, 5))].map((_, i) => (
+                                <StarIcon key={i} className={`h-3 w-3 drop-shadow-sm ${
+                                    priorityLevel >= 5 ? 'text-yellow-500' :
+                                    priorityLevel === 4 ? 'text-tag-purple-text' :
+                                    priorityLevel === 3 ? 'text-tag-red-text' :
                                     priorityLevel === 2 ? 'text-tag-orange-text' :
-                                        'text-tag-amber-text'
+                                    'text-tag-amber-text'
                                     }`} />
                             ))}
                         </div>
@@ -530,6 +542,14 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                 <p className="text-[9px] text-text-tertiary truncate font-medium leading-none" title={job.address}>
                     {job.address}
                 </p>
+                {showBookedBy && (
+                    <div className="flex items-center gap-1 mt-0.5">
+                        <UserIcon className="h-2.5 w-2.5 text-tag-amber-text shrink-0" />
+                        <span className="text-[9px] font-bold text-tag-amber-text truncate" title={job.bookedBy ? `Get notes from: ${job.bookedBy}` : undefined}>
+                            {job.bookedBy ? `Booked by: ${job.bookedBy}` : 'No rep on appointment'}
+                        </span>
+                    </div>
+                )}
                 {showAssignment && (job as any).assignedRepName && (
                     <div className="flex items-center gap-1 mt-0.5">
                         <UserIcon className="h-2.5 w-2.5 text-brand-primary" />

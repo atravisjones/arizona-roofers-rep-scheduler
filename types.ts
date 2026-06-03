@@ -146,6 +146,7 @@ export interface Job {
   zipCode?: string;
   originalRepId?: string; // The rep ID from auto-assignment when job was pasted
   originalRepName?: string; // The rep name from auto-assignment when job was pasted
+  bookedBy?: string; // Booking rep/CSR from the appointment (attendees); who to chase for notes
   roofAge?: number;      // Parsed from "20yrs" in notes
   jobValue?: number;     // Calculated score (0-100) - higher = better lead for top reps
   isRepairJob?: boolean; // True if contains repair/leak/patch/inspect keywords

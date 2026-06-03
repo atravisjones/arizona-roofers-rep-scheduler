@@ -1964,6 +1964,7 @@ export const useAppLogic = () => {
                     jobValue,
                     isRepairJob,
                     isPaintJob,
+                    bookedBy: (apt.attendees || '').trim() || (apt.jobOwner || '').trim() || undefined,
                 };
 
                 // Check if this job already exists in the state
@@ -1985,7 +1986,8 @@ export const useAppLogic = () => {
                         roofAge: tempJob.roofAge,
                         jobValue: tempJob.jobValue,
                         isRepairJob: tempJob.isRepairJob,
-                        isPaintJob: tempJob.isPaintJob
+                        isPaintJob: tempJob.isPaintJob,
+                        bookedBy: tempJob.bookedBy
                     });
 
                     // Remove from current position so it can be re-assigned according to sheet
