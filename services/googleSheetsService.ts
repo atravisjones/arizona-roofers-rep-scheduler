@@ -1,5 +1,5 @@
 import { Rep } from '../types';
-import { SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, SALES_ORDER_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
+import { SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
 
 // All Sheets API reads go through /api/sheets (Vercel function) so the API key stays server-side.
 function buildSheetsUrl(spreadsheetId: string, range?: string, valueRenderOption?: string): string {
@@ -278,41 +278,146 @@ const cleanDisplayName = (name: string): string => {
 };
 
 /**
- * Fetches the sales rankings from the Apt Outcome Tracker's 'Appointment Summary' tab.
- * Reads a simple ordered list of rep names from A69:A82 (best closer = first row).
+ * Profit-based rep rankings — mirrors the roofr-search Management tab.
+ * Rank order = Gross Profit/Appt = Sales/Appt × GPM%, over a rolling
+ * 60-day window of Retail leads (same universe/filters as the dashboard:
+ * excludes Self Gen + Door knocking sources, pre-appointment stages, and
+ * the owners excluded from the Management view).
+ *
+ * Profit basis: won jobs that reached the Commission Processing queue with
+ * real COGS entered (the financials table, cogs_total > 0).
+ *
+ * Guardrails:
+ *  - A rep needs >= MIN_PROFIT_RANK_APPTS appointments in the window to be
+ *    ranked here; everyone else falls back to close-rate ranking.
+ *  - A rep with no costed jobs yet gets the team-wide GPM applied to their
+ *    own Sales/Appt, so commission-coverage lag doesn't unrank them.
  */
-async function fetchSalesRankings(): Promise<Map<string, number>> {
+const PROFIT_WINDOW_DAYS = 60;
+const MIN_PROFIT_RANK_APPTS = 8;
+const PROFIT_EXCLUDED_SOURCES = new Set(['self gen', 'door knocking']);
+const PROFIT_EXCLUDED_STAGES = new Set(['unqualified', 'new lead', 'appointment scheduled', 'needs rescheduled']);
+const PROFIT_EXCLUDED_OWNERS = ['Nick Williams', 'Ashkan Etemadi', 'Oliver Johnson', 'William Ludewig', 'William Yost'];
+// Same stage keywords the KPI dashboard uses for "reached appointment"
+const APPT_STAGE_KEYWORDS = ['appointment', 'inspection', 'qualified', 'proposal', 'contract', 'signed', 'install', 'follow', 'won', 'complete'];
+
+async function fetchProfitRankings(): Promise<Map<string, number>> {
     const rankMap = new Map<string, number>();
+    const sbHeaders = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+    };
     try {
-        const url = buildSheetsUrl(APT_OUTCOME_SPREADSHEET_ID, `'${APT_OUTCOME_SHEET_TITLE}'!${SALES_ORDER_DATA_RANGE}`);
-        const response = await fetchWithRetry(url);
-        if (!response.ok) {
-            console.warn(`Failed to fetch sales rankings: ${response.statusText}`);
-            return rankMap;
-        }
-        const data = await response.json();
-        const values = data.values;
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - PROFIT_WINDOW_DAYS);
+        const cutoffStr = cutoff.toISOString().split('T')[0];
 
-        if (!values || values.length === 0) {
-            return rankMap;
+        // 1. All Retail leads created in the window (paginated past PostgREST's 1000-row cap)
+        type JobRow = { job_id: string; job_owner: string; lead_source: string | null; stage: string | null; stage_category: string | null; value: number | null; appt_booked_at: string | null };
+        const jobs: JobRow[] = [];
+        for (let offset = 0; ; offset += 1000) {
+            const params = new URLSearchParams({
+                select: 'job_id,job_owner,lead_source,stage,stage_category,value,appt_booked_at',
+                workflow: 'eq.Retail',
+                created_at: `gte.${cutoffStr}`,
+                deleted_at: 'is.null',
+                job_owner: 'not.is.null',
+                limit: '1000',
+                offset: String(offset),
+            });
+            const resp = await fetch(`${SUPABASE_URL}/rest/v1/jobs?${params}`, { headers: sbHeaders });
+            if (!resp.ok) {
+                console.warn(`Failed to fetch jobs for profit rankings: ${resp.statusText}`);
+                return rankMap;
+            }
+            const page: JobRow[] = await resp.json();
+            jobs.push(...page);
+            if (page.length < 1000) break;
         }
 
-        // Simple ordered list: each row is a rep name, position = rank
-        let rank = 1;
-        for (const row of values) {
-            const name = row[0];
-            if (name && String(name).trim()) {
-                const nameStr = String(name).trim();
-                const normalized = normalizeName(nameStr);
-                if (normalized && !rankMap.has(normalized)) {
-                    rankMap.set(normalized, rank);
-                    rank++;
+        // 2. Aggregate per rep — appts and won value (Management tab definitions)
+        const excludedOwners = new Set(PROFIT_EXCLUDED_OWNERS.map(normalizeName));
+        type RepAgg = { appts: number; wonValue: number; gp: number; nr: number };
+        const repAgg = new Map<string, RepAgg>();
+        const wonIdToRep = new Map<string, string>();
+        for (const job of jobs) {
+            if (job.lead_source && PROFIT_EXCLUDED_SOURCES.has(job.lead_source.toLowerCase())) continue;
+            const stage = (job.stage || '').toLowerCase();
+            if (stage && PROFIT_EXCLUDED_STAGES.has(stage)) continue;
+            const normalized = normalizeName(job.job_owner);
+            if (!normalized || excludedOwners.has(normalized)) continue;
+
+            const reachedAppt = job.appt_booked_at != null || APPT_STAGE_KEYWORDS.some(k => stage.includes(k));
+            if (!reachedAppt) continue;
+
+            const agg = repAgg.get(normalized) || { appts: 0, wonValue: 0, gp: 0, nr: 0 };
+            agg.appts++;
+            const cat = (job.stage_category || '').toLowerCase();
+            if (cat === 'won' || cat === 'completed') {
+                agg.wonValue += Number(job.value) || 0;
+                wonIdToRep.set(job.job_id, normalized);
+            }
+            repAgg.set(normalized, agg);
+        }
+
+        // 3. Of the won jobs, find those that reached Commission Processing (stage timeline)
+        const wonIds = [...wonIdToRep.keys()];
+        const commissionIds: string[] = [];
+        for (let i = 0; i < wonIds.length; i += 200) {
+            const chunk = wonIds.slice(i, i + 200);
+            const params = new URLSearchParams({
+                select: 'job_id,stage_timeline',
+                'job_id': `in.(${chunk.join(',')})`,
+            });
+            const resp = await fetch(`${SUPABASE_URL}/rest/v1/jobs?${params}`, { headers: sbHeaders });
+            if (!resp.ok) continue;
+            const rows: { job_id: string; stage_timeline: { s: string }[] | null }[] = await resp.json();
+            for (const row of rows) {
+                if ((row.stage_timeline || []).some(t => (t.s || '').toLowerCase().includes('commission'))) {
+                    commissionIds.push(row.job_id);
                 }
             }
         }
-        console.log(`Fetched sales rankings for ${rankMap.size} reps from Appointment Summary`);
+
+        // 4. Financials for commission jobs with real COGS (blank-COGS rows fake ~100% margins)
+        for (let i = 0; i < commissionIds.length; i += 200) {
+            const chunk = commissionIds.slice(i, i + 200);
+            const params = new URLSearchParams({
+                select: 'job_id,net_revenue,gross_profit',
+                'job_id': `in.(${chunk.join(',')})`,
+                cogs_total: 'gt.0',
+            });
+            const resp = await fetch(`${SUPABASE_URL}/rest/v1/financials?${params}`, { headers: sbHeaders });
+            if (!resp.ok) continue;
+            const rows: { job_id: string; net_revenue: number | null; gross_profit: number | null }[] = await resp.json();
+            for (const row of rows) {
+                const rep = wonIdToRep.get(String(row.job_id));
+                if (!rep) continue;
+                const agg = repAgg.get(rep);
+                if (!agg) continue;
+                agg.gp += Number(row.gross_profit) || 0;
+                agg.nr += Number(row.net_revenue) || 0;
+            }
+        }
+
+        // 5. Rank by Gross Profit/Appt = Sales/Appt × GPM% (team GPM when uncosted)
+        let teamGp = 0, teamNr = 0;
+        for (const agg of repAgg.values()) { teamGp += agg.gp; teamNr += agg.nr; }
+        const teamGpm = teamNr > 0 ? teamGp / teamNr : 0;
+
+        const ranked: { normalized: string; profitPerAppt: number }[] = [];
+        for (const [normalized, agg] of repAgg) {
+            if (agg.appts < MIN_PROFIT_RANK_APPTS) continue;
+            const salesPerAppt = agg.wonValue / agg.appts;
+            const gpm = agg.nr > 0 ? agg.gp / agg.nr : teamGpm;
+            ranked.push({ normalized, profitPerAppt: salesPerAppt * gpm });
+        }
+        ranked.sort((a, b) => b.profitPerAppt - a.profitPerAppt);
+        ranked.forEach((r, i) => rankMap.set(r.normalized, i + 1));
+
+        console.log(`Fetched profit rankings for ${rankMap.size} reps (${PROFIT_WINDOW_DAYS}d window, min ${MIN_PROFIT_RANK_APPTS} appts, team GPM ${(teamGpm * 100).toFixed(1)}%)`);
     } catch (error) {
-        console.error("Error fetching sales rankings:", error);
+        console.error("Error fetching profit rankings:", error);
     }
     return rankMap;
 }
@@ -480,23 +585,24 @@ async function fetchClosingRates(): Promise<Map<string, number>> {
 }
 
 async function fetchAssignmentRankings(): Promise<Map<string, number>> {
-    const [manualRankings, closingRateRankings] = await Promise.all([
-        fetchSalesRankings(),
+    const [profitRankings, closingRateRankings] = await Promise.all([
+        fetchProfitRankings(),
         fetchClosingRates(),
     ]);
 
-    if (manualRankings.size === 0) {
-        return closingRateRankings;
+    // Profit ranking (Management tab logic) is primary. Reps it can't rank —
+    // not enough appointments in the window, or excluded from the Management
+    // view — fall back to their 30-day close-rate order, after all
+    // profit-ranked reps.
+    const combinedRankings = new Map(profitRankings);
+    const fallback = [...closingRateRankings.entries()]
+        .filter(([name]) => !combinedRankings.has(name))
+        .sort((a, b) => a[1] - b[1]);
+    for (const [name] of fallback) {
+        combinedRankings.set(name, combinedRankings.size + 1);
     }
 
-    const combinedRankings = new Map(manualRankings);
-    for (const [normalizedName, closingRateRank] of closingRateRankings) {
-        if (!combinedRankings.has(normalizedName)) {
-            combinedRankings.set(normalizedName, manualRankings.size + closingRateRank);
-        }
-    }
-
-    console.log(`Loaded assignment rankings: ${manualRankings.size} manual priority reps, ${closingRateRankings.size} close-rate reps`);
+    console.log(`Loaded assignment rankings: ${profitRankings.size} profit-ranked reps, ${fallback.length} close-rate fallback reps`);
     return combinedRankings;
 }
 
@@ -606,7 +712,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
     try {
         // 0. Fetch skills and sales rankings data in parallel
         const skillsPromise = fetchRepSkills();
-        const ranksPromise = fetchAssignmentRankings(); // Manual closer order first, then 30-day close rate fallback
+        const ranksPromise = fetchAssignmentRankings(); // Profit/Appt ranking (Management tab logic) first, then 30-day close rate fallback
 
         // 1. Get spreadsheet metadata to find the current sheet name
         const metaUrl = buildSheetsUrl(SPREADSHEET_ID);
