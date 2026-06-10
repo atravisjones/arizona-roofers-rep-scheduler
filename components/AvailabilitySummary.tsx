@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
 import { ClipboardIcon, XIcon, ClockIcon, MapPinIcon } from './icons';
+import { getEffectiveUnavailableSlots, getNorthZone, isRepEligibleForNorthZone } from '../utils/repUtils';
 
 interface CitySection {
     title: string;
@@ -74,7 +75,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
         const otherCitiesFound = new Set<string>();
 
         appState.reps.forEach(rep => {
-            const unavailableSlotIds = new Set(rep.unavailableSlots?.[selectedDayString] || []);
+            const unavailableSlotIds = new Set(getEffectiveUnavailableSlots(rep, selectedDayString));
             
             const openSlots = rep.schedule
                 .filter(slot => !unavailableSlotIds.has(slot.id) && slot.jobs.length === 0)
@@ -91,11 +92,13 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
             });
 
             CITY_SECTIONS.forEach(section => {
-                const repMatchesRegion = rep.region === section.region || (rep.region === 'UNKNOWN' && section.region === 'PHX');
-
                 section.cities.forEach(city => {
                     const cityKey = city; 
                     const cityLower = normalize(city);
+                    const northZone = getNorthZone(cityLower);
+                    const repMatchesRegion = northZone
+                        ? isRepEligibleForNorthZone(rep, northZone)
+                        : rep.region === section.region || (rep.region === 'UNKNOWN' && section.region === 'PHX');
                     let shouldShow = false;
 
                     if (isFree) {
@@ -144,7 +147,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
         });
 
         appState.reps.forEach(rep => {
-            const unavailableSlotIds = new Set(rep.unavailableSlots?.[selectedDayString] || []);
+            const unavailableSlotIds = new Set(getEffectiveUnavailableSlots(rep, selectedDayString));
             const jobsToday = rep.schedule.flatMap(s => s.jobs);
             const isFree = jobsToday.length === 0;
             

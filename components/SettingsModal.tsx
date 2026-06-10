@@ -182,7 +182,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                             <div className="p-4 flex items-center justify-between">
                                 <div>
                                     <label htmlFor="allowRegionalRepsInPhoenix" className="block text-sm font-semibold text-text-primary">Allow Regional Reps in Phoenix</label>
-                                    <p className="text-xs text-text-tertiary mt-0.5">Permit North (London) and South (Richard/Joseph) reps to be assigned Phoenix jobs.</p>
+                                    <p className="text-xs text-text-tertiary mt-0.5">Permit North and South regional reps to be assigned Phoenix jobs.</p>
                                 </div>
                                 <input
                                     type="checkbox" id="allowRegionalRepsInPhoenix"

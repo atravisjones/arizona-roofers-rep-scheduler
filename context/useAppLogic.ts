@@ -15,26 +15,13 @@ import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStat
 import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate } from '../services/backupService';
 // saveLoadService (Google Apps Script) removed — all save/load now via Supabase backupService
 import { doTimesOverlap } from '../utils/timeUtils';
-import { isLondon, getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { canReserveNorthTravelSlot, getEffectiveUnavailableSlots, getNorthZone, getTravelBlockedSlots, isLondon, isRepEligibleForNorthZone } from '../utils/repUtils';
 // routingApiService removed — deleted Vercel project
 
 // Helpers
 const norm = (city: string | null | undefined): string => (city || '').toLowerCase().trim();
 const isJoseph = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('joseph simms');
 const isRichard = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('richard hadsall');
-
-// Black Canyon City latitude - jobs north of this go to London Smith
-const BLACK_CANYON_CITY_LATITUDE = 34.07;
-
-/**
- * Checks if a job's coordinates are north of Black Canyon City, AZ (lat > 34.07).
- * @param jobCoordinates The job's coordinates (lat, lon)
- * @returns true if the job is north of Black Canyon City
- */
-const isJobNorthOfBlackCanyonCity = (jobCoordinates: Coordinates | undefined): boolean => {
-    if (!jobCoordinates) return false;
-    return jobCoordinates.lat > BLACK_CANYON_CITY_LATITUDE;
-};
 
 // Filter out reps from rows beyond MAX_REP_ROW (inactive reps at bottom of sheet)
 const filterExcludedReps = (state: AppState): AppState => {
@@ -105,6 +92,12 @@ export const DEFAULT_SETTINGS: Settings = {
         skillType: 4.0,         // MEDIUM: Specialties (Insurance, Commercial)
         distanceCluster: 2.0,   // LOW: Clustering jobs together
         distanceBase: 1.0,      // LOWEST: Distance from home
+    },
+    repRankingConfig: {
+        windowDays: 60,
+        revenueWeight: 0.6,
+        selfGenWeight: 1.0,
+        minCompanyLeads: 5,
     },
     allowRegionalRepsInPhoenix: false,
 };
@@ -572,29 +565,28 @@ export const useAppLogic = () => {
     const isJobValidForRepRegion = useCallback((job: Job, rep: Rep): boolean => {
         const jobCity = norm(job.city);
         if (!jobCity) return true;
+        const northZone = getNorthZone(jobCity);
+        if (northZone) return isRepEligibleForNorthZone(rep, northZone);
+
         const jobRegion = getCityRegion(jobCity);
 
-        // 1. London Smith: STRICT NORTH (North of Black Canyon City)
+        // London can work Phoenix jobs only when the regional override is enabled.
         if (isLondon(rep)) {
-            if (jobRegion === 'NORTH') return true;
-            // Allow in Phoenix only if explicit setting is ON
             if (jobRegion === 'PHX' && appState.settings.allowRegionalRepsInPhoenix) return true;
             return false;
         }
 
-        // 2. Richard Hadsall & Joseph Simms: STRICT SOUTH (South of Eloy)
+        // Richard Hadsall & Joseph Simms: STRICT SOUTH (South of Eloy)
         if (isJoseph(rep) || isRichard(rep)) {
             if (jobRegion === 'SOUTH') return true;
-            // Allow in Phoenix only if explicit setting is ON
             if (jobRegion === 'PHX' && appState.settings.allowRegionalRepsInPhoenix) return true;
             return false;
         }
 
-        // 3. General Regional Logic
+        // General Regional Logic
         if (jobRegion) {
             if (rep.region === 'UNKNOWN' || rep.region === jobRegion) return true;
-            // Allow South Reps in PHX if setting is enabled (Only for generic South reps, not named restricted ones)
-            if (appState.settings.allowRegionalRepsInPhoenix && rep.region === 'SOUTH' && jobRegion === 'PHX') {
+            if (appState.settings.allowRegionalRepsInPhoenix && (rep.region === 'NORTH' || rep.region === 'SOUTH') && jobRegion === 'PHX') {
                 return true;
             }
             return false;
@@ -1139,6 +1131,23 @@ export const useAppLogic = () => {
 
         const dateKey = formatDateToKey(selectedDate);
         const jobToDrop = appState.unassignedJobs.find(j => j.id === jobId) || appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
+        if (targetRepInfo && jobToDrop) {
+            const repWithoutMovingJob: Rep = {
+                ...targetRepInfo,
+                schedule: targetRepInfo.schedule.map(slot => ({
+                    ...slot,
+                    jobs: slot.jobs.filter(job => job.id !== jobId),
+                })),
+            };
+            if (getEffectiveUnavailableSlots(repWithoutMovingJob, selectedDayString).includes(target.slotId)) {
+                showToast("Cannot assign a job to an unavailable slot.", 'warning');
+                return;
+            }
+            if (!canReserveNorthTravelSlot(repWithoutMovingJob, jobToDrop, target.slotId)) {
+                showToast("This north job requires an open adjacent travel slot.", 'warning');
+                return;
+            }
+        }
         if (jobToDrop) updateGeoCache([jobToDrop.address]);
 
         recordChange(currentDailyStates => {
@@ -1183,7 +1192,7 @@ export const useAppLogic = () => {
         setSelectedRepId(target.repId);
         setExpandedRepIds(prev => new Set(prev).add(target.repId));
 
-    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute]);
+    }, [handleUnassignJob, appState.reps, appState.unassignedJobs, selectedDate, selectedDayString, recordChange, calculateAssignmentScore, updateGeoCache, activeRoute]);
 
     const handleShowFilteredJobsOnMap = useCallback(async (jobs: DisplayJob[], title: string) => {
         const requestId = ++mapRequestRef.current;
@@ -2637,7 +2646,9 @@ export const useAppLogic = () => {
                     if (job.originalTimeframe) { targetSlotId = mapTimeframeToSlotId(job.originalTimeframe); }
                     let assigned = false;
                     const effectiveUnavailable = getEffectiveUnavailableSlots(rep, selectedDayString);
-                    const availableSlots = rep.schedule.filter(s => !effectiveUnavailable.includes(s.id));
+                    const availableSlots = rep.schedule.filter(s =>
+                        !effectiveUnavailable.includes(s.id) && canReserveNorthTravelSlot(rep, job, s.id)
+                    );
                     const dummyBreakdown: ScoreBreakdown = { timeframeMatch: 0, distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 };
                     // Set original rep info if not already set (first assignment)
                     const jobWithOriginal = {
@@ -2713,103 +2724,6 @@ export const useAppLogic = () => {
                 newState.unassignedJobs = [...needsDetails]; // keep needs-details jobs unassigned
                 let assignedCount = 0;
 
-                // ============================================================
-                // LONDON SMITH SPECIAL AUTO-ASSIGNMENT
-                // Jobs north of Black Canyon City (lat > 34.07) are automatically
-                // assigned to London Smith before normal assignment
-                // ============================================================
-                const londonRep = newState.reps.find(r => isLondon(r) && !r.isLocked && !r.isOptimized);
-                if (londonRep) {
-                    const londonUnavailable = getEffectiveUnavailableSlots(londonRep, selectedDayString);
-                    const londonHasAvailability = londonRep.schedule.some(s => !londonUnavailable.includes(s.id));
-
-                    if (londonHasAvailability) {
-                        const jobsForLondon: Job[] = [];
-                        const remainingJobs: Job[] = [];
-
-                        for (const job of jobsToAssign) {
-                            const jobCoord = geoCache.get(job.address);
-                            const shouldGoToLondon = isJobNorthOfBlackCanyonCity(jobCoord);
-
-                            if (shouldGoToLondon) {
-                                jobsForLondon.push(job);
-                            } else {
-                                remainingJobs.push(job);
-                            }
-                        }
-
-                        // Assign London's special jobs
-                        for (const job of jobsForLondon) {
-                            const londonJobCount = londonRep.schedule.flatMap(s => s.jobs).length;
-                            if (londonJobCount >= newState.settings.maxJobsPerRep) {
-                                // London is full, put job back in queue
-                                remainingJobs.push(job);
-                                continue;
-                            }
-
-                            // Find best slot for this job
-                            let targetSlotId = mapTimeframeToSlotId(job.originalTimeframe || '');
-                            let assignedToSlot = false;
-
-                            // Try the preferred slot first
-                            if (targetSlotId) {
-                                const targetSlot = londonRep.schedule.find(s => s.id === targetSlotId);
-                                if (targetSlot && !londonUnavailable.includes(targetSlot.id)) {
-                                    const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
-                                    if (targetSlot.jobs.length < maxJobsInSlot) {
-                                        const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 100, penalty: 0, timeframeMatch: 100 };
-                                        const displayJob: DisplayJob = {
-                                            ...job,
-                                            assignmentScore: 100,
-                                            scoreBreakdown: dummyBreakdown,
-                                            originalRepId: job.originalRepId || londonRep.id,
-                                            originalRepName: job.originalRepName || londonRep.name,
-                                        };
-                                        targetSlot.jobs.push(displayJob);
-                                        assignedToSlot = true;
-                                        assignedCount++;
-                                        log(`- LONDON AUTO-ASSIGN: ${job.address} (North of Black Canyon City)`);
-                                    }
-                                }
-                            }
-
-                            // If preferred slot didn't work, try any available slot
-                            if (!assignedToSlot) {
-                                for (const slot of londonRep.schedule) {
-                                    if (londonUnavailable.includes(slot.id)) continue;
-                                    const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
-                                    if (slot.jobs.length >= maxJobsInSlot) continue;
-
-                                    const dummyBreakdown: ScoreBreakdown = { distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 100, penalty: 0, timeframeMatch: 50 };
-                                    const displayJob: DisplayJob = {
-                                        ...job,
-                                        assignmentScore: 90,
-                                        scoreBreakdown: dummyBreakdown,
-                                        originalRepId: job.originalRepId || londonRep.id,
-                                        originalRepName: job.originalRepName || londonRep.name,
-                                    };
-                                    slot.jobs.push(displayJob);
-                                    assignedToSlot = true;
-                                    assignedCount++;
-                                    log(`- LONDON AUTO-ASSIGN: ${job.address} (North of Black Canyon City)`);
-                                    break;
-                                }
-                            }
-
-                            // If still not assigned, put back in queue for normal assignment
-                            if (!assignedToSlot) {
-                                remainingJobs.push(job);
-                            }
-                        }
-
-                        // Update jobsToAssign to only contain remaining jobs
-                        jobsToAssign = remainingJobs;
-                    }
-                }
-                // ============================================================
-                // END LONDON SMITH SPECIAL AUTO-ASSIGNMENT
-                // ============================================================
-
                 const cityOrder = EAST_TO_WEST_CITIES.reduce((acc, city, index) => {
                     acc[city.toLowerCase()] = index;
                     return acc;
@@ -2840,13 +2754,16 @@ export const useAppLogic = () => {
                         if (violated) continue;
 
                         // Check if rep has at least one available slot today (for override logic)
-                        // Use effective unavailable slots (handles London Smith special case)
+                        // Use sheet-unavailable and travel-blocked slots.
                         const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDayString);
+                        const travelBlockedSlots = getTravelBlockedSlots(rep);
                         const hasAnyAvailability = rep.schedule.some(s => !unavailableSlotsToday.includes(s.id));
 
                         for (const slot of rep.schedule) {
                             const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
                             if (slot.jobs.length >= maxJobsInSlot) continue;
+                            if (!canReserveNorthTravelSlot(rep, job, slot.id)) continue;
+                            if (travelBlockedSlots.includes(slot.id)) continue;
 
                             const isUnavailable = unavailableSlotsToday.includes(slot.id);
                             // Only allow override if rep has at least one available slot today
@@ -2906,7 +2823,7 @@ export const useAppLogic = () => {
             // Flag map refresh — the effect watching allJobs will pick this up
             pendingMapRefreshAfterLoad.current = true;
         }, 100);
-    }, [recordChange, selectedDate, log, selectedDayString, checkCityRuleViolation, calculateAssignmentScore, history, historyIndex, updateGeoCache, isJobValidForRepRegion, geoCache]);
+    }, [recordChange, selectedDate, log, selectedDayString, checkCityRuleViolation, calculateAssignmentScore, history, historyIndex, updateGeoCache, isJobValidForRepRegion]);
 
     const handleAutoAssignForRep = useCallback((repId: string) => {
         log(`ACTION: Auto-Assign for Rep ID ${repId} clicked.`);
@@ -2996,13 +2913,16 @@ export const useAppLogic = () => {
                     }
 
                     // Check if rep has at least one available slot today (for override logic)
-                    // Use effective unavailable slots (handles London Smith special case)
+                    // Use sheet-unavailable and travel-blocked slots.
                     const unavailableSlotsToday = getEffectiveUnavailableSlots(targetRep, selectedDayString);
+                    const travelBlockedSlots = getTravelBlockedSlots(targetRep);
                     const hasAnyAvailability = targetRep.schedule.some(s => !unavailableSlotsToday.includes(s.id));
 
                     for (const slot of targetRep.schedule) {
                         const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
                         if (slot.jobs.length >= maxJobsInSlot) continue;
+                        if (!canReserveNorthTravelSlot(targetRep, job, slot.id)) continue;
+                        if (travelBlockedSlots.includes(slot.id)) continue;
 
                         const isUnavailable = unavailableSlotsToday.includes(slot.id);
                         // Allow unavailable reps to receive jobs if they were the original assignee
@@ -3085,15 +3005,28 @@ export const useAppLogic = () => {
                 for (const assignment of result.assignments) {
                     const jobIndex = newState.unassignedJobs.findIndex(j => j.id === assignment.jobId);
                     if (jobIndex === -1) continue;
-                    const [jobToMove] = newState.unassignedJobs.splice(jobIndex, 1);
+                    const jobToMove = newState.unassignedJobs[jobIndex];
                     const rep = newState.reps.find(r => r.id === assignment.repId);
-                    if (!rep) continue;
+                    if (!rep || rep.isLocked || rep.isOptimized) continue;
                     const slot = rep.schedule.find(s => s.id === assignment.slotId);
                     if (!slot) continue;
+                    if (rep.schedule.flatMap(s => s.jobs).length >= newState.settings.maxJobsPerRep) continue;
+                    if (!isJobValidForRepRegion(jobToMove, rep)) continue;
+                    if (checkCityRuleViolation(rep, jobToMove.city).violated) continue;
+                    if (getEffectiveUnavailableSlots(rep, selectedDayString).includes(slot.id)) continue;
+                    if (!canReserveNorthTravelSlot(rep, jobToMove, slot.id)) continue;
+                    const maxJobsInSlot = newState.settings.allowDoubleBooking ? newState.settings.maxJobsPerSlot : 1;
+                    if (slot.jobs.length >= maxJobsInSlot) continue;
+                    const { score } = calculateAssignmentScore(jobToMove, rep, slot.id, newState.settings);
+                    if (score <= 0) continue;
+
+                    newState.unassignedJobs.splice(jobIndex, 1);
                     slot.jobs.push({
                         ...jobToMove,
                         assignmentScore: 85,
-                        scoreBreakdown: { timeframeMatch: 0, distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 }
+                        scoreBreakdown: { timeframeMatch: 0, distanceBase: 0, distanceCluster: 0, skillRoofing: 0, skillType: 0, performance: 0, penalty: 0 },
+                        originalRepId: jobToMove.originalRepId || rep.id,
+                        originalRepName: jobToMove.originalRepName || rep.name,
                     });
                     assignedCount++;
                 }
@@ -3111,7 +3044,7 @@ export const useAppLogic = () => {
         } finally {
             setIsAiAssigning(false);
         }
-    }, [log, appState, selectedDayString, addAiThought, clearAiThoughts, recordChange, selectedDate]);
+    }, [log, appState, selectedDayString, addAiThought, clearAiThoughts, recordChange, selectedDate, isJobValidForRepRegion, checkCityRuleViolation, calculateAssignmentScore]);
 
     const handleSwapSchedules = useCallback((repId1: string, repId2: string) => {
         const dateKey = formatDateToKey(selectedDate);

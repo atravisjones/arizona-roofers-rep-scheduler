@@ -1,11 +1,66 @@
-import { Rep } from '../types';
-import { TIME_SLOTS } from '../constants';
+import { Job, Rep } from '../types';
+import { FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, NORTHERN_AZ_CITIES, SR87_CORRIDOR_CITIES } from '../services/geography';
 
 /**
  * Checks if a rep is London Smith
  */
 export const isLondon = (rep: Rep): boolean =>
     rep.name.trim().toLowerCase().startsWith('london smith');
+
+export const isI17CorridorRep = (rep: Rep): boolean => {
+    const name = rep.name.trim().toLowerCase();
+    return name.startsWith('christian noren') || name.startsWith('justin parker');
+};
+
+export const isEastValleyRep = (rep: Rep): boolean =>
+    rep.zipCodes?.[0]?.trim().startsWith('852') ?? false;
+
+export type NorthZone = 'FLAGSTAFF' | 'I17' | 'SR87' | 'FALLBACK';
+
+export const getNorthZone = (city: string | null | undefined): NorthZone | null => {
+    const normalizedCity = (city || '').toLowerCase().trim();
+    if (FLAGSTAFF_ZONE_CITIES.has(normalizedCity)) return 'FLAGSTAFF';
+    if (I17_CORRIDOR_CITIES.has(normalizedCity)) return 'I17';
+    if (SR87_CORRIDOR_CITIES.has(normalizedCity)) return 'SR87';
+    if (NORTHERN_AZ_CITIES.has(normalizedCity)) return 'FALLBACK';
+    return null;
+};
+
+export const isRepEligibleForNorthZone = (rep: Rep, zone: NorthZone): boolean => {
+    if (zone === 'I17') return isI17CorridorRep(rep);
+    if (zone === 'SR87') return isEastValleyRep(rep);
+    return isLondon(rep);
+};
+
+const getAdjacentTravelSlotId = (rep: Rep, slotId: string): string | null => {
+    const slotIndex = rep.schedule.findIndex(slot => slot.id === slotId);
+    if (slotIndex === -1) return null;
+    const adjacentIndex = slotIndex === rep.schedule.length - 1 ? slotIndex - 1 : slotIndex + 1;
+    return rep.schedule[adjacentIndex]?.id || null;
+};
+
+export const getTravelBlockedSlots = (rep: Rep): string[] => {
+    if (isLondon(rep)) return [];
+
+    const blockedSlots = new Set<string>();
+    rep.schedule.forEach(slot => {
+        if (!slot.jobs.some(job => getNorthZone(job.city) !== null)) return;
+        const adjacentSlotId = getAdjacentTravelSlotId(rep, slot.id);
+        if (adjacentSlotId) blockedSlots.add(adjacentSlotId);
+    });
+    return [...blockedSlots];
+};
+
+export const canReserveNorthTravelSlot = (rep: Rep, job: Job, slotId: string): boolean => {
+    if (isLondon(rep)) return true;
+    const targetSlot = rep.schedule.find(slot => slot.id === slotId);
+    if (targetSlot?.jobs.some(scheduledJob => getNorthZone(scheduledJob.city) !== null)) return false;
+    if (getNorthZone(job.city) === null) return true;
+    if (targetSlot && targetSlot.jobs.length > 0) return false;
+    const adjacentSlotId = getAdjacentTravelSlotId(rep, slotId);
+    if (!adjacentSlotId) return true;
+    return rep.schedule.find(slot => slot.id === adjacentSlotId)?.jobs.length === 0;
+};
 
 /**
  * Checks if a rep is a field sales rep (not management or door knocker).
@@ -55,19 +110,11 @@ export const isFieldSalesRep = (rep: Rep): boolean => {
 };
 
 /**
- * Gets the effective unavailable slots for a rep on a given day.
- * Special handling for London Smith: always available except Sundays.
+ * Gets sheet-unavailable slots plus adjacent travel slots consumed by north jobs.
  * @param rep The rep to check
  * @param dayName The day of the week (e.g., "Monday", "Sunday")
  * @returns Array of unavailable slot IDs (empty array = fully available)
  */
 export const getEffectiveUnavailableSlots = (rep: Rep, dayName: string): string[] => {
-    if (isLondon(rep)) {
-        // London Smith is unavailable ONLY on Sundays
-        if (dayName === 'Sunday') {
-            return TIME_SLOTS.map(s => s.id); // All slots unavailable on Sunday
-        }
-        return []; // Available all other days
-    }
-    return rep.unavailableSlots?.[dayName] || [];
+    return [...new Set([...(rep.unavailableSlots?.[dayName] || []), ...getTravelBlockedSlots(rep)])];
 };

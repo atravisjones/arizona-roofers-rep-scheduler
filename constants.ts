@@ -17,7 +17,6 @@ export const MAX_REP_ROW = 175; // Reps below this row in the sheet are excluded
 // Rep skillsets sheet details
 export const SKILLS_SHEET_TITLE = 'Appointment Blocks';
 export const SKILLS_DATA_RANGE = 'A19:H52';
-export const SALES_ORDER_DATA_RANGE = 'A69:A82'; // Ordered list of best closing reps (rank 1 = first row)
 
 // Job ID / Roofr URL sheet details — reads from Apt Outcome Tracker (Master Sheet tab)
 // Column B = Address, Column O = Job ID
@@ -50,8 +49,9 @@ export const TIME_SLOT_DISPLAY_LABELS: Record<string, string> = {
 
 export const ROOF_KEYWORDS: readonly ['Tile', 'Shingle', 'Flat', 'Metal'] = ['Tile', 'Shingle', 'Flat', 'Metal'];
 export const TYPE_KEYWORDS: readonly ['Insurance', 'Commercial'] = ['Insurance', 'Commercial'];
+export const ATTRIBUTE_KEYWORDS: readonly ['Spanish Speaker', 'Ladder Pull'] = ['Spanish Speaker', 'Ladder Pull'];
 
-export const TAG_KEYWORDS: readonly string[] = [...ROOF_KEYWORDS, ...TYPE_KEYWORDS];
+export const TAG_KEYWORDS: readonly string[] = [...ROOF_KEYWORDS, ...TYPE_KEYWORDS, ...ATTRIBUTE_KEYWORDS];
 
 // Day View Constants
 export const DAY_VIEW_CELL_HEIGHT = 40;  // pixels per 30-min slot

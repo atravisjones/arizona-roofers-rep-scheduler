@@ -19,6 +19,14 @@ SUPABASE_URL = os.environ.get("KPI_SUPABASE_URL", "https://ucfqgkbkxbztxlyniuph.
 SUPABASE_KEY = os.environ.get("KPI_SUPABASE_ANON_KEY", "")
 
 
+EXCLUDED_TITLE_PREFIXES = ("D2D Sales appointment",)
+
+
+def is_excluded_title(title):
+    t = (title or "").strip()
+    return any(t.startswith(p) for p in EXCLUDED_TITLE_PREFIXES)
+
+
 def sb_fetch(path, timeout=8):
     """Fetch from Supabase REST API."""
     url = f"{SUPABASE_URL}/rest/v1/{path}"
@@ -59,6 +67,7 @@ def get_from_supabase(date_str):
         f"&order=start_date.asc"
     )
     events = sb_fetch(cal_path)
+    events = [e for e in events if not is_excluded_title(e.get("title"))]
 
     if not events:
         return []
@@ -147,6 +156,10 @@ def get_from_sheets(date_str):
         # Accept "sales" or empty category (sheet often has blank category for valid sales events)
         cat = category.strip().lower()
         if cat and cat != "sales":
+            continue
+
+        title = row[4] if len(row) > 4 else ""
+        if is_excluded_title(title):
             continue
 
         job_id = row[1] if len(row) > 1 else ""

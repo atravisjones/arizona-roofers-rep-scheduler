@@ -22,6 +22,7 @@ const ALLOWED_SHEETS = new Set([
   '1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g', // SRA rep schedule (also used as CITIES_SHEET by Calendar extension)
   '1Bw1Tug38f_cEkAN6V4XzlDT_lJf7UDMAUK0NjoBEtK0', // Roofr Master Sheet
   '1TtweJEEhVEO_DAgmvTY7PcaPQdmbxlOtPfffKdiXBcw', // Apt Outcome Tracker (closing rates)
+  '1XFJHD0IVZ8sJrQ7H2CrqU26a6n-FulPM8ABKc1hrh9o', // Company Team Roster (People tab: Production/Insurance/D2D sync)
 ]);
 
 let cachedSheets = null;

@@ -112,6 +112,20 @@ export const NORTHERN_AZ_CITIES = new Set([
     "cordes junction", "mayer", "bagdad", "seligman", "ash fork", "black canyon city"
 ]);
 
+export const FLAGSTAFF_ZONE_CITIES = new Set([
+    "flagstaff", "williams", "munds park", "parks", "bellemont", "page", "tuba city", "kayenta", "fredonia"
+]);
+
+export const I17_CORRIDOR_CITIES = new Set([
+    "prescott", "prescott valley", "chino valley", "dewey-humboldt", "mayer", "cordes junction",
+    "black canyon city", "sedona", "cottonwood", "clarkdale", "cornville", "camp verde",
+    "village of oak creek", "rimrock", "verde village"
+]);
+
+export const SR87_CORRIDOR_CITIES = new Set([
+    "payson", "pine", "strawberry", "star valley"
+]);
+
 export const SOUTHERN_AZ_CITIES = new Set([
     "tucson", "south tucson", "oro valley", "marana", "vail", "sahuarita", "green valley", "catalina foothills", 
     "nogales", "rio rico", "sierra vista", "benson", "oracle", "mammoth", "red rock", "saddlebrooke", "sonoita", 
@@ -143,6 +157,9 @@ export const SOUTH_OUTER_RING_CITIES = new Set<string>([
 export const ALL_KNOWN_CITIES = new Set([
     ...GREATER_PHOENIX_CITIES,
     ...NORTHERN_AZ_CITIES,
+    ...FLAGSTAFF_ZONE_CITIES,
+    ...I17_CORRIDOR_CITIES,
+    ...SR87_CORRIDOR_CITIES,
     ...SOUTHERN_AZ_CITIES,
     ...LOWER_VALLEY_EXTENSION_CITIES,
     ...SOUTH_OUTER_RING_CITIES,

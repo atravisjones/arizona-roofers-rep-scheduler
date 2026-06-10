@@ -29,7 +29,7 @@ const DayViewRepColumn: React.FC<DayViewRepColumnProps> = ({
   columnWidth,
   onRepHover,
 }) => {
-  // Get unavailable slots for this rep on this day (handles London Smith special case)
+  // Get sheet-unavailable and travel-blocked slots for this rep.
   const unavailableSlotIds = useMemo(() => {
     return getEffectiveUnavailableSlots(rep, dayName);
   }, [rep, dayName]);

@@ -93,10 +93,15 @@ export interface Settings {
   unavailabilityPenalty: number; // A value from 0-10, applied as a negative.
   strictTimeSlotMatching: boolean;
 
-  maxTravelTimeMinutes: number; // In minutes
-
   // Gamification / Scoring Logic
   scoringWeights: ScoringWeights;
+
+  repRankingConfig: {
+    windowDays: number;
+    revenueWeight: number; // 0-1 blend knob
+    selfGenWeight: number;
+    minCompanyLeads: number;
+  };
 
   // Regional Rules
   allowRegionalRepsInPhoenix: boolean;
@@ -131,6 +136,11 @@ export interface Rep {
 
   // Gamification Properties
   salesRank?: number; // 1 = Top performer.
+  stats?: { // Performance stats for display
+    closeRate: number; // 0-1
+    revPerLead: number;
+    avgTicket: number;
+  };
   scoringOverrides?: Partial<ScoringWeights>; // Individual overrides
   customColor?: string; // User-chosen hex color, e.g. "#FF5733"
 }

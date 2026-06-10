@@ -3,6 +3,7 @@ import { Job, Rep, ParsedJobsResult, DisplayJob, Settings } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { TIME_SLOTS, TAG_KEYWORDS } from '../constants';
 import { ALL_KNOWN_CITIES } from './geography';
+import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 
 /**
  * Helper to get the 24-hour start hour from a time string (e.g., "7:30am", "1pm").
@@ -518,7 +519,7 @@ export async function assignJobsWithAi(
                 jobCount: slot.jobs.length
             })),
             assignedCities: [...new Set(currentJobs.map(j => j.city).filter(Boolean))],
-            unavailableSlots: rep.unavailableSlots?.[selectedDay] || [],
+            unavailableSlots: getEffectiveUnavailableSlots(rep, selectedDay),
         };
     });
 

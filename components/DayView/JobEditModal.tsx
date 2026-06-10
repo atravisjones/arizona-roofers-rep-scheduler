@@ -86,7 +86,7 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
     return [...roofTags, ...sqftTag, ...storiesTag, ...ageTag];
   }, [notes]);
 
-  // Check if a rep is available on the selected day (handles London Smith special case)
+  // Check if a rep has at least one open slot on the selected day.
   const isRepAvailable = (rep: Rep): boolean => {
     const unavailableSlots = getEffectiveUnavailableSlots(rep, dayName);
     // Rep is unavailable if all 4 slots are marked unavailable
@@ -111,6 +111,8 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
 
     return { available, unavailable };
   }, [appState.reps, dayName]);
+
+  const selectedRep = appState.reps.find(rep => rep.id === selectedRepId);
 
   // Get Roofr URL (try address then customer name)
   const roofrUrl = useMemo(() => {
@@ -299,7 +301,13 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
                   disabled={!selectedRepId}
                 >
                   {TIME_SLOTS.map(slot => (
-                    <option key={slot.id} value={slot.id}>
+                    <option
+                      key={slot.id}
+                      value={slot.id}
+                      disabled={selectedRep
+                        ? getEffectiveUnavailableSlots(selectedRep, dayName).includes(slot.id)
+                        : false}
+                    >
                       {slot.label}
                     </option>
                   ))}

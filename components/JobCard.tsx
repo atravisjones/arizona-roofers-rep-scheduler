@@ -304,7 +304,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         // Try direct match (address then customer name)
         const match = resolveRoofrJob();
         if (match?.jobId) {
-            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${match.jobId}`, '_blank');
+            window.open(`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${match.jobId}`, '_blank');
             return;
         }
 
@@ -312,7 +312,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
         const normalized = normalizeAddressForMatching(job.address);
         const legacyJobId = normalized ? roofrJobIdMap?.get(normalized) : null;
         if (legacyJobId) {
-            window.open(`https://app.roofr.com/dashboard/team/239329/jobs?selectedJobId=${legacyJobId}`, '_blank');
+            window.open(`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${legacyJobId}`, '_blank');
             return;
         }
 

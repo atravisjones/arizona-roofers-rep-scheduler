@@ -151,16 +151,20 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
 
   // Determine card styling based on priority/reschedule status
   const cardBorderClass = useMemo(() => {
-    if (priorityLevel >= 3) return 'border-amber-500 ring-2 ring-amber-400/50';
-    if (priorityLevel === 2) return 'border-red-400 ring-1 ring-red-400/30';
+    if (priorityLevel >= 5) return 'border-amber-500 ring-2 ring-amber-400/50';
+    if (priorityLevel === 4) return 'border-purple-500 ring-2 ring-purple-400/50';
+    if (priorityLevel === 3) return 'border-red-500 ring-2 ring-red-400/50';
+    if (priorityLevel === 2) return 'border-orange-400 ring-1 ring-orange-400/30';
     if (priorityLevel === 1) return 'border-amber-400';
     if (isReschedule) return 'border-blue-400';
     return 'border-brand-primary/30';
   }, [priorityLevel, isReschedule]);
 
   const cardBgClass = useMemo(() => {
-    if (priorityLevel >= 3) return 'bg-gradient-to-br from-yellow-100 to-amber-200';
-    if (priorityLevel === 2) return 'bg-gradient-to-br from-amber-50 to-red-100';
+    if (priorityLevel >= 5) return 'bg-gradient-to-br from-yellow-100 to-amber-200';
+    if (priorityLevel === 4) return 'bg-gradient-to-br from-purple-50 to-purple-100';
+    if (priorityLevel === 3) return 'bg-gradient-to-br from-red-50 to-red-100';
+    if (priorityLevel === 2) return 'bg-orange-50';
     if (priorityLevel === 1) return 'bg-amber-50';
     if (isReschedule) return 'bg-blue-50';
     return 'bg-brand-bg-light';
@@ -170,7 +174,7 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
     <div
       className={`day-view-job-block absolute left-1 right-1 ${cardBgClass} border rounded-md overflow-hidden cursor-grab active:cursor-grabbing transition-all z-10 ${
         isHovered ? 'border-brand-primary shadow-lg ring-2 ring-brand-primary/30 z-20' : `${cardBorderClass} hover:shadow-md`
-      } ${priorityLevel >= 3 ? 'animate-pulse' : ''}`}
+      } ${priorityLevel >= 5 ? 'animate-pulse' : ''}`}
       style={{
         top: position.top,
         height: Math.max(position.height - 2, 30),
@@ -188,9 +192,11 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
         <div className="absolute top-0.5 right-0.5 flex items-center gap-0.5">
           {showPriority && (
             <div className="flex">
-              {[...Array(Math.min(priorityLevel, 3))].map((_, i) => (
+              {[...Array(Math.min(priorityLevel, 5))].map((_, i) => (
                 <StarIcon key={i} className={`h-2.5 w-2.5 ${
-                  priorityLevel >= 3 ? 'text-red-500' :
+                  priorityLevel >= 5 ? 'text-yellow-500' :
+                  priorityLevel === 4 ? 'text-purple-500' :
+                  priorityLevel === 3 ? 'text-red-500' :
                   priorityLevel === 2 ? 'text-orange-500' :
                   'text-amber-500'
                 }`} />
