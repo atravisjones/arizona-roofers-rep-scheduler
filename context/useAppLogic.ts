@@ -27,15 +27,6 @@ const isRichard = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('richar
 const BLACK_CANYON_CITY_LATITUDE = 34.07;
 
 /**
- * Checks if a job has a "Commercial" tag in its notes.
- * @param job The job to check
- * @returns true if the job is tagged as Commercial
- */
-const isCommercialJob = (job: Job | DisplayJob): boolean => {
-    return /\bcommercial\b/i.test(job.notes || '');
-};
-
-/**
  * Checks if a job's coordinates are north of Black Canyon City, AZ (lat > 34.07).
  * @param jobCoordinates The job's coordinates (lat, lon)
  * @returns true if the job is north of Black Canyon City
@@ -2724,8 +2715,8 @@ export const useAppLogic = () => {
 
                 // ============================================================
                 // LONDON SMITH SPECIAL AUTO-ASSIGNMENT
-                // Commercial jobs and jobs north of Black Canyon City (lat > 34.07)
-                // are automatically assigned to London Smith before normal assignment
+                // Jobs north of Black Canyon City (lat > 34.07) are automatically
+                // assigned to London Smith before normal assignment
                 // ============================================================
                 const londonRep = newState.reps.find(r => isLondon(r) && !r.isLocked && !r.isOptimized);
                 if (londonRep) {
@@ -2738,7 +2729,7 @@ export const useAppLogic = () => {
 
                         for (const job of jobsToAssign) {
                             const jobCoord = geoCache.get(job.address);
-                            const shouldGoToLondon = isCommercialJob(job) || isJobNorthOfBlackCanyonCity(jobCoord);
+                            const shouldGoToLondon = isJobNorthOfBlackCanyonCity(jobCoord);
 
                             if (shouldGoToLondon) {
                                 jobsForLondon.push(job);
@@ -2777,8 +2768,7 @@ export const useAppLogic = () => {
                                         targetSlot.jobs.push(displayJob);
                                         assignedToSlot = true;
                                         assignedCount++;
-                                        const reason = isCommercialJob(job) ? 'Commercial' : 'North of Black Canyon City';
-                                        log(`- LONDON AUTO-ASSIGN: ${job.address} (${reason})`);
+                                        log(`- LONDON AUTO-ASSIGN: ${job.address} (North of Black Canyon City)`);
                                     }
                                 }
                             }
@@ -2801,8 +2791,7 @@ export const useAppLogic = () => {
                                     slot.jobs.push(displayJob);
                                     assignedToSlot = true;
                                     assignedCount++;
-                                    const reason = isCommercialJob(job) ? 'Commercial' : 'North of Black Canyon City';
-                                    log(`- LONDON AUTO-ASSIGN: ${job.address} (${reason})`);
+                                    log(`- LONDON AUTO-ASSIGN: ${job.address} (North of Black Canyon City)`);
                                     break;
                                 }
                             }
