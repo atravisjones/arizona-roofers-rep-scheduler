@@ -3,6 +3,7 @@ import { Rep, Job } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { ClipboardIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
+import { normalizeAddressForMatching } from '../services/googleSheetsService';
 
 // Helper to check if an address looks like coordinates (e.g., "33.123,-111.456")
 const isCoordinateAddress = (address: string): boolean => {
@@ -143,6 +144,8 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                             }
                                             const fullAddress = [displayAddress, job.customerName, `AZ ${job.zipCode || ''}`].filter(Boolean).join(', ');
                                             const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
+                                            const normalizedAddress = normalizeAddressForMatching(displayAddress);
+                                            const roofrJobId = normalizedAddress ? appState.roofrJobIdMap.get(normalizedAddress) : null;
                                             // Priority: Original Timeframe, then Slot Label
                                             const timeDisplay = job.originalTimeframe || job.timeSlotLabel;
                                             return (
@@ -150,6 +153,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                                     <span className="text-text-tertiary">{timeDisplay}:</span> {fullAddress} (<strong className="text-text-primary font-bold">{tags}</strong>)
                                                     {priorityLevel > 0 && <span className="text-tag-amber-text font-bold ml-2">{'#'.repeat(priorityLevel)} {priorityReason}</span>}
                                                     {rescheduleInfo && <span className="text-tag-blue-text italic ml-2">(Rescheduled from {rescheduleInfo})</span>}
+                                                    {roofrJobId && <> [JID:{roofrJobId}]</>}
                                                 </li>
                                             );
                                         })}
