@@ -10,6 +10,8 @@ function buildSheetsUrl(spreadsheetId: string, range?: string, valueRenderOption
 }
 import { MOCK_REPS_DATA } from './mockData';
 import { ALL_KNOWN_CITIES } from './geography';
+import { applyNorthRoutingZoneConfig, resetNorthRoutingZoneDefault } from './northRoutingConfig';
+import type { ConfigurableNorthZone, NorthRoutingZoneConfig } from './northRoutingConfig';
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -661,6 +663,57 @@ async function fetchRepSkills(): Promise<Map<string, { skills: Record<string, nu
     return skillsMap;
 }
 
+async function fetchNorthRoutingConfig(): Promise<void> {
+    const zones: ConfigurableNorthZone[] = ['I17', 'SR87', 'FLAGSTAFF'];
+    const parsedConfig = new Map<ConfigurableNorthZone, NorthRoutingZoneConfig>();
+    const appliedZones: ConfigurableNorthZone[] = [];
+
+    try {
+        const url = buildSheetsUrl(SPREADSHEET_ID, `'Appointment Blocks'!A40:C45`);
+        const response = await fetchWithRetry(url);
+        if (response.ok) {
+            const data = await response.json();
+            const values = Array.isArray(data.values) ? data.values : [];
+
+            values.forEach((row: unknown[]) => {
+                const zone = String(row[0] || '').trim().toUpperCase() as ConfigurableNorthZone;
+                if (!zones.includes(zone)) return;
+
+                const repNamePrefixes: string[] = [];
+                const zipPrefixes: string[] = [];
+                String(row[1] || '').split(',').map(entry => entry.trim()).filter(Boolean).forEach(entry => {
+                    const zipMatch = entry.match(/^ZIP:(.+)$/i);
+                    if (zipMatch) {
+                        zipPrefixes.push(zipMatch[1].trim());
+                    } else {
+                        repNamePrefixes.push(entry.toLowerCase());
+                    }
+                });
+
+                parsedConfig.set(zone, {
+                    repNamePrefixes,
+                    zipPrefixes,
+                    cities: String(row[2] || '').split(',').map(city => city.trim().toLowerCase()).filter(Boolean),
+                });
+            });
+
+        }
+    } catch {
+        // Defaults remain active when the routing block cannot be loaded.
+    }
+
+    zones.forEach(zone => {
+        resetNorthRoutingZoneDefault(zone);
+        const config = parsedConfig.get(zone);
+        if (config && applyNorthRoutingZoneConfig(zone, config)) appliedZones.push(zone);
+    });
+
+    const defaultZones = zones.filter(zone => !appliedZones.includes(zone));
+    console.log(appliedZones.length > 0
+        ? `North routing config applied from sheet for ${appliedZones.join(', ')}; defaults kept for ${defaultZones.join(', ') || 'none'}.`
+        : 'North routing config defaults kept; sheet config was unavailable or empty.');
+}
+
 /**
  * Fetches Job IDs and addresses from the Apt Outcome Tracker via our Vercel API route.
  * The API route uses service account auth so the sheet doesn't need to be public.
@@ -710,8 +763,9 @@ export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
 export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string }> {
     let sheetName = '';
     try {
-        // 0. Fetch skills and sales rankings data in parallel
+        // 0. Fetch skills, routing config, and sales rankings data in parallel
         const skillsPromise = fetchRepSkills();
+        const routingConfigPromise = fetchNorthRoutingConfig();
         const ranksPromise = fetchAssignmentRankings(); // Profit/Appt ranking (Management tab logic) first, then 30-day close rate fallback
 
         // 1. Get spreadsheet metadata to find the current sheet name
@@ -844,6 +898,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         }
 
         const skillsMap = await skillsPromise;
+        await routingConfigPromise;
         const rankingsMap = await ranksPromise;
 
         // 5. Convert the map into the final array of Rep objects and merge skills

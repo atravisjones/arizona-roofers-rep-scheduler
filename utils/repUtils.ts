@@ -1,5 +1,6 @@
 import { Job, Rep } from '../types';
 import { FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, NORTHERN_AZ_CITIES, SR87_CORRIDOR_CITIES } from '../services/geography';
+import { northRoutingEligibility } from '../services/northRoutingConfig';
 
 /**
  * Checks if a rep is London Smith
@@ -9,11 +10,22 @@ export const isLondon = (rep: Rep): boolean =>
 
 export const isI17CorridorRep = (rep: Rep): boolean => {
     const name = rep.name.trim().toLowerCase();
-    return name.startsWith('christian noren') || name.startsWith('justin parker');
+    return [...northRoutingEligibility.I17.repNamePrefixes].some(prefix => name.startsWith(prefix));
 };
 
-export const isEastValleyRep = (rep: Rep): boolean =>
-    rep.zipCodes?.[0]?.trim().startsWith('852') ?? false;
+export const isEastValleyRep = (rep: Rep): boolean => {
+    const name = rep.name.trim().toLowerCase();
+    const matchesName = [...northRoutingEligibility.SR87.repNamePrefixes].some(prefix => name.startsWith(prefix));
+    const matchesZip = rep.zipCodes?.some(zip =>
+        [...northRoutingEligibility.SR87.zipPrefixes].some(prefix => zip.trim().startsWith(prefix))
+    ) ?? false;
+    return matchesName || matchesZip;
+};
+
+const isFlagstaffRep = (rep: Rep): boolean => {
+    const name = rep.name.trim().toLowerCase();
+    return [...northRoutingEligibility.FLAGSTAFF.repNamePrefixes].some(prefix => name.startsWith(prefix));
+};
 
 export type NorthZone = 'FLAGSTAFF' | 'I17' | 'SR87' | 'FALLBACK';
 
@@ -29,6 +41,7 @@ export const getNorthZone = (city: string | null | undefined): NorthZone | null 
 export const isRepEligibleForNorthZone = (rep: Rep, zone: NorthZone): boolean => {
     if (zone === 'I17') return isI17CorridorRep(rep);
     if (zone === 'SR87') return isEastValleyRep(rep);
+    if (zone === 'FLAGSTAFF') return isFlagstaffRep(rep);
     return isLondon(rep);
 };
 
