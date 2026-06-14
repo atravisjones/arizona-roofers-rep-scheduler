@@ -49,7 +49,7 @@ const doTimesOverlap = (t1: string | undefined, t2: string | undefined): boolean
 };
 
 const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
-    const { setHoveredJobId, selectedDate, appState } = useAppContext();
+    const { setHoveredJobId, selectedDate, appState, roofrJobIdMap } = useAppContext();
     const [orderedJobs, setOrderedJobs] = useState<DisplayJob[]>(jobs);
     const [mappableJobs, setMappableJobs] = useState<DisplayJob[]>([]);
     const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
@@ -369,7 +369,7 @@ const RepRouteCard: React.FC<RepRouteCardProps> = ({ repName, jobs }) => {
 
     // Helper to generate Roofr Job Card URL (try address then customer name)
     const getRoofrUrl = (address: string, customerName?: string) => {
-        const jobId = resolveRoofrJobId(appState.roofrJobIdMap, address, customerName);
+        const jobId = resolveRoofrJobId(roofrJobIdMap, address, customerName);
         if (!jobId) return null;
         return `https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${jobId}`;
     };

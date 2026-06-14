@@ -71,7 +71,7 @@ interface RepSummaryModalProps {
 }
 
 const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) => {
-    const { appState } = useAppContext();
+    const { appState, roofrJobIdMap } = useAppContext();
     const reps = appState.reps;
 
     const summaryRef = useRef<HTMLDivElement>(null);
@@ -145,7 +145,7 @@ const RepSummaryModal: React.FC<RepSummaryModalProps> = ({ isOpen, onClose }) =>
                                             const fullAddress = [displayAddress, job.customerName, `AZ ${job.zipCode || ''}`].filter(Boolean).join(', ');
                                             const tags = [roofAge, jobType, sqft, stories].filter(Boolean).join(' ');
                                             const normalizedAddress = normalizeAddressForMatching(displayAddress);
-                                            const roofrJobId = normalizedAddress ? appState.roofrJobIdMap.get(normalizedAddress) : null;
+                                            const roofrJobId = normalizedAddress ? roofrJobIdMap?.get(normalizedAddress) : null;
                                             // Priority: Original Timeframe, then Slot Label
                                             const timeDisplay = job.originalTimeframe || job.timeSlotLabel;
                                             return (
