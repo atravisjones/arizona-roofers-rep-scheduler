@@ -5,6 +5,8 @@ import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, Loading
 import { useAppContext } from '../context/AppContext';
 import type { Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
+import { haversineDistance } from '../services/geography';
 
 interface RoofrAppointment {
     eventId: string;
@@ -25,6 +27,8 @@ interface RoofrAppointment {
     email?: string;
     leadSource?: string;
     bookingCsr?: string;
+    lat?: number | null;
+    lng?: number | null;
 }
 
 type BoardAppointment = RoofrAppointment & {
@@ -32,11 +36,29 @@ type BoardAppointment = RoofrAppointment & {
     isNew?: boolean;
 };
 
+type AppointmentCoordinateMap = Record<string, Coordinates | null>;
+type DepartmentGroup = 'Retail' | 'D2D' | 'CSR' | 'Management' | 'Other';
+
 const REFRESH_MS = 120000;
 const NEW_FLASH_MS = 60000;
 const CANCELLED_VISIBLE_MS = 10 * 60000;
 const TIME_COLUMN_WIDTH = 70;
 const HEADER_HEIGHT = 44;
+const RADIUS_OPTIONS = [10, 25, 50];
+const KM_TO_MILES = 0.621371;
+const DEPT_TO_GROUP: Record<string, DepartmentGroup> = {
+    'Retail Sales': 'Retail',
+    'D2D Sales': 'D2D',
+    'Administration': 'Management',
+    'Manager': 'Management',
+    'Lead Center': 'CSR',
+};
+const STATIC_GROUPS: Record<Exclude<DepartmentGroup, 'Other'>, string[]> = {
+    Retail: ['Alex Tillotson', 'Bradley Crohurst', 'Christian Noren', 'Connor Hamby', 'Jonathan Marino', 'Josh Jewett', 'Justin Parker', 'London Smith', 'Niko Pagoulatos', 'Nikolas Pagoulatos', 'Orlando Chavarria', 'Richard Hadsall', 'Stephen Chaidez', 'Tanner Broadbent'],
+    D2D: ['Brandon Cook', 'Brenda Ochoa', 'Carson Anderson', 'Dylan Lopez', 'Israel Silva', 'James Chernek', 'James DeCoursey', 'Jordan Depue', 'Josiah Vasquez', 'Kory Dumone', 'Michael Hurff', 'Nahum Sandoval', 'Tanner Stephens', 'Vincent Echeveste'],
+    Management: ['Andrew Clark', 'Anthony Bonomo', 'John Risi', 'Travis Jones', 'Yousef Ayad'],
+    CSR: ['Bronté Pisz', 'Diva Shahpur', 'Ervennica Mae Javier', 'Madi Meyers', 'Madison Meyers', 'Mariana Franco Caballos', 'Nica Javier'],
+};
 
 const todayKey = () => {
     const now = new Date();
@@ -121,6 +143,8 @@ const getShortAddress = (appointment: RoofrAppointment) => {
     return address.split(',')[0] || 'No address';
 };
 
+const getAppointmentAddress = (appointment: RoofrAppointment) => (appointment.masterAddress || appointment.address || '').trim();
+
 const getShortTitle = (title: string) => {
     const trimmed = (title || '').trim();
     return trimmed.length > 70 ? `${trimmed.slice(0, 67)}...` : trimmed;
@@ -132,7 +156,42 @@ const getRoofrJobUrl = (jobId: string) => (
 
 const normalizeRepName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
 
+const STATIC_NAME_GROUPS = Object.entries(STATIC_GROUPS).reduce<Record<string, DepartmentGroup>>((acc, [group, names]) => {
+    names.forEach(name => {
+        acc[normalizeRepName(name)] = group as DepartmentGroup;
+    });
+    return acc;
+}, {});
+
+const getRuntimeRepGroup = (rep: Rep): DepartmentGroup | null => {
+    const runtimeRep = rep as Rep & {
+        department?: string;
+        dept?: string;
+        departmentGroup?: string;
+        group?: string;
+    };
+    const rawGroup = (runtimeRep.departmentGroup || runtimeRep.group || '').trim();
+    if (rawGroup === 'Retail' || rawGroup === 'D2D' || rawGroup === 'CSR' || rawGroup === 'Management') return rawGroup;
+    if (DEPT_TO_GROUP[rawGroup]) return DEPT_TO_GROUP[rawGroup];
+
+    const rawDepartment = (runtimeRep.department || runtimeRep.dept || '').trim();
+    return DEPT_TO_GROUP[rawDepartment] || null;
+};
+
 const getDayName = (dateKey: string) => new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
+
+const getFeedCoordinates = (appointment: RoofrAppointment): Coordinates | null => {
+    const lat = typeof appointment.lat === 'number' ? appointment.lat : Number(appointment.lat);
+    const lon = typeof appointment.lng === 'number' ? appointment.lng : Number(appointment.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon };
+};
+
+const getAppointmentCoordinates = (appointment: RoofrAppointment, fallbackCoordinates: AppointmentCoordinateMap) => (
+    getFeedCoordinates(appointment) || fallbackCoordinates[appointment.eventId] || null
+);
+
+const getDistanceMiles = (from: Coordinates, to: Coordinates) => haversineDistance(from, to) * KM_TO_MILES;
 
 const formatPhone = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
@@ -286,6 +345,12 @@ const TodayBoard: React.FC = () => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [source, setSource] = useState<string>('');
+    const [searchInput, setSearchInput] = useState('');
+    const [radiusMiles, setRadiusMiles] = useState(25);
+    const [activeSearch, setActiveSearch] = useState<{ label: string; coordinates: Coordinates } | null>(null);
+    const [searchError, setSearchError] = useState<string | null>(null);
+    const [isLocating, setIsLocating] = useState(false);
+    const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
 
     const fetchAppointments = useCallback(async () => {
         if (document.hidden) return;
@@ -381,36 +446,16 @@ const TodayBoard: React.FC = () => {
         return () => window.clearInterval(cleanupId);
     }, []);
 
-    const groupedAppointments = useMemo(() => {
-        const now = Date.now();
-        const byRep = new Map<string, BoardAppointment[]>();
+    useEffect(() => {
+        const addresses = appointments
+            .filter(appointment => !getFeedCoordinates(appointment))
+            .map(getAppointmentAddress)
+            .filter(Boolean);
 
-        appointments.forEach(appointment => {
-            const repName = getRepName(appointment);
-            const items = byRep.get(repName) || [];
-            items.push({
-                ...appointment,
-                status: 'active',
-                isNew: (newEventIds[appointment.eventId] || 0) > now,
-            });
-            byRep.set(repName, items);
-        });
-
-        Object.values(cancelledAppointments).forEach(({ appointment, expiresAt }) => {
-            if (expiresAt <= now) return;
-            const repName = getRepName(appointment);
-            const items = byRep.get(repName) || [];
-            items.push({ ...appointment, status: 'cancelled' });
-            byRep.set(repName, items);
-        });
-
-        return Array.from(byRep.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([repName, items]) => ({
-                repName,
-                appointments: items.sort((a, b) => getSortTime(a) - getSortTime(b)),
-            }));
-    }, [appointments, cancelledAppointments, newEventIds]);
+        if (addresses.length > 0) {
+            void preCacheGeocodes(addresses).catch(err => console.warn('Failed to warm appointment geocodes', err));
+        }
+    }, [appointments]);
 
     const repsByName = useMemo(() => {
         const byName = new Map<string, Rep>();
@@ -419,6 +464,64 @@ const TodayBoard: React.FC = () => {
         });
         return byName;
     }, [appState.reps]);
+
+    const repGroupsByName = useMemo(() => {
+        const byName = new Map<string, DepartmentGroup>(Object.entries(STATIC_NAME_GROUPS));
+        appState.reps.forEach(rep => {
+            const runtimeGroup = getRuntimeRepGroup(rep);
+            if (runtimeGroup) byName.set(normalizeRepName(rep.name), runtimeGroup);
+        });
+        return byName;
+    }, [appState.reps]);
+
+    const getRepGroup = useCallback((repName: string): DepartmentGroup => (
+        repGroupsByName.get(normalizeRepName(repName)) || 'Other'
+    ), [repGroupsByName]);
+
+    const groupedAppointments = useMemo(() => {
+        const now = Date.now();
+        const byRep = new Map<string, { departmentGroup: DepartmentGroup; appointments: BoardAppointment[] }>();
+
+        appointments.forEach(appointment => {
+            const repName = getRepName(appointment);
+            const departmentGroup = getRepGroup(repName);
+            if (departmentGroup === 'D2D') return;
+
+            const group = byRep.get(repName) || { departmentGroup, appointments: [] };
+            group.appointments.push({
+                ...appointment,
+                status: 'active',
+                isNew: (newEventIds[appointment.eventId] || 0) > now,
+            });
+            byRep.set(repName, group);
+        });
+
+        Object.values(cancelledAppointments).forEach(({ appointment, expiresAt }) => {
+            if (expiresAt <= now) return;
+            const repName = getRepName(appointment);
+            const departmentGroup = getRepGroup(repName);
+            if (departmentGroup === 'D2D') return;
+
+            const group = byRep.get(repName) || { departmentGroup, appointments: [] };
+            group.appointments.push({ ...appointment, status: 'cancelled' });
+            byRep.set(repName, group);
+        });
+
+        return Array.from(byRep.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([repName, group]) => ({
+                repName,
+                departmentGroup: group.departmentGroup,
+                appointments: group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b)),
+            }))
+            .filter(group => group.appointments.length > 0);
+    }, [appointments, cancelledAppointments, getRepGroup, newEventIds]);
+
+    const boardAppointments = useMemo(() => (
+        groupedAppointments.flatMap(group => (
+            group.appointments.map(appointment => ({ appointment, repName: group.repName }))
+        ))
+    ), [groupedAppointments]);
 
     const goToDate = useCallback((newKey: string) => {
         // Reset the red/green baseline so switching days doesn't flag the new
@@ -429,13 +532,117 @@ const TodayBoard: React.FC = () => {
         setNewEventIds({});
         setAppointments([]);
         setSelectedAppointment(null);
+        setSearchInput('');
+        setActiveSearch(null);
+        setSearchError(null);
+        setAppointmentCoordinates({});
+        setIsLocating(false);
         setError(null);
         setIsLoading(true);
         setDateKey(newKey);
     }, []);
 
-    const activeCount = appointments.length;
-    const cancelledCount = Object.values(cancelledAppointments).filter(item => item.expiresAt > Date.now()).length;
+    const ensureMissingAppointmentCoordinates = useCallback(async () => {
+        const missingAppointments = boardAppointments.filter(({ appointment }) => (
+            !getFeedCoordinates(appointment) &&
+            getAppointmentAddress(appointment) &&
+            !(appointment.eventId in appointmentCoordinates)
+        ));
+
+        if (missingAppointments.length === 0) return;
+
+        const results = await geocodeAddresses(missingAppointments.map(({ appointment }) => getAppointmentAddress(appointment)));
+        setAppointmentCoordinates(prev => {
+            const next = { ...prev };
+            missingAppointments.forEach(({ appointment }, index) => {
+                next[appointment.eventId] = results[index]?.coordinates || null;
+            });
+            return next;
+        });
+    }, [appointmentCoordinates, boardAppointments]);
+
+    const handleSearch = useCallback(async (event?: React.FormEvent) => {
+        event?.preventDefault();
+        const query = searchInput.trim();
+        if (!query) return;
+
+        setIsLocating(true);
+        setSearchError(null);
+
+        try {
+            const [result] = await geocodeAddresses([query]);
+            if (!result?.coordinates) {
+                setActiveSearch(null);
+                setSearchError("Couldn't locate that location.");
+                return;
+            }
+
+            await ensureMissingAppointmentCoordinates();
+            setActiveSearch({ label: query, coordinates: result.coordinates });
+        } catch (err) {
+            console.warn('Proximity search failed', err);
+            setActiveSearch(null);
+            setSearchError("Couldn't locate that location.");
+        } finally {
+            setIsLocating(false);
+        }
+    }, [ensureMissingAppointmentCoordinates, searchInput]);
+
+    useEffect(() => {
+        if (!activeSearch) return;
+
+        let isCancelled = false;
+        setIsLocating(true);
+        ensureMissingAppointmentCoordinates()
+            .catch(err => console.warn('Failed to resolve appointment coordinates', err))
+            .finally(() => {
+                if (!isCancelled) setIsLocating(false);
+            });
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [activeSearch, ensureMissingAppointmentCoordinates]);
+
+    const clearSearch = useCallback(() => {
+        setSearchInput('');
+        setActiveSearch(null);
+        setSearchError(null);
+        setIsLocating(false);
+    }, []);
+
+    const proximityResults = useMemo(() => {
+        const byAppointmentKey: Record<string, { distanceMiles: number | null; inRange: boolean; hasCoordinate: boolean }> = {};
+        const repNamesInRange = new Set<string>();
+        const nearest: Array<{ appointment: BoardAppointment; repName: string; distanceMiles: number }> = [];
+
+        if (!activeSearch) return { byAppointmentKey, repNamesInRange, nearest };
+
+        boardAppointments.forEach(({ appointment, repName }) => {
+            const key = `${appointment.status}-${appointment.eventId}`;
+            const coordinates = getAppointmentCoordinates(appointment, appointmentCoordinates);
+
+            if (!coordinates) {
+                byAppointmentKey[key] = { distanceMiles: null, inRange: false, hasCoordinate: false };
+                return;
+            }
+
+            const distanceMiles = getDistanceMiles(activeSearch.coordinates, coordinates);
+            const inRange = distanceMiles <= radiusMiles;
+            byAppointmentKey[key] = { distanceMiles, inRange, hasCoordinate: true };
+
+            if (inRange && appointment.status !== 'cancelled') {
+                repNamesInRange.add(repName);
+                nearest.push({ appointment, repName, distanceMiles });
+            }
+        });
+
+        nearest.sort((a, b) => a.distanceMiles - b.distanceMiles);
+        return { byAppointmentKey, repNamesInRange, nearest };
+    }, [activeSearch, appointmentCoordinates, boardAppointments, radiusMiles]);
+
+    const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
+    const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
 
     return (
         <div className="flex flex-col h-full min-h-0 overflow-hidden bg-bg-primary">
@@ -483,6 +690,48 @@ const TodayBoard: React.FC = () => {
                 </div>
             </div>
 
+            <form onSubmit={handleSearch} className="flex-shrink-0 px-3 py-2 bg-bg-primary border-b border-border-secondary flex flex-wrap items-center gap-2">
+                <input
+                    value={searchInput}
+                    onChange={event => setSearchInput(event.target.value)}
+                    placeholder="Search address, city, or lat,lon"
+                    className="min-w-[220px] flex-1 px-2.5 py-1.5 text-xs text-text-primary bg-bg-secondary border border-border-primary rounded-md outline-none focus:border-brand-primary"
+                />
+                <select
+                    value={radiusMiles}
+                    onChange={event => setRadiusMiles(Number(event.target.value))}
+                    className="px-2 py-1.5 text-xs font-semibold text-text-primary bg-bg-secondary border border-border-primary rounded-md outline-none focus:border-brand-primary"
+                    title="Search radius"
+                >
+                    {RADIUS_OPTIONS.map(radius => (
+                        <option key={radius} value={radius}>{radius} mi</option>
+                    ))}
+                </select>
+                <button
+                    type="submit"
+                    disabled={isLocating || !searchInput.trim()}
+                    className="px-3 py-1.5 text-xs font-bold rounded-md bg-brand-primary text-brand-text-on-primary border border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    Search
+                </button>
+                {(activeSearch || searchError) && (
+                    <button
+                        type="button"
+                        onClick={clearSearch}
+                        className="px-2.5 py-1.5 text-xs font-semibold rounded-md text-text-secondary border border-border-secondary hover:bg-bg-tertiary transition"
+                    >
+                        Clear
+                    </button>
+                )}
+                {isLocating && <span className="text-[11px] text-text-tertiary">locating...</span>}
+                {searchError && <span className="text-[11px] text-tag-red-text">{searchError}</span>}
+                {activeSearch && !searchError && (
+                    <span className="text-[11px] text-text-tertiary truncate">
+                        Showing appointments within {radiusMiles} mi of {activeSearch.label}
+                    </span>
+                )}
+            </form>
+
             {isLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-text-tertiary">
                     <LoadingIcon className="h-8 w-8 text-brand-primary mb-2" />
@@ -498,138 +747,183 @@ const TodayBoard: React.FC = () => {
                     <p className="text-sm italic">No sales appointments found for today.</p>
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 overflow-auto custom-scrollbar">
-                    <div
-                        className="flex w-full min-w-0"
-                        style={{
-                            height: HEADER_HEIGHT + DAY_VIEW_SLOTS.length * DAY_VIEW_CELL_HEIGHT,
-                            minHeight: HEADER_HEIGHT + DAY_VIEW_SLOTS.length * DAY_VIEW_CELL_HEIGHT,
-                        }}
-                    >
+                <div className="flex-1 min-h-0 flex overflow-hidden">
+                    <div className="flex-1 min-w-0 overflow-auto custom-scrollbar">
                         <div
-                            className="sticky left-0 z-30 bg-bg-primary border-r border-border-primary flex flex-col flex-shrink-0"
-                            style={{ width: TIME_COLUMN_WIDTH }}
+                            className="flex w-full min-w-0"
+                            style={{
+                                height: HEADER_HEIGHT + DAY_VIEW_SLOTS.length * DAY_VIEW_CELL_HEIGHT,
+                                minHeight: HEADER_HEIGHT + DAY_VIEW_SLOTS.length * DAY_VIEW_CELL_HEIGHT,
+                            }}
                         >
                             <div
-                                className="sticky top-0 z-40 bg-bg-secondary border-b border-border-primary flex items-center justify-center"
-                                style={{ height: HEADER_HEIGHT }}
+                                className="sticky left-0 z-30 bg-bg-primary border-r border-border-primary flex flex-col flex-shrink-0"
+                                style={{ width: TIME_COLUMN_WIDTH }}
                             >
-                                <span className="text-[10px] text-text-tertiary font-medium">TIME</span>
-                            </div>
-                            {DAY_VIEW_SLOTS.map(slot => (
                                 <div
-                                    key={slot.id}
-                                    className={`flex items-start justify-end pr-2 pt-0.5 border-b ${
-                                        slot.startMinutes % 60 === 0 ? 'border-border-primary' : 'border-border-secondary/50'
-                                    }`}
-                                    style={{ height: DAY_VIEW_CELL_HEIGHT }}
+                                    className="sticky top-0 z-40 bg-bg-secondary border-b border-border-primary flex items-center justify-center"
+                                    style={{ height: HEADER_HEIGHT }}
                                 >
-                                    {slot.startMinutes % 60 === 0 && (
-                                        <span className="text-[10px] text-text-secondary font-medium">{slot.label}</span>
-                                    )}
+                                    <span className="text-[10px] text-text-tertiary font-medium">TIME</span>
                                 </div>
-                            ))}
-                        </div>
-
-                        {groupedAppointments.map(group => (
-                            (() => {
-                                const matchedRep = repsByName.get(normalizeRepName(group.repName));
-                                const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
-                                const isFullyUnavailable = unavailableSlotIds.length >= 4;
-                                const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
-
-                                return (
+                                {DAY_VIEW_SLOTS.map(slot => (
                                     <div
-                                        key={group.repName}
-                                        className={`flex flex-col border-r border-border-primary bg-bg-primary min-w-0 ${isFullyUnavailable ? 'opacity-60 grayscale' : ''}`}
-                                        style={{ flex: '1 1 0' }}
+                                        key={slot.id}
+                                        className={`flex items-start justify-end pr-2 pt-0.5 border-b ${
+                                            slot.startMinutes % 60 === 0 ? 'border-border-primary' : 'border-border-secondary/50'
+                                        }`}
+                                        style={{ height: DAY_VIEW_CELL_HEIGHT }}
                                     >
+                                        {slot.startMinutes % 60 === 0 && (
+                                            <span className="text-[10px] text-text-secondary font-medium">{slot.label}</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {groupedAppointments.map(group => (
+                                (() => {
+                                    const matchedRep = repsByName.get(normalizeRepName(group.repName));
+                                    const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
+                                    const isFullyUnavailable = unavailableSlotIds.length >= 4;
+                                    const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
+                                    const hasInRangeAppointment = !activeSearch || proximityResults.repNamesInRange.has(group.repName);
+
+                                    return (
                                         <div
-                                            className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
-                                            style={{ height: HEADER_HEIGHT }}
+                                            key={group.repName}
+                                            className={`flex flex-col border-r border-border-primary bg-bg-primary min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !hasInRangeAppointment ? 'opacity-50' : ''}`}
+                                            style={{ flex: '1 1 0' }}
                                         >
-                                            <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                                <div className="text-xs font-bold text-text-primary truncate min-w-0" title={group.repName}>{group.repName}</div>
-                                                <div className="flex items-center gap-1 flex-shrink-0">
-                                                    {isFullyUnavailable && (
-                                                        <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
-                                                            Off
+                                            <div
+                                                className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
+                                                style={{ height: HEADER_HEIGHT }}
+                                            >
+                                                <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                                                    <div className="text-xs font-bold text-text-primary truncate min-w-0" title={group.repName}>{group.repName}</div>
+                                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                                        {isFullyUnavailable && (
+                                                            <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
+                                                                Off
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[10px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
+                                                            {group.appointments.length}
                                                         </span>
-                                                    )}
-                                                    <span className="text-[10px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
-                                                        {group.appointments.length}
-                                                    </span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
 
-                                        <div className="relative">
-                                            {DAY_VIEW_SLOTS.map(slot => {
-                                                const unavailable = isTimeUnavailable(slot.startMinutes);
-                                                return (
-                                                    <div
-                                                        key={slot.id}
-                                                        className={`relative border-b ${
-                                                            slot.startMinutes % 60 === 0 ? 'border-border-primary' : 'border-border-secondary/50'
-                                                        } ${unavailable ? 'bg-bg-tertiary day-view-unavailable' : ''}`}
-                                                        style={{ height: DAY_VIEW_CELL_HEIGHT }}
-                                                    />
-                                                );
-                                            })}
+                                            <div className="relative">
+                                                {DAY_VIEW_SLOTS.map(slot => {
+                                                    const unavailable = isTimeUnavailable(slot.startMinutes);
+                                                    return (
+                                                        <div
+                                                            key={slot.id}
+                                                            className={`relative border-b ${
+                                                                slot.startMinutes % 60 === 0 ? 'border-border-primary' : 'border-border-secondary/50'
+                                                            } ${unavailable ? 'bg-bg-tertiary day-view-unavailable' : ''}`}
+                                                            style={{ height: DAY_VIEW_CELL_HEIGHT }}
+                                                        />
+                                                    );
+                                                })}
 
-                                            {group.appointments.map(appointment => {
-                                                const isCancelled = appointment.status === 'cancelled';
-                                                const isNew = appointment.isNew;
-                                                const position = getAppointmentPosition(appointment);
-                                                const cardClass = isCancelled
-                                                    ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border opacity-90'
-                                                    : isNew
-                                                        ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border ring-2 ring-tag-green-border/60'
-                                                        : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
+                                                {group.appointments.map(appointment => {
+                                                    const isCancelled = appointment.status === 'cancelled';
+                                                    const isNew = appointment.isNew;
+                                                    const isCsr = group.departmentGroup === 'CSR';
+                                                    const position = getAppointmentPosition(appointment);
+                                                    const cardClass = isCancelled
+                                                        ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border opacity-90'
+                                                        : isNew
+                                                            ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border ring-2 ring-tag-green-border/60'
+                                                            : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
+                                                    const csrClass = isCsr ? 'ring-2 ring-tag-red-border' : '';
+                                                    const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
+                                                    const isOutOfRange = activeSearch && (!proximity || !proximity.inRange);
 
-                                                return (
-                                                    <button
-                                                        key={`${appointment.status}-${appointment.eventId}`}
-                                                        onClick={() => !isCancelled && setSelectedAppointment({ appointment, repName: group.repName })}
-                                                        disabled={isCancelled}
-                                                        className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'}`}
-                                                        style={{
-                                                            top: position.top,
-                                                            height: Math.max(position.height - 2, 30),
-                                                        }}
-                                                        title={appointment.title}
-                                                    >
-                                                        <div className="p-1.5 h-full flex flex-col overflow-hidden">
-                                                            <div className="flex items-center justify-between gap-1 flex-shrink-0">
-                                                                <span className="text-[9px] font-semibold text-brand-primary truncate">
-                                                                    {formatTimeRange(appointment)}
-                                                                </span>
-                                                                {isCancelled && (
-                                                                    <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0">Cancelled</span>
+                                                    return (
+                                                        <button
+                                                            key={`${appointment.status}-${appointment.eventId}`}
+                                                            onClick={() => !isCancelled && setSelectedAppointment({ appointment, repName: group.repName })}
+                                                            disabled={isCancelled}
+                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isOutOfRange ? 'opacity-[0.35] grayscale' : ''}`}
+                                                            style={{
+                                                                top: position.top,
+                                                                height: Math.max(position.height - 2, 30),
+                                                            }}
+                                                            title={appointment.title}
+                                                        >
+                                                            <div className="p-1.5 h-full flex flex-col overflow-hidden">
+                                                                <div className="flex items-center justify-between gap-1 flex-shrink-0">
+                                                                    <span className="text-[9px] font-semibold text-brand-primary truncate">
+                                                                        {formatTimeRange(appointment)}
+                                                                    </span>
+                                                                    {isCancelled && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0">Cancelled</span>
+                                                                    )}
+                                                                    {isNew && !isCancelled && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0">New</span>
+                                                                    )}
+                                                                    {isCsr && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">CSR</span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[10px] font-bold text-text-primary truncate">
+                                                                    {appointment.customerName || 'Unknown customer'}
+                                                                </div>
+                                                                <div className="text-[9px] text-text-secondary truncate flex-shrink-0">
+                                                                    {getShortAddress(appointment)}
+                                                                </div>
+                                                                <div className="text-[9px] opacity-70 line-clamp-2 min-h-0">
+                                                                    {getShortTitle(appointment.title)}
+                                                                </div>
+                                                                {activeSearch && proximity && !proximity.hasCoordinate && (
+                                                                    <div className="text-[8px] text-text-tertiary truncate flex-shrink-0">
+                                                                        location unknown
+                                                                    </div>
                                                                 )}
-                                                                {isNew && !isCancelled && (
-                                                                    <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0">New</span>
-                                                                )}
                                                             </div>
-                                                            <div className="text-[10px] font-bold text-text-primary truncate">
-                                                                {appointment.customerName || 'Unknown customer'}
-                                                            </div>
-                                                            <div className="text-[9px] text-text-secondary truncate flex-shrink-0">
-                                                                {getShortAddress(appointment)}
-                                                            </div>
-                                                            <div className="text-[9px] opacity-70 line-clamp-2 min-h-0">
-                                                                {getShortTitle(appointment.title)}
-                                                            </div>
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })()
-                        ))}
+                                    );
+                                })()
+                            ))}
+                        </div>
                     </div>
+                    {activeSearch && (
+                        <aside className="w-72 flex-shrink-0 border-l border-border-primary bg-bg-secondary flex flex-col min-h-0">
+                            <div className="px-3 py-2 border-b border-border-primary">
+                                <div className="text-xs font-bold text-text-primary">Nearest</div>
+                                <div className="text-[11px] text-text-tertiary truncate">
+                                    {proximityResults.nearest.length} within {radiusMiles} mi
+                                </div>
+                            </div>
+                            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
+                                {proximityResults.nearest.length === 0 ? (
+                                    <div className="text-xs text-text-tertiary italic px-2 py-3">
+                                        No appointments found inside this radius.
+                                    </div>
+                                ) : proximityResults.nearest.map(({ appointment, repName, distanceMiles }) => (
+                                    <button
+                                        key={`nearest-${appointment.eventId}`}
+                                        onClick={() => setSelectedAppointment({ appointment, repName })}
+                                        className="w-full text-left rounded-md border border-border-secondary bg-bg-primary hover:border-brand-primary hover:shadow-sm transition p-2"
+                                    >
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[11px] font-bold text-text-primary truncate">{repName}</span>
+                                            <span className="text-[11px] font-bold text-brand-primary flex-shrink-0">{distanceMiles.toFixed(1)} mi</span>
+                                        </div>
+                                        <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
+                                        <div className="text-xs text-text-secondary truncate">{appointment.customerName || 'Unknown customer'}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        </aside>
+                    )}
                 </div>
             )}
 

@@ -76,7 +76,7 @@ def get_from_supabase(date_str):
     jobs_map = {}
     if job_ids:
         ids_list = ",".join(job_ids)
-        jobs = sb_fetch(f"jobs?select=job_id,customer,name,address,job_owner,workflow,tags,phone,email,lead_source,appt_booker&job_id=in.({ids_list})")
+        jobs = sb_fetch(f"jobs?select=job_id,customer,name,address,job_owner,workflow,tags,phone,email,lead_source,appt_booker,latitude,longitude&job_id=in.({ids_list})")
         for j in jobs:
             jobs_map[str(j["job_id"])] = j
 
@@ -104,6 +104,8 @@ def get_from_supabase(date_str):
             "email": job.get("email", "") or "",
             "leadSource": job.get("lead_source", "") or "",
             "bookingCsr": job.get("appt_booker", "") or "",
+            "lat": job.get("latitude"),
+            "lng": job.get("longitude"),
         })
 
     return appointments
