@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DAY_VIEW_CELL_HEIGHT, DAY_VIEW_END_HOUR, DAY_VIEW_START_HOUR } from '../constants';
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
-import { ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import type { Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
@@ -47,6 +47,15 @@ const todayKey = () => {
 };
 
 const parseLocalDate = (value: string) => new Date(value.replace(' ', 'T'));
+
+const addDays = (dateKey: string, delta: number) => {
+    const d = new Date(`${dateKey}T12:00:00`);
+    d.setDate(d.getDate() + delta);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+};
 
 const getRepName = (appointment: RoofrAppointment) => {
     const attendees = (appointment.attendees || '').trim();
@@ -257,8 +266,15 @@ const AppointmentDetailModal: React.FC<{
 
 const TodayBoard: React.FC = () => {
     const { appState } = useAppContext();
-    const dateKey = useMemo(() => todayKey(), []);
+    const [dateKey, setDateKey] = useState(() => todayKey());
     const dayName = useMemo(() => getDayName(dateKey), [dateKey]);
+    const relativeLabel = useMemo(() => {
+        const t = todayKey();
+        if (dateKey === t) return "Today's";
+        if (dateKey === addDays(t, 1)) return "Tomorrow's";
+        if (dateKey === addDays(t, -1)) return "Yesterday's";
+        return '';
+    }, [dateKey]);
     const [appointments, setAppointments] = useState<RoofrAppointment[]>([]);
     const [previousAppointments, setPreviousAppointments] = useState<Record<string, RoofrAppointment>>({});
     const [cancelledAppointments, setCancelledAppointments] = useState<Record<string, { appointment: RoofrAppointment; expiresAt: number }>>({});
@@ -404,6 +420,20 @@ const TodayBoard: React.FC = () => {
         return byName;
     }, [appState.reps]);
 
+    const goToDate = useCallback((newKey: string) => {
+        // Reset the red/green baseline so switching days doesn't flag the new
+        // day's appointments as cancelled/new on the first fetch.
+        isFirstLoadRef.current = true;
+        previousAppointmentsRef.current = {};
+        setCancelledAppointments({});
+        setNewEventIds({});
+        setAppointments([]);
+        setSelectedAppointment(null);
+        setError(null);
+        setIsLoading(true);
+        setDateKey(newKey);
+    }, []);
+
     const activeCount = appointments.length;
     const cancelledCount = Object.values(cancelledAppointments).filter(item => item.expiresAt > Date.now()).length;
 
@@ -412,21 +442,45 @@ const TodayBoard: React.FC = () => {
             <div className="flex-shrink-0 px-3 py-2 bg-bg-secondary border-b border-border-primary flex items-center justify-between gap-3">
                 <div className="min-w-0">
                     <h2 className="text-sm font-bold text-text-primary truncate">
-                        Today's Appointments - {formatDateHeading(dateKey)}
+                        {relativeLabel ? `${relativeLabel} Appointments` : 'Appointments'} - {formatDateHeading(dateKey)}
                     </h2>
                     <div className="text-[11px] text-text-tertiary">
                         {activeCount} active{cancelledCount > 0 ? `, ${cancelledCount} cancelled` : ''}{source ? ` - ${source}` : ''}
                         {error && <span className="ml-2 text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
                     </div>
                 </div>
-                <button
-                    onClick={fetchAppointments}
-                    disabled={isRefreshing}
-                    className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition"
-                    title="Refresh appointments"
-                >
-                    {isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                        onClick={() => goToDate(addDays(dateKey, -1))}
+                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary transition"
+                        title="Previous day"
+                    >
+                        <ChevronLeftIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => goToDate(todayKey())}
+                        disabled={dateKey === todayKey()}
+                        className="px-2 py-1 text-[11px] font-semibold rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition"
+                        title="Jump to today"
+                    >
+                        Today
+                    </button>
+                    <button
+                        onClick={() => goToDate(addDays(dateKey, 1))}
+                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary transition"
+                        title="Next day"
+                    >
+                        <ChevronRightIcon className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={fetchAppointments}
+                        disabled={isRefreshing}
+                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition ml-1"
+                        title="Refresh appointments"
+                    >
+                        {isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}
+                    </button>
+                </div>
             </div>
 
             {isLoading ? (
