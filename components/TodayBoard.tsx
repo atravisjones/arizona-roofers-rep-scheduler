@@ -7,6 +7,7 @@ import type { Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
+import { supabase } from '../services/supabaseClient';
 
 interface RoofrAppointment {
     eventId: string;
@@ -556,6 +557,18 @@ const TodayBoard: React.FC = () => {
                 next[appointment.eventId] = results[index]?.coordinates || null;
             });
             return next;
+        });
+        // Persist freshly-geocoded coords back to the jobs table (fill_job_coords fills blanks
+        // only, never overwrites) so the feed carries them next load and every consumer benefits.
+        missingAppointments.forEach(({ appointment }, index) => {
+            const coords = results[index]?.coordinates;
+            if (coords && appointment.jobId) {
+                supabase.rpc('fill_job_coords', {
+                    p_job_id: String(appointment.jobId),
+                    p_lat: String(coords.lat),
+                    p_lng: String(coords.lon),
+                }).then(({ error }) => { if (error) console.warn('fill_job_coords failed', appointment.jobId, error.message); });
+            }
         });
     }, [appointmentCoordinates, boardAppointments]);
 
