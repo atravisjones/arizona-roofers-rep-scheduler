@@ -39,13 +39,13 @@ type BoardAppointment = RoofrAppointment & {
 
 type AppointmentCoordinateMap = Record<string, Coordinates | null>;
 type DepartmentGroup = 'Retail' | 'D2D' | 'CSR' | 'Management' | 'Other';
+type AppointmentProximity = { distanceMiles: number | null; hasCoordinate: boolean };
 
 const REFRESH_MS = 120000;
 const NEW_FLASH_MS = 60000;
 const CANCELLED_VISIBLE_MS = 10 * 60000;
 const TIME_COLUMN_WIDTH = 70;
 const HEADER_HEIGHT = 44;
-const RADIUS_OPTIONS = [10, 25, 50];
 const KM_TO_MILES = 0.621371;
 const DEPT_TO_GROUP: Record<string, DepartmentGroup> = {
     'Retail Sales': 'Retail',
@@ -347,7 +347,6 @@ const TodayBoard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [source, setSource] = useState<string>('');
     const [searchInput, setSearchInput] = useState('');
-    const [radiusMiles, setRadiusMiles] = useState(25);
     const [activeSearch, setActiveSearch] = useState<{ label: string; coordinates: Coordinates } | null>(null);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [isLocating, setIsLocating] = useState(false);
@@ -623,34 +622,38 @@ const TodayBoard: React.FC = () => {
     }, []);
 
     const proximityResults = useMemo(() => {
-        const byAppointmentKey: Record<string, { distanceMiles: number | null; inRange: boolean; hasCoordinate: boolean }> = {};
-        const repNamesInRange = new Set<string>();
-        const nearest: Array<{ appointment: BoardAppointment; repName: string; distanceMiles: number }> = [];
+        const byAppointmentKey: Record<string, AppointmentProximity> = {};
+        const closestByRep = new Map<string, { appointment: BoardAppointment; repName: string; distanceMiles: number }>();
 
-        if (!activeSearch) return { byAppointmentKey, repNamesInRange, nearest };
+        if (!activeSearch) return { byAppointmentKey, closestRepNames: new Set<string>(), closestReps: [] };
 
         boardAppointments.forEach(({ appointment, repName }) => {
             const key = `${appointment.status}-${appointment.eventId}`;
             const coordinates = getAppointmentCoordinates(appointment, appointmentCoordinates);
 
             if (!coordinates) {
-                byAppointmentKey[key] = { distanceMiles: null, inRange: false, hasCoordinate: false };
+                byAppointmentKey[key] = { distanceMiles: null, hasCoordinate: false };
                 return;
             }
 
             const distanceMiles = getDistanceMiles(activeSearch.coordinates, coordinates);
-            const inRange = distanceMiles <= radiusMiles;
-            byAppointmentKey[key] = { distanceMiles, inRange, hasCoordinate: true };
+            byAppointmentKey[key] = { distanceMiles, hasCoordinate: true };
 
-            if (inRange && appointment.status !== 'cancelled') {
-                repNamesInRange.add(repName);
-                nearest.push({ appointment, repName, distanceMiles });
+            const currentClosest = closestByRep.get(repName);
+            if (!currentClosest || distanceMiles < currentClosest.distanceMiles) {
+                closestByRep.set(repName, { appointment, repName, distanceMiles });
             }
         });
 
-        nearest.sort((a, b) => a.distanceMiles - b.distanceMiles);
-        return { byAppointmentKey, repNamesInRange, nearest };
-    }, [activeSearch, appointmentCoordinates, boardAppointments, radiusMiles]);
+        const closestReps = Array.from(closestByRep.values())
+            .sort((a, b) => a.distanceMiles - b.distanceMiles)
+            .slice(0, 3);
+        return {
+            byAppointmentKey,
+            closestRepNames: new Set(closestReps.map(result => result.repName)),
+            closestReps,
+        };
+    }, [activeSearch, appointmentCoordinates, boardAppointments]);
 
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
@@ -708,16 +711,6 @@ const TodayBoard: React.FC = () => {
                     placeholder="Search address, city, or lat,lon"
                     className="min-w-[220px] flex-1 px-2.5 py-1.5 text-xs text-text-primary bg-bg-secondary border border-border-primary rounded-md outline-none focus:border-brand-primary"
                 />
-                <select
-                    value={radiusMiles}
-                    onChange={event => setRadiusMiles(Number(event.target.value))}
-                    className="px-2 py-1.5 text-xs font-semibold text-text-primary bg-bg-secondary border border-border-primary rounded-md outline-none focus:border-brand-primary"
-                    title="Search radius"
-                >
-                    {RADIUS_OPTIONS.map(radius => (
-                        <option key={radius} value={radius}>{radius} mi</option>
-                    ))}
-                </select>
                 <button
                     type="submit"
                     disabled={isLocating || !searchInput.trim()}
@@ -738,7 +731,7 @@ const TodayBoard: React.FC = () => {
                 {searchError && <span className="text-[11px] text-tag-red-text">{searchError}</span>}
                 {activeSearch && !searchError && (
                     <span className="text-[11px] text-text-tertiary truncate">
-                        Showing appointments within {radiusMiles} mi of {activeSearch.label}
+                        Showing 3 closest reps to {activeSearch.label}
                     </span>
                 )}
             </form>
@@ -798,12 +791,12 @@ const TodayBoard: React.FC = () => {
                                     const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
                                     const isFullyUnavailable = unavailableSlotIds.length >= 4;
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
-                                    const hasInRangeAppointment = !activeSearch || proximityResults.repNamesInRange.has(group.repName);
+                                    const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
 
                                     return (
                                         <div
                                             key={group.repName}
-                                            className={`flex flex-col border-r border-border-primary bg-bg-primary min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !hasInRangeAppointment ? 'opacity-50' : ''}`}
+                                            className={`flex flex-col border-r border-border-primary bg-bg-primary min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
                                             style={{ flex: '1 1 0' }}
                                         >
                                             <div
@@ -851,14 +844,14 @@ const TodayBoard: React.FC = () => {
                                                             : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
                                                     const csrClass = isCsr ? 'ring-2 ring-tag-red-border' : '';
                                                     const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
-                                                    const isOutOfRange = activeSearch && (!proximity || !proximity.inRange);
+                                                    const isDimmedBySearch = activeSearch && !isClosestRep;
 
                                                     return (
                                                         <button
                                                             key={`${appointment.status}-${appointment.eventId}`}
                                                             onClick={() => !isCancelled && setSelectedAppointment({ appointment, repName: group.repName })}
                                                             disabled={isCancelled}
-                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isOutOfRange ? 'opacity-[0.35] grayscale' : ''}`}
+                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
                                                             style={{
                                                                 top: position.top,
                                                                 height: Math.max(position.height - 2, 30),
@@ -908,17 +901,17 @@ const TodayBoard: React.FC = () => {
                     {activeSearch && (
                         <aside className="w-72 flex-shrink-0 border-l border-border-primary bg-bg-secondary flex flex-col min-h-0">
                             <div className="px-3 py-2 border-b border-border-primary">
-                                <div className="text-xs font-bold text-text-primary">Nearest</div>
+                                <div className="text-xs font-bold text-text-primary">3 Closest Reps</div>
                                 <div className="text-[11px] text-text-tertiary truncate">
-                                    {proximityResults.nearest.length} within {radiusMiles} mi
+                                    {proximityResults.closestReps.length} ranked from {activeSearch.label}
                                 </div>
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
-                                {proximityResults.nearest.length === 0 ? (
+                                {proximityResults.closestReps.length === 0 ? (
                                     <div className="text-xs text-text-tertiary italic px-2 py-3">
-                                        No appointments found inside this radius.
+                                        No reps have geocodable appointments for this day.
                                     </div>
-                                ) : proximityResults.nearest.map(({ appointment, repName, distanceMiles }) => (
+                                ) : proximityResults.closestReps.map(({ appointment, repName, distanceMiles }) => (
                                     <button
                                         key={`nearest-${appointment.eventId}`}
                                         onClick={() => setSelectedAppointment({ appointment, repName })}
@@ -930,6 +923,7 @@ const TodayBoard: React.FC = () => {
                                         </div>
                                         <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
                                         <div className="text-xs text-text-secondary truncate">{appointment.customerName || 'Unknown customer'}</div>
+                                        <div className="text-[10px] text-text-tertiary truncate">{getShortAddress(appointment)}</div>
                                     </button>
                                 ))}
                             </div>
