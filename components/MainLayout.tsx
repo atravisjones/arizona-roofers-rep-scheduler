@@ -1,8 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, CalendarIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
+import TodayBoard from './TodayBoard';
 import JobsPanel from './JobsPanel';
 import RouteMapPanel from './RoutePanel';
 import DebugLogModal from './DebugLog';
@@ -114,6 +115,7 @@ const MainLayout: React.FC = () => {
   const [isUnplottedModalOpen, setIsUnplottedModalOpen] = useState(false);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const [isAssignmentSettingsOpen, setIsAssignmentSettingsOpen] = useState(false);
+  const [showTodayBoard, setShowTodayBoard] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -808,6 +810,18 @@ const MainLayout: React.FC = () => {
                 </span>
               )}
             </button>
+
+            <button
+              onClick={() => setShowTodayBoard(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
+                ? 'bg-brand-primary text-brand-text-on-primary'
+                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                }`}
+              title="Today's Appointments board"
+            >
+              <CalendarIcon className="h-3.5 w-3.5" />
+              <span>{showTodayBoard ? 'Back to Planner' : 'Today Board'}</span>
+            </button>
           </div>
 
           {/* Right: Date Navigation */}
@@ -818,6 +832,11 @@ const MainLayout: React.FC = () => {
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
+      {showTodayBoard ? (
+        <div className="flex-grow min-h-0 p-4 overflow-hidden">
+          <TodayBoard />
+        </div>
+      ) : (
       <div ref={containerRef} className="flex w-full flex-grow min-h-0 relative z-10 p-4 gap-4 overflow-hidden">
         {/* Recovery UI when all columns are hidden */}
         {isLayoutBroken && (
@@ -943,6 +962,7 @@ const MainLayout: React.FC = () => {
           );
         })}
       </div>
+      )}
 
       <DailySummaryModal isOpen={isDailySummaryOpen} onClose={() => setIsDailySummaryOpen(false)} />
       <RepSummaryModal isOpen={isRepSummaryOpen} onClose={() => setIsRepSummaryOpen(false)} />

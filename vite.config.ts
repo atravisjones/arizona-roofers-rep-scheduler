@@ -8,6 +8,15 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3002,
       host: '0.0.0.0',
+      // Dev-only: the /api/* serverless functions aren't served by Vite, so
+      // proxy them to the deployed app for local preview. No effect on prod build.
+      proxy: {
+        '/api': {
+          target: 'https://az-roofers-tech-scheduler.vercel.app',
+          changeOrigin: true,
+          secure: true,
+        },
+      },
     },
     plugins: [react()],
     define: {
