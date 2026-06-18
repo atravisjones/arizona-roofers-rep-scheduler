@@ -52,6 +52,8 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
   routes: { minWidth: 100, maxWidth: 9999, flexGrow: 2, flexBasis: '400px' }, // Map is primary flex-grow
 };
 
+const TODAY_BOARD_PATH = '/today-board';
+
 const MainLayout: React.FC = () => {
   const context = useAppContext();
   const { uiSettings, updateUiSettings } = context;
@@ -115,9 +117,27 @@ const MainLayout: React.FC = () => {
   const [isUnplottedModalOpen, setIsUnplottedModalOpen] = useState(false);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const [isAssignmentSettingsOpen, setIsAssignmentSettingsOpen] = useState(false);
-  const [showTodayBoard, setShowTodayBoard] = useState(false);
+  const [showTodayBoard, setShowTodayBoard] = useState(
+    () => typeof window !== 'undefined' && window.location.pathname === TODAY_BOARD_PATH
+  );
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Today Board has its own URL (/today-board) so it's linkable and browser back/forward works.
+  const toggleTodayBoard = useCallback(() => {
+    setShowTodayBoard(prev => {
+      const next = !prev;
+      const url = next ? TODAY_BOARD_PATH : '/';
+      if (window.location.pathname !== url) window.history.pushState({}, '', url);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const syncFromUrl = () => setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
 
   useEffect(() => {
     if (context.isAiAssigning || context.aiThoughts.length > 0) {
@@ -812,7 +832,7 @@ const MainLayout: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShowTodayBoard(v => !v)}
+              onClick={toggleTodayBoard}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
                 ? 'bg-brand-primary text-brand-text-on-primary'
                 : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
