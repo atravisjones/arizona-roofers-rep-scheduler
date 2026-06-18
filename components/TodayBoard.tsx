@@ -353,8 +353,6 @@ const TodayBoard: React.FC = () => {
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
 
     const fetchAppointments = useCallback(async () => {
-        if (document.hidden) return;
-
         setIsRefreshing(true);
         setError(null);
 
@@ -424,7 +422,7 @@ const TodayBoard: React.FC = () => {
     useEffect(() => {
         fetchAppointments();
 
-        const intervalId = window.setInterval(fetchAppointments, REFRESH_MS);
+        const intervalId = window.setInterval(() => { if (!document.hidden) fetchAppointments(); }, REFRESH_MS);
         const handleVisibilityChange = () => {
             if (!document.hidden) fetchAppointments();
         };
