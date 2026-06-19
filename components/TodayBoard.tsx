@@ -625,7 +625,7 @@ const TodayBoard: React.FC = () => {
         const byAppointmentKey: Record<string, AppointmentProximity> = {};
         const closestByRep = new Map<string, { appointment: BoardAppointment; repName: string; distanceMiles: number }>();
 
-        if (!activeSearch) return { byAppointmentKey, closestRepNames: new Set<string>(), closestReps: [] };
+        if (!activeSearch) return { byAppointmentKey, closestRepNames: new Set<string>(), closestAppointmentEventIds: new Set<string>(), closestReps: [] };
 
         boardAppointments.forEach(({ appointment, repName }) => {
             const key = `${appointment.status}-${appointment.eventId}`;
@@ -651,6 +651,7 @@ const TodayBoard: React.FC = () => {
         return {
             byAppointmentKey,
             closestRepNames: new Set(closestReps.map(result => result.repName)),
+            closestAppointmentEventIds: new Set(closestReps.map(result => result.appointment.eventId)),
             closestReps,
         };
     }, [activeSearch, appointmentCoordinates, boardAppointments]);
@@ -845,13 +846,15 @@ const TodayBoard: React.FC = () => {
                                                     const csrClass = isCsr ? 'ring-2 ring-tag-red-border' : '';
                                                     const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
                                                     const isDimmedBySearch = activeSearch && !isClosestRep;
+                                                    const isClosestAppointment = !!activeSearch && proximityResults.closestAppointmentEventIds.has(appointment.eventId);
+                                                    const closestAppointmentClass = isClosestAppointment ? 'ring-2 ring-brand-primary shadow-md' : '';
 
                                                     return (
                                                         <button
                                                             key={`${appointment.status}-${appointment.eventId}`}
                                                             onClick={() => !isCancelled && setSelectedAppointment({ appointment, repName: group.repName })}
                                                             disabled={isCancelled}
-                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
+                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
                                                             style={{
                                                                 top: position.top,
                                                                 height: Math.max(position.height - 2, 30),
@@ -871,6 +874,9 @@ const TodayBoard: React.FC = () => {
                                                                     )}
                                                                     {isCsr && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">CSR</span>
+                                                                    )}
+                                                                    {isClosestAppointment && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-brand-primary bg-bg-primary text-brand-primary shadow-sm">Closest</span>
                                                                     )}
                                                                 </div>
                                                                 <div className="text-[10px] font-bold text-text-primary truncate">
@@ -915,13 +921,16 @@ const TodayBoard: React.FC = () => {
                                     <button
                                         key={`nearest-${appointment.eventId}`}
                                         onClick={() => setSelectedAppointment({ appointment, repName })}
-                                        className="w-full text-left rounded-md border border-border-secondary bg-bg-primary hover:border-brand-primary hover:shadow-sm transition p-2"
+                                        className="w-full text-left rounded-md border border-brand-primary/60 bg-bg-primary hover:border-brand-primary hover:shadow-sm transition p-2"
                                     >
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[11px] font-bold text-text-primary truncate">{repName}</span>
                                             <span className="text-[11px] font-bold text-brand-primary flex-shrink-0">{distanceMiles.toFixed(1)} mi</span>
                                         </div>
-                                        <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
+                                        <div className="flex items-center gap-1 min-w-0">
+                                            <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
+                                            <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-brand-primary bg-bg-primary text-brand-primary">Closest</span>
+                                        </div>
                                         <div className="text-xs text-text-secondary truncate">{appointment.customerName || 'Unknown customer'}</div>
                                         <div className="text-[10px] text-text-tertiary truncate">{getShortAddress(appointment)}</div>
                                     </button>
