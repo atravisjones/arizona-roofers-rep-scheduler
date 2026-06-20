@@ -10,3 +10,4 @@ nul
 *.zip
 .env.local
 graphify-out/
+__pycache__/
