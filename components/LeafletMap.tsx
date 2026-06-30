@@ -336,7 +336,7 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
         let markerHtml: string;
         let iconSize: [number, number];
         let iconAnchor: [number, number];
-        const color = getColorForRep(job.assignedRepName);
+        const color = (job as any).isPinned ? '#059669' /* emerald: pinned self-gen/follow-up */ : getColorForRep(job.assignedRepName);
         const isPriority = job.notes.includes('#');
 
         const dimFilter = job.isDimmed ? 'filter: grayscale(100%); opacity: 0.4;' : '';

@@ -9,7 +9,7 @@ import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, Roo
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
 import { fetchInstalls, matchCrewToReps } from '../services/installService';
 import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTHEAST_PHOENIX_CITIES, LOWER_VALLEY_EXTENSION_CITIES, SOUTH_OUTER_RING_CITIES, haversineDistance, EAST_TO_WEST_CITIES, WEST_VALLEY_CITIES, EAST_VALLEY_CITIES, ALL_KNOWN_CITIES } from '../services/geography';
-import { geocodeAddresses, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
+import { geocodeAddresses, geocodeJobs, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
 import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStatesFromCloud } from '../services/cloudStorageServiceSheets';
 import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate } from '../services/backupService';
@@ -1093,6 +1093,12 @@ export const useAppLogic = () => {
     }, [selectedDayString, getCityRegion, geoCache]);
 
     const handleUnassignJob = useCallback((jobId: string) => {
+        // Pinned self-gen / follow-up appointments are locked to their rep — can't be unassigned.
+        const existing = appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
+        if ((existing as Job | undefined)?.isPinned) {
+            showToast("Self-gen / follow-up appointments are locked to their rep.", 'warning');
+            return;
+        }
         const dateKey = formatDateToKey(selectedDate);
         recordChange(currentDailyStates => {
             const newDailyStates = new Map<string, AppState>(currentDailyStates);
@@ -1121,7 +1127,7 @@ export const useAppLogic = () => {
             return newDailyStates;
         }, 'Unassign Job');
         setMapRefreshTrigger(prev => prev + 1); // Refresh map to reflect change (remove pin or change color)
-    }, [recordChange, selectedDate]);
+    }, [recordChange, selectedDate, appState.reps, showToast]);
 
     const handleJobDrop = useCallback((jobId: string, target: { repId: string; slotId: string } | 'unassigned', e?: React.DragEvent<HTMLDivElement>) => {
         if (target === 'unassigned') { handleUnassignJob(jobId); return; }
@@ -1131,6 +1137,14 @@ export const useAppLogic = () => {
 
         const dateKey = formatDateToKey(selectedDate);
         const jobToDrop = appState.unassignedJobs.find(j => j.id === jobId) || appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
+        // Pinned self-gen / follow-up appointments can't be moved to a different rep (same-rep slot moves are fine).
+        if ((jobToDrop as Job | undefined)?.isPinned) {
+            const sourceRep = appState.reps.find(r => r.schedule.some(s => s.jobs.some(j => j.id === jobId)));
+            if (sourceRep && sourceRep.id !== target.repId) {
+                showToast("Self-gen / follow-up appointments stay with their rep.", 'warning');
+                return;
+            }
+        }
         if (targetRepInfo && jobToDrop) {
             const repWithoutMovingJob: Rep = {
                 ...targetRepInfo,
@@ -1209,8 +1223,7 @@ export const useAppLogic = () => {
                 return;
             }
 
-            const addresses = jobs.map(j => j.address);
-            const coordsResults = await geocodeAddresses(addresses);
+            const coordsResults = await geocodeJobs(jobs);
 
             if (mapRequestRef.current !== requestId) {
                 return;
@@ -1328,8 +1341,7 @@ export const useAppLogic = () => {
         }
 
         // 3. Geocode Everything
-        const addresses = allJobsToMap.map(j => j.address);
-        const coordsResults = await geocodeAddresses(addresses);
+        const coordsResults = await geocodeJobs(allJobsToMap);
         if (mapRequestRef.current !== requestId) return;
 
         const mappableJobs: DisplayJob[] = [];
@@ -1395,8 +1407,7 @@ export const useAppLogic = () => {
         setIsRouting(true);
         setSelectedRepId(null);
         try {
-            const addresses = targetJobs.map(j => j.address);
-            const coordsResults = await geocodeAddresses(addresses);
+            const coordsResults = await geocodeJobs(targetJobs);
             if (mapRequestRef.current !== requestId) return;
 
             const mappableJobs: DisplayJob[] = [];
@@ -1508,8 +1519,7 @@ export const useAppLogic = () => {
         // Set placeholder route immediately so LeafletMap doesn't start its own geocoding
         setActiveRoute({ repName: 'Job Map', mappableJobs: [], unmappableJobs: [], routeInfo: { distance: 0, duration: 0, geometry: null, coordinates: [] } });
         try {
-            const addresses = allJobs.map(j => j.address);
-            const coordsResults = await geocodeAddresses(addresses);
+            const coordsResults = await geocodeJobs(allJobs);
             if (mapRequestRef.current !== requestId) return;
 
             const mappableJobs: DisplayJob[] = [];
@@ -1965,6 +1975,11 @@ export const useAppLogic = () => {
                     isRepairJob,
                     isPaintJob,
                     bookedBy: (apt.attendees || '').trim() || (apt.jobOwner || '').trim() || undefined,
+                    isPinned: !!apt.pinned,
+                    pinnedKind: apt.kind === 'self_gen' ? 'self_gen' : apt.kind === 'followup' ? 'followup' : undefined,
+                    eventSubtype: apt.eventSubtype,
+                    lat: apt.lat,
+                    lng: apt.lng,
                 };
 
                 // Check if this job already exists in the state
@@ -1987,7 +2002,12 @@ export const useAppLogic = () => {
                         jobValue: tempJob.jobValue,
                         isRepairJob: tempJob.isRepairJob,
                         isPaintJob: tempJob.isPaintJob,
-                        bookedBy: tempJob.bookedBy
+                        bookedBy: tempJob.bookedBy,
+                        isPinned: tempJob.isPinned,
+                        pinnedKind: tempJob.pinnedKind,
+                        eventSubtype: tempJob.eventSubtype,
+                        lat: tempJob.lat,
+                        lng: tempJob.lng
                     });
 
                     // Remove from current position so it can be re-assigned according to sheet
@@ -2308,6 +2328,12 @@ export const useAppLogic = () => {
     }, [handleUpdateJob, log]);
 
     const handleRemoveJob = useCallback((jobId: string) => {
+        // Pinned self-gen / follow-up appointments are locked — can't be removed.
+        const existing = [...appState.unassignedJobs, ...appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs))].find(j => j.id === jobId);
+        if ((existing as Job | undefined)?.isPinned) {
+            showToast("Self-gen / follow-up appointments are locked and can't be removed.", 'warning');
+            return;
+        }
         const dateKey = formatDateToKey(selectedDate);
         let jobRemoved = false;
         let jobName = '';
@@ -2342,7 +2368,7 @@ export const useAppLogic = () => {
             log(`ACTION: Removed job "${jobName}"`);
             setMapRefreshTrigger(prev => prev + 1);
         }
-    }, [recordChange, selectedDate, log]);
+    }, [recordChange, selectedDate, log, appState.unassignedJobs, appState.reps, showToast]);
 
     const handleAiFixAddresses = useCallback(async () => {
         const unmappable = activeRoute?.unmappableJobs;
@@ -2634,7 +2660,7 @@ export const useAppLogic = () => {
                 if (!dayState || dayState.unassignedJobs.length === 0) { return currentDailyStates; }
                 const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
                 const jobsToAssign = [...newState.unassignedJobs];
-                const repsWithNoJobs = newState.reps.filter(rep => !rep.isLocked && !rep.isOptimized && rep.schedule.flatMap(s => s.jobs).length === 0);
+                const repsWithNoJobs = newState.reps.filter(rep => !rep.isLocked && !rep.isOptimized && rep.schedule.flatMap(s => s.jobs).filter(j => !(j as Job).isPinned).length === 0);
                 if (repsWithNoJobs.length === 0) { return currentDailyStates; }
                 let assignedCount = 0;
                 for (const rep of repsWithNoJobs) {
@@ -2743,9 +2769,12 @@ export const useAppLogic = () => {
                 const availableReps = newState.reps.filter(r => !r.isLocked && !r.isOptimized);
 
                 for (const job of jobsToAssign) {
+                    // pinned appts are locked to their rep — never auto-route to a non-owner; preserve as-is
+                    if ((job as Job).isPinned) { newState.unassignedJobs.push(job); continue; }
                     let bestAssignment: { repId: string; slotId: string; score: number; breakdown: ScoreBreakdown } | null = null;
 
-                    const eligibleReps = availableReps.filter(rep => rep.schedule.flatMap(s => s.jobs).length < newState.settings.maxJobsPerRep);
+                    // Pinned self-gen/follow-ups don't count toward a rep's daily quota (additive)
+                    const eligibleReps = availableReps.filter(rep => rep.schedule.flatMap(s => s.jobs).filter(j => !(j as Job).isPinned).length < newState.settings.maxJobsPerRep);
 
                     for (const rep of eligibleReps) {
                         if (!isJobValidForRepRegion(job, rep)) continue;
@@ -2893,9 +2922,12 @@ export const useAppLogic = () => {
                 });
 
                 for (const job of jobsToAssign) {
+                    // pinned appts are locked to their rep — don't auto-route; preserve as-is
+                    if ((job as Job).isPinned) { newState.unassignedJobs.push(job); continue; }
                     let bestSlot: { slotId: string; score: number; breakdown: ScoreBreakdown } | null = null;
 
-                    const totalJobsForRep = targetRep.schedule.flatMap(s => s.jobs).length;
+                    // Pinned self-gen/follow-ups don't count toward the rep's daily quota (additive)
+                    const totalJobsForRep = targetRep.schedule.flatMap(s => s.jobs).filter(j => !(j as Job).isPinned).length;
                     if (totalJobsForRep >= newState.settings.maxJobsPerRep) {
                         newState.unassignedJobs.push(job);
                         continue;
@@ -3010,7 +3042,7 @@ export const useAppLogic = () => {
                     if (!rep || rep.isLocked || rep.isOptimized) continue;
                     const slot = rep.schedule.find(s => s.id === assignment.slotId);
                     if (!slot) continue;
-                    if (rep.schedule.flatMap(s => s.jobs).length >= newState.settings.maxJobsPerRep) continue;
+                    if (rep.schedule.flatMap(s => s.jobs).filter(j => !(j as Job).isPinned).length >= newState.settings.maxJobsPerRep) continue;
                     if (!isJobValidForRepRegion(jobToMove, rep)) continue;
                     if (checkCityRuleViolation(rep, jobToMove.city).violated) continue;
                     if (getEffectiveUnavailableSlots(rep, selectedDayString).includes(slot.id)) continue;

@@ -450,6 +450,24 @@ const SchedulesPanel: React.FC = () => {
                 </div>
             </div>
 
+            {/* Lead Tier legend — heat ladder (cool low tier -> hot high tier) */}
+            <div className="flex items-center gap-1 mb-3 px-1 flex-shrink-0 flex-wrap">
+                <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider mr-0.5">Tier</span>
+                {[
+                    { label: '0', cls: 'from-white to-slate-100 border-slate-300', txt: 'text-slate-500' },
+                    { label: '#', cls: 'from-yellow-100 to-yellow-300 border-yellow-400', txt: 'text-yellow-950' },
+                    { label: '##', cls: 'from-orange-200 to-orange-400 border-orange-500', txt: 'text-orange-950' },
+                    { label: '###', cls: 'from-amber-400 to-yellow-600 border-amber-700', txt: 'text-amber-950' },
+                    { label: '####', cls: 'from-rose-400 via-pink-300 to-amber-300 border-rose-400', txt: 'text-rose-950' },
+                    { label: '#####', cls: 'from-purple-800 via-purple-600 to-amber-400 border-purple-800', txt: 'text-white' },
+                ].map(t => (
+                    <span key={t.label} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-gradient-to-br ${t.cls} ${t.txt} shadow-sm leading-none`}>
+                        {t.label}
+                    </span>
+                ))}
+                <span className="text-[9px] text-text-quaternary ml-0.5">lowest → top tier</span>
+            </div>
+
             {/* Conditional rendering based on view mode */}
             {viewMode === 'list' ? (
                 <div className="flex flex-col flex-1 min-h-0 overflow-hidden">

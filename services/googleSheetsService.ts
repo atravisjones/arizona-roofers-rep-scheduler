@@ -1018,6 +1018,11 @@ export interface SheetAppointment {
     jobOwner: string;
     workflow: string;
     tags: string;
+    eventSubtype?: string;                          // Roofr event subtype
+    kind?: 'self_gen' | 'followup' | 'sales';       // derived classification
+    pinned?: boolean;                               // true for self-gen / follow-up
+    lat?: number | null;                            // Known coordinates from Roofr-search (jobs.latitude)
+    lng?: number | null;                            // Known coordinates from Roofr-search (jobs.longitude)
 }
 
 /**

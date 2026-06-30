@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Job, DisplayJob } from '../types';
 import { TAG_KEYWORDS } from '../constants';
-import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon, HardHatIcon } from './icons';
+import { RescheduleIcon, UnassignJobIcon, StarIcon, MapPinIcon, EditIcon, SaveIcon, XIcon, UserIcon, TrashIcon, TrophyIcon, ExternalLinkIcon, HardHatIcon, LockIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { normalizeAddressForMatching } from '../services/googleSheetsService';
 import { normalizeCustomerName } from '../services/roofrApiService';
@@ -46,6 +46,9 @@ export const JobCard: React.FC<JobCardProps> = ({
 
     // Detect install jobs (pinned jobs with id starting with "install-")
     const isInstallJob = job.id.startsWith('install-');
+    // Detect pinned self-gen / follow-up appointments (locked to rep, emerald-colored)
+    const isPinned = !!(job as any).isPinned;
+    const pinnedKind = (job as any).pinnedKind as 'self_gen' | 'followup' | undefined;
     // Detect paint jobs
     const isPaintJob = !!(job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '');
     // Install jobs are not draggable
@@ -112,6 +115,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         // Determine base background color. Install jobs take highest precedence.
         if (isInstallJob) {
             backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
+        } else if (isPinned) {
+            backgroundClasses = "bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 text-white";
         } else if (isPaintJob) {
             backgroundClasses = "bg-blue-900 border-blue-800 text-white";
         } else if (isActuallyMismatched) {
@@ -124,38 +129,44 @@ export const JobCard: React.FC<JobCardProps> = ({
             backgroundClasses = "bg-bg-primary border-border-primary";
         }
 
-        // Layer on priority styles (but not for install jobs).
-        if (!isInstallJob && priorityLevel > 0) {
+        // Layer on priority styles (but not for install or pinned jobs — pinned stays emerald).
+        if (!isInstallJob && !isPinned && priorityLevel > 0) {
             // If it's NOT an error, priority styling dictates the background.
             if (!isActuallyMismatched && !isReschedule) {
+                // Metallic ladder. 0 stars = plain white baseline (lowest). Colors start at 1 star:
+                // 1=light yellow, 2=light orange, 3=gold, 4=rose gold, 5+=goldish purple.
                 if (priorityLevel >= 5) {
-                    backgroundClasses = "bg-gradient-to-br from-yellow-200 via-yellow-400 to-amber-500 border-amber-600 text-amber-950 shadow-amber-400/50";
+                    backgroundClasses = "bg-gradient-to-br from-purple-800 via-purple-600 to-amber-400 border-purple-800 text-white";
                 } else if (priorityLevel === 4) {
-                    backgroundClasses = "bg-tag-purple-bg border-tag-purple-border";
+                    backgroundClasses = "bg-gradient-to-br from-rose-400 via-pink-300 to-amber-300 border-rose-400 text-rose-950";
                 } else if (priorityLevel === 3) {
-                    backgroundClasses = "bg-tag-red-bg border-tag-red-border";
+                    backgroundClasses = "bg-gradient-to-br from-amber-400 to-yellow-600 border-amber-700 text-amber-950";
                 } else if (priorityLevel === 2) {
-                    backgroundClasses = "bg-tag-orange-bg border-tag-orange-border";
+                    backgroundClasses = "bg-gradient-to-br from-orange-200 to-orange-400 border-orange-500 text-orange-950";
                 } else { // priorityLevel === 1
-                    backgroundClasses = "bg-tag-amber-bg border-tag-amber-border";
+                    backgroundClasses = "bg-gradient-to-br from-yellow-100 to-yellow-300 border-yellow-400 text-yellow-950";
                 }
             }
 
             // Add "shine" via ring, shadow, and pulse. This is always additive.
+            // Shine grows with the tier.
             if (priorityLevel >= 5) {
-                highlightClasses = "animate-pulse ring-2 ring-amber-500 ring-offset-2 ring-offset-white shadow-xl shadow-amber-500/60 z-10 scale-[1.01]";
+                highlightClasses = "animate-pulse ring-2 ring-amber-400 ring-offset-2 ring-offset-white shadow-xl shadow-purple-500/60 z-10 scale-[1.01]";
             } else if (priorityLevel === 4) {
-                highlightClasses = "ring-2 ring-tag-purple-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-purple-500/30";
+                highlightClasses = "ring-2 ring-rose-300/80 ring-offset-2 ring-offset-white shadow-lg shadow-rose-400/50";
             } else if (priorityLevel === 3) {
-                highlightClasses = "ring-2 ring-tag-red-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-red-500/30";
+                highlightClasses = "ring-2 ring-amber-400/80 ring-offset-1 ring-offset-white shadow-md shadow-amber-500/40";
             } else if (priorityLevel === 2) {
-                highlightClasses = "ring-2 ring-tag-orange-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-orange-500/20";
+                highlightClasses = "ring-2 ring-orange-300/70 ring-offset-1 ring-offset-white shadow-md shadow-orange-400/40";
             } else { // priorityLevel === 1
-                highlightClasses = "ring-2 ring-tag-amber-border ring-offset-2 ring-offset-bg-primary shadow-md shadow-amber-500/20";
+                highlightClasses = "ring-2 ring-yellow-300/70 ring-offset-1 ring-offset-white shadow-md shadow-yellow-400/30";
             }
         } else if (isInstallJob) {
             // Install jobs get a subtle shine effect
             highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
+        } else if (isPinned) {
+            // Pinned self-gen / follow-up: emerald shine
+            highlightClasses = "ring-2 ring-emerald-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-emerald-500/40";
         } else if (isPaintJob) {
             highlightClasses = "ring-2 ring-blue-700 ring-offset-2 ring-offset-bg-primary shadow-lg";
         } else {
@@ -164,7 +175,10 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
 
         return `${base} ${stateClasses} ${backgroundClasses} ${highlightClasses}`;
-    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob]);
+    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob, isPinned]);
+
+    // Cards with a dark background (top tier goldish-purple or pinned emerald) need light text.
+    const needsLightText = isPinned || (priorityLevel >= 5 && !isActuallyMismatched && !isReschedule);
 
     const googleMapsUrl = useMemo(() => {
         const addressParts = [job.address, job.city, job.zipCode].filter(Boolean);
@@ -435,7 +449,7 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             {/* Header: City & Status */}
             <div className={`px-1.5 py-0.5 flex justify-between items-start ${isCompact ? 'flex-col gap-0.5' : ''}`}>
                 <div className="min-w-0 flex-1 mr-1">
-                    <h3 className={`font-extrabold text-xs uppercase tracking-tight text-text-primary truncate leading-none`}>
+                    <h3 className={`font-extrabold text-xs uppercase tracking-tight truncate leading-none ${needsLightText ? 'text-white' : 'text-text-primary'}`}>
                         {job.city || 'Unknown City'}
                     </h3>
                 </div>
@@ -446,16 +460,17 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         </span>
                     )}
 
+                    {isPinned && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-700 text-white border-emerald-800 whitespace-nowrap leading-none shadow-sm flex items-center gap-0.5">
+                            <LockIcon className="h-2.5 w-2.5" />
+                            {pinnedKind === 'self_gen' ? 'SELF-GEN' : pinnedKind === 'followup' ? 'FOLLOW-UP' : 'PINNED'}
+                        </span>
+                    )}
+
                     {priorityLevel > 0 && !isInstallJob && (
                         <div className="flex">
                             {[...Array(Math.min(priorityLevel, 5))].map((_, i) => (
-                                <StarIcon key={i} className={`h-3 w-3 drop-shadow-sm ${
-                                    priorityLevel >= 5 ? 'text-yellow-500' :
-                                    priorityLevel === 4 ? 'text-tag-purple-text' :
-                                    priorityLevel === 3 ? 'text-tag-red-text' :
-                                    priorityLevel === 2 ? 'text-tag-orange-text' :
-                                    'text-tag-amber-text'
-                                    }`} />
+                                <StarIcon key={i} className={`h-3 w-3 drop-shadow-[0_1px_1px_rgba(0,0,0,0.35)] ${priorityLevel >= 5 ? 'text-yellow-300' : 'text-amber-700'}`} />
                             ))}
                         </div>
                     )}
@@ -538,22 +553,22 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
             </div>
 
             {/* Footer: Address & Assignment */}
-            <div className="px-1.5 py-0.5 border-t border-black/5">
-                <p className="text-[9px] text-text-tertiary truncate font-medium leading-none" title={job.address}>
+            <div className={`px-1.5 py-0.5 border-t ${needsLightText ? 'border-white/25' : 'border-black/5'}`}>
+                <p className={`text-[9px] truncate font-medium leading-none ${needsLightText ? 'text-white/85' : 'text-text-tertiary'}`} title={job.address}>
                     {job.address}
                 </p>
                 {showBookedBy && (
                     <div className="flex items-center gap-1 mt-0.5">
-                        <UserIcon className="h-2.5 w-2.5 text-tag-amber-text shrink-0" />
-                        <span className="text-[9px] font-bold text-tag-amber-text truncate" title={job.bookedBy ? `Get notes from: ${job.bookedBy}` : undefined}>
+                        <UserIcon className={`h-2.5 w-2.5 shrink-0 ${needsLightText ? 'text-white/90' : 'text-tag-amber-text'}`} />
+                        <span className={`text-[9px] font-bold truncate ${needsLightText ? 'text-white/90' : 'text-tag-amber-text'}`} title={job.bookedBy ? `Get notes from: ${job.bookedBy}` : undefined}>
                             {job.bookedBy ? `Booked by: ${job.bookedBy}` : 'No rep on appointment'}
                         </span>
                     </div>
                 )}
                 {showAssignment && (job as any).assignedRepName && (
                     <div className="flex items-center gap-1 mt-0.5">
-                        <UserIcon className="h-2.5 w-2.5 text-brand-primary" />
-                        <span className="text-[9px] font-bold text-brand-primary truncate">
+                        <UserIcon className={`h-2.5 w-2.5 ${needsLightText ? 'text-white' : 'text-brand-primary'}`} />
+                        <span className={`text-[9px] font-bold truncate ${needsLightText ? 'text-white' : 'text-brand-primary'}`}>
                             {(job as any).assignedRepName}
                         </span>
                     </div>

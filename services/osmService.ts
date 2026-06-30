@@ -365,6 +365,29 @@ export async function geocodeAddresses(addresses: string[]): Promise<GeocodeResu
     return addresses.map(address => geocodeCache.get(address) ?? { coordinates: null, error: 'Internal cache failure' });
 }
 
+/**
+ * Resolves coordinates for a list of jobs, preferring coordinates already known
+ * (e.g. from Roofr-search's `jobs.latitude/longitude`) and only falling back to
+ * address geocoding for jobs that don't have them.
+ * @param jobs Jobs with an address and optional lat/lng.
+ * @returns A promise that resolves to an array of `GeocodeResult` objects, in the same order as `jobs`.
+ */
+export async function geocodeJobs(jobs: { address: string; lat?: number | null; lng?: number | null }[]): Promise<GeocodeResult[]> {
+    const results: (GeocodeResult | null)[] = jobs.map(job =>
+        (typeof job.lat === 'number' && typeof job.lng === 'number')
+            ? { coordinates: { lat: job.lat, lon: job.lng }, error: null }
+            : null
+    );
+
+    const toGeocode = jobs.map((job, i) => ({ job, i })).filter(({ i }) => results[i] === null);
+    if (toGeocode.length > 0) {
+        const geocoded = await geocodeAddresses(toGeocode.map(({ job }) => job.address));
+        toGeocode.forEach(({ i }, idx) => { results[i] = geocoded[idx]; });
+    }
+
+    return results as GeocodeResult[];
+}
+
 
 /**
  * Fetches route information (geometry, distance, duration) from the OSRM API.

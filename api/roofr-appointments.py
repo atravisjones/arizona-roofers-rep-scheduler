@@ -21,10 +21,30 @@ SUPABASE_KEY = os.environ.get("KPI_SUPABASE_ANON_KEY", "")
 
 EXCLUDED_TITLE_PREFIXES = ("D2D Sales appointment",)
 
+# Roofr event subtypes (calendar_events.event_subtype) we treat specially.
+# D2D never belongs on this board; self-gen + followup pin to their rep.
+EXCLUDED_SUBTYPES = ("D2D Sales appointment",)
+SELF_GEN_SUBTYPE = "Self-gen appointment"
+FOLLOWUP_SUBTYPE = "Sales followup"
+
 
 def is_excluded_title(title):
     t = (title or "").strip()
     return any(t.startswith(p) for p in EXCLUDED_TITLE_PREFIXES)
+
+
+def is_excluded_subtype(subtype):
+    return (subtype or "").strip() in EXCLUDED_SUBTYPES
+
+
+def classify_kind(subtype):
+    """Map a Roofr event subtype to a board 'kind'. self_gen/followup pin."""
+    s = (subtype or "").strip()
+    if s == SELF_GEN_SUBTYPE:
+        return "self_gen"
+    if s == FOLLOWUP_SUBTYPE:
+        return "followup"
+    return "sales"
 
 
 def sb_fetch(path, timeout=8):
@@ -38,18 +58,59 @@ def sb_fetch(path, timeout=8):
         return json.loads(resp.read().decode())
 
 
+# Static fallback: Roofr numeric user ID -> rep name.
+# Used ONLY when the linked job is missing (job_id null) so job_owner is empty.
+# Values mirror the exact jobs.job_owner string for that rep so downstream
+# name-matching behaves identically to the normal (job-linked) path.
+# Regenerate with:
+#   SELECT ce.attendees AS uid, mode() WITHIN GROUP (ORDER BY j.job_owner) AS rep
+#   FROM calendar_events ce JOIN jobs j ON j.job_id = ce.job_id
+#   WHERE ce.category='sales' AND ce.attendees ~ '^[0-9]+$'
+#     AND j.job_owner <> '' AND ce.start_date >= '<recent>'
+#   GROUP BY ce.attendees HAVING count(*) >= 2;
+REP_BY_USER_ID = {
+    "355304": "Ashkan Etemadi",
+    "352704": "Bradley Crohurst",
+    "372086": "Brandon Cook",
+    "400700": "Brandon Cook",
+    "416699": "Chandler Duffy",
+    "356679": "Christian Noren",
+    "500123": "Connor Hamby",
+    "441144": "Jonathan Marino",
+    "522189": "Josh Jewett",
+    "355180": "Justin Parker",
+    "512700": "KORY DUMONE",
+    "373987": "London smith",
+    "352971": "Nick Williams",
+    "407608": "Oliver Johnson",
+    "472015": "Orlando Chavarria",
+    "355065": "Richard Hadsall",
+    "525242": "Stephen Chaidez",
+    "482761": "Tanner Broadbent",
+}
+
+
 def resolve_attendees(raw_attendees, job_owner):
     """Resolve attendee IDs to names.
 
     Supabase calendar_events stores numeric Roofr user IDs (e.g. '472015')
-    instead of names. If all parts are numeric, fall back to job_owner.
+    instead of names. If all parts are numeric, prefer the linked job's owner;
+    if the job link is missing (job_id null), fall back to the static
+    REP_BY_USER_ID map so the board still shows the right rep instead of going
+    blank.
     """
     if not raw_attendees:
         return job_owner or ""
     parts = [p.strip() for p in str(raw_attendees).split(",") if p.strip()]
     if all(p.isdigit() for p in parts):
-        # All numeric IDs — use job_owner as the attendee name
-        return job_owner or ""
+        # All numeric IDs — prefer job_owner, else resolve via the static map
+        if job_owner:
+            return job_owner
+        mapped = [REP_BY_USER_ID.get(p) for p in parts]
+        mapped = [m for m in mapped if m]
+        if mapped:
+            return ", ".join(dict.fromkeys(mapped))  # dedupe, preserve order
+        return ""
     return raw_attendees
 
 
@@ -60,7 +121,7 @@ def get_from_supabase(date_str):
 
     cal_path = (
         f"calendar_events"
-        f"?select=event_id,job_id,title,start_date,end_date,all_day,category,attendees"
+        f"?select=event_id,job_id,title,start_date,end_date,all_day,category,attendees,event_subtype"
         f"&category=eq.sales"
         f"&start_date=gte.{quote(date_str + ' 00:00:00', safe=':')}"
         f"&start_date=lt.{quote(next_day + ' 00:00:00', safe=':')}"
@@ -68,6 +129,9 @@ def get_from_supabase(date_str):
     )
     events = sb_fetch(cal_path)
     events = [e for e in events if not is_excluded_title(e.get("title"))]
+    # D2D never belongs on this board — exclude by subtype (robust vs. title prefix,
+    # which misses D2D events that carry a normal address title).
+    events = [e for e in events if not is_excluded_subtype(e.get("event_subtype"))]
 
     if not events:
         return []
@@ -84,6 +148,8 @@ def get_from_supabase(date_str):
     for evt in events:
         job = jobs_map.get(str(evt.get("job_id", "")), {})
         job_owner = job.get("job_owner", "")
+        subtype = evt.get("event_subtype", "") or ""
+        kind = classify_kind(subtype)
         appointments.append({
             "eventId": evt.get("event_id", ""),
             "jobId": evt.get("job_id", ""),
@@ -94,6 +160,9 @@ def get_from_supabase(date_str):
             "allDay": evt.get("all_day", False),
             "category": evt.get("category", ""),
             "type": "",
+            "eventSubtype": subtype,
+            "kind": kind,
+            "pinned": kind in ("self_gen", "followup"),
             "attendees": resolve_attendees(evt.get("attendees", ""), job_owner),
             "customerName": job.get("customer") or job.get("name", ""),
             "masterAddress": job.get("address", ""),
@@ -216,6 +285,10 @@ def get_from_sheets(date_str):
             "jobOwner": e.get("jobOwner", ""),
             "workflow": e.get("workflow", ""),
             "tags": e.get("tags", ""),
+            # Sheets fallback can't read event_subtype — default to unpinned sales.
+            "eventSubtype": "",
+            "kind": "sales",
+            "pinned": False,
         })
 
     return appointments

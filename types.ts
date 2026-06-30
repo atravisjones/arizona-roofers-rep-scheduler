@@ -161,6 +161,11 @@ export interface Job {
   jobValue?: number;     // Calculated score (0-100) - higher = better lead for top reps
   isRepairJob?: boolean; // True if contains repair/leak/patch/inspect keywords
   isPaintJob?: boolean;  // True if contains "paint" keyword — different service line
+  isPinned?: boolean;    // Self-gen / follow-up: locked to rep, additive, not movable
+  pinnedKind?: 'self_gen' | 'followup'; // Which pinned type (drives badge label)
+  eventSubtype?: string; // Roofr event subtype carried through from the appointment
+  lat?: number | null;   // Known coordinates from Roofr-search (jobs.latitude), skips geocoding when present
+  lng?: number | null;   // Known coordinates from Roofr-search (jobs.longitude), skips geocoding when present
 }
 
 export interface DisplayJob extends Job {
