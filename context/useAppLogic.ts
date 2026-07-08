@@ -2095,6 +2095,13 @@ export const useAppLogic = () => {
                     }
                 }
 
+                // Adjuster meetings only exist to block a tagged rep's column.
+                // If that rep isn't on today's board (or the meeting can't map to
+                // a time slot), drop it entirely — never show it in Unassigned.
+                if (job.pinnedKind === 'adjuster') {
+                    continue;
+                }
+
                 // Sheet didn't resolve a rep — preserve prior manual placement if this job
                 // already existed (so re-loading the sheet doesn't wipe Travis's assignments)
                 if (previousRepId && previousSlotId) {
