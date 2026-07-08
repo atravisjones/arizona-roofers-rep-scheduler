@@ -26,6 +26,11 @@ EXCLUDED_TITLE_PREFIXES = ("D2D Sales appointment",)
 EXCLUDED_SUBTYPES = ("D2D Sales appointment",)
 SELF_GEN_SUBTYPE = "Self-gen appointment"
 FOLLOWUP_SUBTYPE = "Sales followup"
+# Adjuster meetings live under category='general'. One pins to a sales rep's
+# column ONLY when that rep is explicitly tagged as an attendee — insurance
+# staff attendees are ignored, and the job owner is never used as a fallback
+# (on Insurance jobs the owner is an insurance rep, not the tagged sales rep).
+ADJUSTER_SUBTYPE = "Adjuster meeting"
 
 
 def is_excluded_title(title):
@@ -71,7 +76,10 @@ def sb_fetch(path, timeout=8):
 REP_BY_USER_ID = {
     "355304": "Ashkan Etemadi",
     "352704": "Bradley Crohurst",
-    "372086": "Brandon Cook",
+    # 372086 is Brenda Ochoa (office/insurance), NOT Brandon Cook — the mode()
+    # heuristic misattributed her because she's tagged on many events. Verified
+    # against the Roofr roster (tools/production-map/roofr-users.json) 2026-07-07.
+    # Deliberately unmapped so she never resolves to a rep column.
     "400700": "Brandon Cook",
     "416699": "Chandler Duffy",
     "356679": "Christian Noren",
@@ -114,6 +122,18 @@ def resolve_attendees(raw_attendees, job_owner):
     return raw_attendees
 
 
+def resolve_board_rep_names(raw_attendees):
+    """Strictly resolve attendee IDs to known sales-rep names via REP_BY_USER_ID.
+
+    Used for adjuster meetings: unknown IDs (insurance staff, office) are
+    dropped so a meeting only pins to reps explicitly tagged on it. Returns a
+    deduped list, order preserved. No job_owner fallback on purpose.
+    """
+    parts = [p.strip() for p in str(raw_attendees or "").split(",") if p.strip()]
+    names = [REP_BY_USER_ID[p] for p in parts if p in REP_BY_USER_ID]
+    return list(dict.fromkeys(names))
+
+
 def get_from_supabase(date_str):
     """Primary: fetch from Supabase."""
     dt = datetime.strptime(date_str, "%Y-%m-%d")
@@ -133,10 +153,22 @@ def get_from_supabase(date_str):
     # which misses D2D events that carry a normal address title).
     events = [e for e in events if not is_excluded_subtype(e.get("event_subtype"))]
 
-    if not events:
+    # Adjuster meetings (category='general') — kept only when a known sales rep
+    # is tagged as an attendee; everyone else at the meeting is ignored.
+    adj_path = (
+        f"calendar_events"
+        f"?select=event_id,job_id,title,start_date,end_date,all_day,category,attendees,event_subtype"
+        f"&event_subtype=eq.{quote(ADJUSTER_SUBTYPE)}"
+        f"&start_date=gte.{quote(date_str + ' 00:00:00', safe=':')}"
+        f"&start_date=lt.{quote(next_day + ' 00:00:00', safe=':')}"
+        f"&order=start_date.asc"
+    )
+    adjuster_events = [e for e in sb_fetch(adj_path) if resolve_board_rep_names(e.get("attendees"))]
+
+    if not events and not adjuster_events:
         return []
 
-    job_ids = list({str(e["job_id"]) for e in events if e.get("job_id")})
+    job_ids = list({str(e["job_id"]) for e in (events + adjuster_events) if e.get("job_id")})
     jobs_map = {}
     if job_ids:
         ids_list = ",".join(job_ids)
@@ -177,6 +209,51 @@ def get_from_supabase(date_str):
             "lng": job.get("longitude"),
         })
 
+    # Adjuster meetings: one row per tagged sales rep (so a two-rep meeting
+    # blocks both columns). Roofr sometimes carries duplicate events for the
+    # same meeting — dedupe on (job, start, rep). jobOwner is intentionally
+    # blank: the frontend must never fall back to the insurance job owner.
+    seen_adj = set()
+    for evt in adjuster_events:
+        job = jobs_map.get(str(evt.get("job_id", "")), {})
+        title = evt.get("title", "") or ""
+        address = job.get("address", "")
+        if not address and ":" in title:
+            # Titles look like "Adjuster meeting: 8939 W Maryland Ave, Glendale..."
+            address = title.split(":", 1)[1].strip()
+        for rep_name in resolve_board_rep_names(evt.get("attendees")):
+            key = (str(evt.get("job_id") or title), evt.get("start_date"), rep_name)
+            if key in seen_adj:
+                continue
+            seen_adj.add(key)
+            appointments.append({
+                "eventId": evt.get("event_id", ""),
+                "jobId": evt.get("job_id", ""),
+                "address": address,
+                "title": title,
+                "start": evt.get("start_date", ""),
+                "end": evt.get("end_date", ""),
+                "allDay": evt.get("all_day", False),
+                "category": evt.get("category", ""),
+                "type": "",
+                "eventSubtype": evt.get("event_subtype", "") or "",
+                "kind": "adjuster",
+                "pinned": True,
+                "attendees": rep_name,
+                "customerName": job.get("customer") or job.get("name", ""),
+                "masterAddress": job.get("address", ""),
+                "jobOwner": "",
+                "workflow": job.get("workflow", ""),
+                "tags": job.get("tags", "") or "",
+                "phone": job.get("phone", "") or "",
+                "email": job.get("email", "") or "",
+                "leadSource": job.get("lead_source", "") or "",
+                "bookingCsr": job.get("appt_booker", "") or "",
+                "lat": job.get("latitude"),
+                "lng": job.get("longitude"),
+            })
+
+    appointments.sort(key=lambda a: a.get("start") or "")
     return appointments
 
 

@@ -61,6 +61,13 @@ export function getJobIdentifier(job: Job): string {
   // Normalize address for comparison
   const normalizedAddress = job.address.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
   const normalizedCity = job.city.toLowerCase().trim();
+  // Adjuster meetings are keyed per-rep: a meeting tagged with two reps arrives
+  // as two rows (same address) that must block both columns, and an adjuster
+  // block must never merge with a sales appointment at the same address.
+  if (job.pinnedKind === 'adjuster') {
+    const rep = (job.bookedBy || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return `${normalizedAddress}-${normalizedCity}-adj-${rep}`;
+  }
   return `${normalizedAddress}-${normalizedCity}`;
 }
 

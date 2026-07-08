@@ -1976,7 +1976,7 @@ export const useAppLogic = () => {
                     isPaintJob,
                     bookedBy: (apt.attendees || '').trim() || (apt.jobOwner || '').trim() || undefined,
                     isPinned: !!apt.pinned,
-                    pinnedKind: apt.kind === 'self_gen' ? 'self_gen' : apt.kind === 'followup' ? 'followup' : undefined,
+                    pinnedKind: apt.kind === 'self_gen' ? 'self_gen' : apt.kind === 'followup' ? 'followup' : apt.kind === 'adjuster' ? 'adjuster' : undefined,
                     eventSubtype: apt.eventSubtype,
                     lat: apt.lat,
                     lng: apt.lng,

@@ -48,7 +48,8 @@ export const JobCard: React.FC<JobCardProps> = ({
     const isInstallJob = job.id.startsWith('install-');
     // Detect pinned self-gen / follow-up appointments (locked to rep, emerald-colored)
     const isPinned = !!(job as any).isPinned;
-    const pinnedKind = (job as any).pinnedKind as 'self_gen' | 'followup' | undefined;
+    const pinnedKind = (job as any).pinnedKind as 'self_gen' | 'followup' | 'adjuster' | undefined;
+    const isAdjuster = pinnedKind === 'adjuster';
     // Detect paint jobs
     const isPaintJob = !!(job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '');
     // Install jobs are not draggable
@@ -116,7 +117,9 @@ export const JobCard: React.FC<JobCardProps> = ({
         if (isInstallJob) {
             backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
         } else if (isPinned) {
-            backgroundClasses = "bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 text-white";
+            backgroundClasses = isAdjuster
+                ? "bg-gradient-to-br from-indigo-500 to-indigo-600 border-indigo-700 text-white"
+                : "bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 text-white";
         } else if (isPaintJob) {
             backgroundClasses = "bg-blue-900 border-blue-800 text-white";
         } else if (isActuallyMismatched) {
@@ -165,8 +168,10 @@ export const JobCard: React.FC<JobCardProps> = ({
             // Install jobs get a subtle shine effect
             highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
         } else if (isPinned) {
-            // Pinned self-gen / follow-up: emerald shine
-            highlightClasses = "ring-2 ring-emerald-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-emerald-500/40";
+            // Pinned self-gen / follow-up: emerald shine. Adjuster meeting: indigo shine.
+            highlightClasses = isAdjuster
+                ? "ring-2 ring-indigo-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-indigo-500/40"
+                : "ring-2 ring-emerald-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-emerald-500/40";
         } else if (isPaintJob) {
             highlightClasses = "ring-2 ring-blue-700 ring-offset-2 ring-offset-bg-primary shadow-lg";
         } else {
@@ -175,7 +180,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         }
 
         return `${base} ${stateClasses} ${backgroundClasses} ${highlightClasses}`;
-    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob, isPinned]);
+    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob, isPinned, isAdjuster]);
 
     // Cards with a dark background (top tier goldish-purple or pinned emerald) need light text.
     const needsLightText = isPinned || (priorityLevel >= 5 && !isActuallyMismatched && !isReschedule);
@@ -461,9 +466,9 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                     )}
 
                     {isPinned && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-emerald-700 text-white border-emerald-800 whitespace-nowrap leading-none shadow-sm flex items-center gap-0.5">
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border text-white whitespace-nowrap leading-none shadow-sm flex items-center gap-0.5 ${isAdjuster ? 'bg-indigo-700 border-indigo-800' : 'bg-emerald-700 border-emerald-800'}`}>
                             <LockIcon className="h-2.5 w-2.5" />
-                            {pinnedKind === 'self_gen' ? 'SELF-GEN' : pinnedKind === 'followup' ? 'FOLLOW-UP' : 'PINNED'}
+                            {pinnedKind === 'self_gen' ? 'SELF-GEN' : pinnedKind === 'followup' ? 'FOLLOW-UP' : isAdjuster ? 'ADJUSTER' : 'PINNED'}
                         </span>
                     )}
 

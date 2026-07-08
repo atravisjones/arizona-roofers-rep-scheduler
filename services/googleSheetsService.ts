@@ -1019,8 +1019,8 @@ export interface SheetAppointment {
     workflow: string;
     tags: string;
     eventSubtype?: string;                          // Roofr event subtype
-    kind?: 'self_gen' | 'followup' | 'sales';       // derived classification
-    pinned?: boolean;                               // true for self-gen / follow-up
+    kind?: 'self_gen' | 'followup' | 'adjuster' | 'sales'; // derived classification
+    pinned?: boolean;                               // true for self-gen / follow-up / adjuster
     lat?: number | null;                            // Known coordinates from Roofr-search (jobs.latitude)
     lng?: number | null;                            // Known coordinates from Roofr-search (jobs.longitude)
 }
