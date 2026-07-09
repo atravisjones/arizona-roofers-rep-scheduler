@@ -55,6 +55,8 @@ export const JobCard: React.FC<JobCardProps> = ({
     const isAdjuster = pinnedKind === 'adjuster';
     // Detect paint jobs
     const isPaintJob = !!(job as any).isPaintJob || /\bpaint\b/i.test(job.notes || '');
+    // 2-story-ladder jobs are flagged red: extra work, production crew must also go to this job
+    const isTwoStoryLadder = /\b2 story ladder\b/i.test(job.notes || '');
     // Install jobs are not draggable
     const effectiveDraggable = isDraggable && !isInstallJob;
 
@@ -129,6 +131,8 @@ export const JobCard: React.FC<JobCardProps> = ({
             backgroundClasses = "bg-tag-red-bg border-tag-red-border";
         } else if (isReschedule) {
             backgroundClasses = "bg-tag-blue-bg border-tag-blue-border";
+        } else if (isTwoStoryLadder) {
+            backgroundClasses = "bg-gradient-to-br from-red-500 to-red-600 border-red-700 text-white";
         } else if (priorityLevel === 0 && isEliteMatch) {
             backgroundClasses = "bg-gradient-to-br from-bg-primary to-tag-amber-bg border-tag-amber-border";
         } else {
@@ -138,7 +142,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         // Layer on priority styles (but not for install or pinned jobs — pinned stays emerald).
         if (!isInstallJob && !isPinned && priorityLevel > 0) {
             // If it's NOT an error, priority styling dictates the background.
-            if (!isActuallyMismatched && !isReschedule) {
+            // 2-story-ladder red also survives priority repaint — the flag must stay visible.
+            if (!isActuallyMismatched && !isReschedule && !isTwoStoryLadder) {
                 // Metallic ladder. 0 stars = plain white baseline (lowest). Colors start at 1 star:
                 // 1=light yellow, 2=light orange, 3=gold, 4=rose gold, 5+=goldish purple.
                 if (priorityLevel >= 5) {
@@ -177,16 +182,20 @@ export const JobCard: React.FC<JobCardProps> = ({
                 : "ring-2 ring-emerald-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-emerald-500/40";
         } else if (isPaintJob) {
             highlightClasses = "ring-2 ring-blue-700 ring-offset-2 ring-offset-bg-primary shadow-lg";
+        } else if (isTwoStoryLadder) {
+            highlightClasses = "ring-2 ring-red-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-red-500/40";
         } else {
             // Only add hover shadow if not a priority job (which has its own shadow effects)
             highlightClasses = "hover:shadow-md";
         }
 
         return `${base} ${stateClasses} ${backgroundClasses} ${highlightClasses}`;
-    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob, isPinned, isAdjuster]);
+    }, [priorityLevel, isActuallyMismatched, isReschedule, effectiveDraggable, isEliteMatch, isInstallJob, isPaintJob, isPinned, isAdjuster, isTwoStoryLadder]);
 
-    // Cards with a dark background (top tier goldish-purple or pinned emerald) need light text.
-    const needsLightText = isPinned || (priorityLevel >= 5 && !isActuallyMismatched && !isReschedule);
+    // Cards with a dark background (top tier goldish-purple, pinned emerald, or 2-story-ladder red) need light text.
+    const needsLightText = isPinned
+        || (isTwoStoryLadder && !isInstallJob && !isPaintJob && !isActuallyMismatched && !isReschedule)
+        || (priorityLevel >= 5 && !isActuallyMismatched && !isReschedule);
 
     const googleMapsUrl = useMemo(() => {
         const addressParts = [job.address, job.city, job.zipCode].filter(Boolean);
@@ -204,6 +213,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         mismatchTitle = `Time Mismatch: Job's original schedule was ${job.originalTimeframe}.`;
     } else if (isReschedule) {
         mismatchTitle = job.notes;
+    } else if (isTwoStoryLadder) {
+        mismatchTitle = "2-Story Ladder: extra work — production crew will also need to go on this job.";
     }
 
     const getScoreTooltip = (job: DisplayJob) => {

@@ -91,6 +91,9 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
   // Check for reschedule
   const isReschedule = useMemo(() => job.notes.includes('Recommended Reschedule'), [job.notes]);
 
+  // 2-story-ladder jobs are flagged red: extra work, production crew must also go to this job
+  const isTwoStoryLadder = useMemo(() => /\b2 story ladder\b/i.test(job.notes || ''), [job.notes]);
+
   const timeDisplay = useMemo(() => {
     return `${formatMinutesAsTime(position.startMinutes)} - ${formatMinutesAsTime(position.endMinutes)}`;
   }, [position.startMinutes, position.endMinutes]);
@@ -154,6 +157,7 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
 
   // Determine card styling based on priority/reschedule status
   const cardBorderClass = useMemo(() => {
+    if (isTwoStoryLadder) return 'border-red-600 ring-2 ring-red-500/60';
     if (priorityLevel >= 5) return 'border-amber-500 ring-2 ring-amber-400/50';
     if (priorityLevel === 4) return 'border-purple-500 ring-2 ring-purple-400/50';
     if (priorityLevel === 3) return 'border-red-500 ring-2 ring-red-400/50';
@@ -161,9 +165,10 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
     if (priorityLevel === 1) return 'border-amber-400';
     if (isReschedule) return 'border-blue-400';
     return 'border-brand-primary/30';
-  }, [priorityLevel, isReschedule]);
+  }, [priorityLevel, isReschedule, isTwoStoryLadder]);
 
   const cardBgClass = useMemo(() => {
+    if (isTwoStoryLadder) return 'bg-gradient-to-br from-red-200 to-red-300';
     if (priorityLevel >= 5) return 'bg-gradient-to-br from-yellow-100 to-amber-200';
     if (priorityLevel === 4) return 'bg-gradient-to-br from-purple-50 to-purple-100';
     if (priorityLevel === 3) return 'bg-gradient-to-br from-red-50 to-red-100';
@@ -171,7 +176,7 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
     if (priorityLevel === 1) return 'bg-amber-50';
     if (isReschedule) return 'bg-blue-50';
     return 'bg-brand-bg-light';
-  }, [priorityLevel, isReschedule]);
+  }, [priorityLevel, isReschedule, isTwoStoryLadder]);
 
   return (
     <div
