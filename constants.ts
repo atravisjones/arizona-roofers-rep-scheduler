@@ -49,7 +49,7 @@ export const TIME_SLOT_DISPLAY_LABELS: Record<string, string> = {
 
 export const ROOF_KEYWORDS: readonly ['Tile', 'Shingle', 'Flat', 'Metal'] = ['Tile', 'Shingle', 'Flat', 'Metal'];
 export const TYPE_KEYWORDS: readonly ['Insurance', 'Commercial'] = ['Insurance', 'Commercial'];
-export const ATTRIBUTE_KEYWORDS: readonly ['Spanish Speaker', 'Ladder Pull'] = ['Spanish Speaker', 'Ladder Pull'];
+export const ATTRIBUTE_KEYWORDS: readonly ['Spanish Speaker', 'Ladder Pull', '2 Story Ladder'] = ['Spanish Speaker', 'Ladder Pull', '2 Story Ladder'];
 
 export const TAG_KEYWORDS: readonly string[] = [...ROOF_KEYWORDS, ...TYPE_KEYWORDS, ...ATTRIBUTE_KEYWORDS];
 
