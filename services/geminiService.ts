@@ -566,6 +566,7 @@ You are an expert dispatcher for a roofing company. Your task is to create the m
     - Reps with 'PHX' region should primarily be assigned jobs in the Phoenix Metro area.
     - 'UNKNOWN' region reps can be assigned anywhere, but try to keep them clustered.
     - ${settings.allowRegionalRepsInPhoenix ? "Regional reps (North/South) ARE allowed to take jobs in Phoenix if needed." : "Regional reps (North/South) are NOT allowed to take jobs in Phoenix."}
+5.  **London Smith — Commercial ONLY:** London Smith must NEVER be assigned a job unless its notes include 'Commercial'. Do not assign him ANY residential job. Commercial jobs are not exclusive to him — assign commercial to other commercial-skilled reps when they fit better; do not funnel every commercial job to London.
 
 **--- Optimization Guidelines (Follow these to improve score) ---**
 1.  **Cluster Jobs:** Group jobs by City and Zip Code. A rep should ideally stay in 1 or 2 adjacent cities for the entire day.

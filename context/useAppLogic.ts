@@ -563,18 +563,16 @@ export const useAppLogic = () => {
     }, []);
 
     const isJobValidForRepRegion = useCallback((job: Job, rep: Rep): boolean => {
+        // London Smith runs commercial ONLY — never auto-assign him residential, any region (incl. Flagstaff).
+        // Commercial is NOT exclusive to him: other commercial-skilled reps compete on normal scoring.
+        if (isLondon(rep)) return /\bcommercial\b/i.test(job.notes || '');
+
         const jobCity = norm(job.city);
         if (!jobCity) return true;
         const northZone = getNorthZone(jobCity);
         if (northZone) return isRepEligibleForNorthZone(rep, northZone);
 
         const jobRegion = getCityRegion(jobCity);
-
-        // London can work Phoenix jobs only when the regional override is enabled.
-        if (isLondon(rep)) {
-            if (jobRegion === 'PHX' && appState.settings.allowRegionalRepsInPhoenix) return true;
-            return false;
-        }
 
         // Richard Hadsall & Joseph Simms: STRICT SOUTH (South of Eloy)
         if (isJoseph(rep) || isRichard(rep)) {
