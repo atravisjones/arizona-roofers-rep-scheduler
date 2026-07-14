@@ -32,19 +32,20 @@ export const APT_OUTCOME_DATA_RANGE = 'B68:N100'; // Row 68 has headers, B=Sales
 // If fetching data fails, use mock data to allow the app to run.
 export const USE_MOCK_DATA_ON_FAILURE = true;
 
+// 2026-07-14: appointment timeframes gained an hour (8-11 / 11-1 / 2-5 / 5-8).
 export const TIME_SLOTS: TimeSlot[] = [
-  { id: 'ts-1', label: '7:30am - 10am' },
-  { id: 'ts-2', label: '10am - 1pm' },
-  { id: 'ts-3', label: '1pm - 4pm' },
-  { id: 'ts-4', label: '4pm - 7pm' },
+  { id: 'ts-1', label: '8am - 11am' },
+  { id: 'ts-2', label: '11am - 1pm' },
+  { id: 'ts-3', label: '2pm - 5pm' },
+  { id: 'ts-4', label: '5pm - 8pm' },
 ];
 
-// Display labels for UI (shorter time ranges)
+// Display labels for UI
 export const TIME_SLOT_DISPLAY_LABELS: Record<string, string> = {
-  'ts-1': '7:30AM - 9AM',
-  'ts-2': '10AM - 12PM',
-  'ts-3': '1PM - 3PM',
-  'ts-4': '4PM - 6PM',
+  'ts-1': '8AM - 11AM',
+  'ts-2': '11AM - 1PM',
+  'ts-3': '2PM - 5PM',
+  'ts-4': '5PM - 8PM',
 };
 
 export const ROOF_KEYWORDS: readonly ['Tile', 'Shingle', 'Flat', 'Metal'] = ['Tile', 'Shingle', 'Flat', 'Metal'];
