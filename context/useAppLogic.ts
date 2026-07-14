@@ -15,7 +15,7 @@ import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStat
 import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate } from '../services/backupService';
 // saveLoadService (Google Apps Script) removed — all save/load now via Supabase backupService
 import { doTimesOverlap } from '../utils/timeUtils';
-import { canReserveNorthTravelSlot, getEffectiveUnavailableSlots, getNorthZone, getTravelBlockedSlots, isLondon, isRepEligibleForNorthZone } from '../utils/repUtils';
+import { canReserveNorthTravelSlot, getEffectiveUnavailableSlots, getNorthZone, getTravelBlockedSlots, getTucsonRunRouteFit, isLondon, isRepEligibleForNorthZone } from '../utils/repUtils';
 // routingApiService removed — deleted Vercel project
 
 // Helpers
@@ -572,6 +572,11 @@ export const useAppLogic = () => {
         const northZone = getNorthZone(jobCity);
         if (northZone) return isRepEligibleForNorthZone(rep, northZone);
 
+        // Tucson Run: rep is doing a same-day south round trip — everything from PHX down
+        // through the I-10 corridor to Tucson is fair game today. (North-zone jobs already
+        // returned above, so this can't open the north corridors.)
+        if (rep.tucsonRun) return true;
+
         const jobRegion = getCityRegion(jobCity);
 
         // Richard Hadsall & Joseph Simms: STRICT SOUTH (South of Eloy)
@@ -595,6 +600,9 @@ export const useAppLogic = () => {
     const checkCityRuleViolation = useCallback((rep: Rep, newJobCity: string | undefined | null): { violated: boolean; cities: Set<string> } => {
         const currentCitiesOriginalCase = new Set(rep.schedule.flatMap(s => s.jobs).map(j => j.city).filter((c): c is string => !!c));
         const currentCitiesLowercase = new Set(Array.from(currentCitiesOriginalCase).map(c => c.toLowerCase()));
+
+        // Tucson Run days span many cities down the corridor by design — no city cap.
+        if (rep.tucsonRun) return { violated: false, cities: currentCitiesOriginalCase };
 
         if (!newJobCity) return { violated: false, cities: currentCitiesOriginalCase };
 
@@ -1041,6 +1049,22 @@ export const useAppLogic = () => {
         } else {
             // No existing jobs - use home distance as cluster score
             distanceClusterScore = distanceBaseScore;
+        }
+
+        // ============================================================
+        // TUCSON RUN: same-day round trip — replace distance scoring with route fit
+        // so the day sequences corridor (morning) → Tucson (midday) → corridor (evening).
+        // ============================================================
+        if (rep.tucsonRun) {
+            const slotIndex = rep.schedule.findIndex(s => s.id === slotId);
+            const routeFit = getTucsonRunRouteFit(job, slotIndex, geoCache.get(job.address));
+            if (routeFit !== null) {
+                distanceBaseScore = routeFit;
+                distanceClusterScore = routeFit;
+                // Restore the home-distance weight if it was zeroed for a rep with no home zip —
+                // on a run day, route fit carries this weight instead.
+                weights.distanceBase = rep.scoringOverrides?.distanceBase ?? allSettings.scoringWeights.distanceBase;
+            }
         }
 
         // ============================================================

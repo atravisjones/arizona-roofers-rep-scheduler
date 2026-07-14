@@ -628,6 +628,9 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                     {rep.region && rep.region !== 'UNKNOWN' && rep.region !== 'PHX' && (
                         <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap ${REGION_CLASSES[rep.region]}`}>{rep.region}</span>
                     )}
+                    {rep.tucsonRun && (
+                        <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded border whitespace-nowrap bg-tag-purple-bg text-tag-purple-text border-tag-purple-border" title="Same-day Tucson round trip — corridor jobs sequenced on the way down and back">↓ TUCSON RUN</span>
+                    )}
                     {isFullyUnavailable && (
                         <span className="ml-2 text-[10px] bg-bg-quaternary text-text-tertiary font-semibold px-1.5 py-0.5 rounded whitespace-nowrap">Unavailable</span>
                     )}
@@ -708,6 +711,15 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
                                 </a>
 
                                 <div className="border-t border-border-primary my-1"></div>
+
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleUpdateRep(rep.id, { tucsonRun: !rep.tucsonRun }); setIsMenuOpen(false); }}
+                                    className="w-full text-left px-4 py-2 text-xs text-text-secondary hover:bg-bg-secondary flex items-center"
+                                    title="Same-day round trip: opens Tucson/corridor jobs for this rep today and sequences slots down I-10 and back"
+                                >
+                                    <PinIcon className="h-3 w-3 mr-2" />
+                                    {rep.tucsonRun ? 'Cancel Tucson Run' : 'Send to Tucson (run)'}
+                                </button>
 
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onToggleLock(rep.id); setIsMenuOpen(false); }}

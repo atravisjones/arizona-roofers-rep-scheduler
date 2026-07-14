@@ -132,6 +132,7 @@ export interface Rep {
   zipCodes?: string[];
   isLocked?: boolean;
   isOptimized?: boolean;
+  tucsonRun?: boolean; // Same-day Tucson round trip for this day: opens the SOUTH gate + route-fit slot sequencing
   sourceRow?: number; // Row number in the source spreadsheet (for filtering inactive reps)
 
   // Gamification Properties

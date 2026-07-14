@@ -1,5 +1,5 @@
 import { Job, Rep } from '../types';
-import { FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, NORTHERN_AZ_CITIES, SR87_CORRIDOR_CITIES } from '../services/geography';
+import { FLAGSTAFF_ZONE_CITIES, GREATER_PHOENIX_CITIES, I17_CORRIDOR_CITIES, LOWER_VALLEY_EXTENSION_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTH_OUTER_RING_CITIES, SR87_CORRIDOR_CITIES } from '../services/geography';
 import { northRoutingEligibility } from '../services/northRoutingConfig';
 
 /**
@@ -73,6 +73,34 @@ export const canReserveNorthTravelSlot = (rep: Rep, job: Job, slotId: string): b
     const adjacentSlotId = getAdjacentTravelSlotId(rep, slotId);
     if (!adjacentSlotId) return true;
     return rep.schedule.find(slot => slot.id === adjacentSlotId)?.jobs.length === 0;
+};
+
+// Tucson Run: same-day round trip down I-10 and back. Each slot has a target latitude
+// tracing the route — 8-10am upper corridor (Casa Grande ~32.9), 11-1 lower corridor
+// (Marana ~32.4), 2-4 Tucson (~32.2), 5-7 back up the corridor heading home.
+const TUCSON_RUN_SLOT_TARGET_LATS = [33.00, 32.45, 32.25, 32.90];
+
+/**
+ * Scores how well a job fits a given slot on a Tucson-run day (0-100), by latitude
+ * distance from that slot's position on the route. Returns null when the job's
+ * latitude is unknown and its city isn't in any southbound set (neutral — caller
+ * keeps normal distance scoring).
+ */
+export const getTucsonRunRouteFit = (job: Job, slotIndex: number, coord: { lat: number } | null | undefined): number | null => {
+    const targetLat = TUCSON_RUN_SLOT_TARGET_LATS[slotIndex];
+    if (targetLat === undefined) return null;
+
+    let lat = coord?.lat;
+    if (lat === undefined) {
+        const city = (job.city || '').toLowerCase().trim();
+        if (SOUTHERN_AZ_CITIES.has(city)) lat = 32.25;
+        else if (LOWER_VALLEY_EXTENSION_CITIES.has(city) || SOUTH_OUTER_RING_CITIES.has(city)) lat = 32.85;
+        else if (GREATER_PHOENIX_CITIES.has(city)) lat = 33.40;
+        else return null;
+    }
+
+    // 0.1° latitude ≈ 7 miles; full credit on-target, zero at ~0.83° (~58 mi) off
+    return Math.max(0, Math.min(100, Math.round(100 - Math.abs(lat - targetLat) * 120)));
 };
 
 /**
