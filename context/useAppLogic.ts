@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, MAX_REP_ROW } from '../constants';
-import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching } from '../services/googleSheetsService';
+import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching, normalizeName } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
 import { fetchInstalls, matchCrewToReps } from '../services/installService';
@@ -1877,6 +1877,12 @@ export const useAppLogic = () => {
                         repNameMap.set(firstLast, rep);
                     }
                 }
+                // Also by nickname-canonicalized key ("Will Ludewig" → "williamludewig") so
+                // Roofr's formal names (William) match the sheet's short names (Will).
+                const canonical = normalizeName(rep.name);
+                if (canonical && !repNameMap.has(canonical)) {
+                    repNameMap.set(canonical, rep);
+                }
             }
 
             let assignedCount = 0;
@@ -2069,7 +2075,8 @@ export const useAppLogic = () => {
                 for (const attendeeName of namesToTry) {
                     if (!attendeeName) continue;
                     const match = repNameMap.get(attendeeName) ||
-                        repNameMap.get(attendeeName.split(' ').slice(0, 2).join(' '));
+                        repNameMap.get(attendeeName.split(' ').slice(0, 2).join(' ')) ||
+                        repNameMap.get(normalizeName(attendeeName));
                     if (match) {
                         assignedRep = match;
                         break;
@@ -2207,6 +2214,21 @@ export const useAppLogic = () => {
     //         loadSheetForDate(selectedDate, true);
     //     }
     // }, [selectedDate, loadSheetForDate, isLoadingReps, dailyStates]);
+
+    // Startup auto-load (Travis, 2026-07-14): the app opens on tomorrow — pull its
+    // appointments automatically once reps are ready. ONE-SHOT: later tab switches
+    // still use the manual "Load" button (see disabled effect above).
+    const didStartupAutoLoadRef = useRef(false);
+    useEffect(() => {
+        if (didStartupAutoLoadRef.current) return;
+        if (isCloudLoading || isLoadingReps) return;
+        const dateKey = formatDateToKey(selectedDate);
+        if (!dailyStates.has(dateKey)) return;
+        didStartupAutoLoadRef.current = true;
+        if (!sheetLoadedDaysRef.current.has(dateKey)) {
+            loadSheetForDate(selectedDate);
+        }
+    }, [selectedDate, loadSheetForDate, isLoadingReps, isCloudLoading, dailyStates]);
 
     const autoLoadAllDays = useCallback(async () => {
         if (isAutoLoadingRef.current) return;

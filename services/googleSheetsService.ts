@@ -234,7 +234,7 @@ const NICKNAME_MAP: Record<string, string> = {
     'greg': 'gregory',
 };
 
-const normalizeName = (name: string): string => {
+export const normalizeName = (name: string): string => {
     if (!name) return '';
     // Clean string: lowercase, remove quotes, content in parens, and city suffixes.
     let cleaned = name.toLowerCase().trim()
