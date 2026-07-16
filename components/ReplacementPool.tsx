@@ -252,14 +252,16 @@ const ReplacementPool: React.FC<{
     }, [anchor, entries]);
 
     const sections = useMemo(() => {
-        // Server order = quality desc, date asc; with an anchor set, closest wins instead.
+        // Server order = quality desc, date asc; with an anchor set, closest wins instead
+        // and the actionable list is trimmed to the 5 nearest.
         const byProximity = (list: PoolEntry[]) => (
             anchor
                 ? [...list].sort((a, b) => (distanceByJobId[a.jobId] ?? Infinity) - (distanceByJobId[b.jobId] ?? Infinity))
                 : list
         );
+        const available = byProximity(entries.filter(e => e.status === 'open' || e.status === 'claimed'));
         return {
-            available: byProximity(entries.filter(e => e.status === 'open' || e.status === 'claimed')),
+            available: anchor ? available.slice(0, 5) : available,
             cooldown: byProximity(entries.filter(e => e.status === 'cooldown')),
             removed: entries.filter(e => e.status === 'unqualified' || e.status === 'moved' || e.status === 'exhausted'),
         };
@@ -396,13 +398,13 @@ const ReplacementPool: React.FC<{
 
             {anchor && (
                 <div className="flex-shrink-0 mx-3 mt-2 px-2 py-1.5 text-[11px] rounded border border-brand-primary/50 bg-brand-bg-light text-brand-primary flex items-center gap-2">
-                    <span className="truncate font-semibold">📍 Closest first — near {anchor.label}</span>
+                    <span className="truncate font-semibold">📍 5 closest to {anchor.label}</span>
                     <button
                         onClick={onClearAnchor}
                         className="ml-auto flex-shrink-0 font-bold hover:opacity-70 transition"
-                        title="Back to quality order"
+                        title="Show the full pool in quality order"
                     >
-                        ✕
+                        ✕ show all
                     </button>
                 </div>
             )}
