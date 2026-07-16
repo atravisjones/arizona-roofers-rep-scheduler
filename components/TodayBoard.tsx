@@ -8,6 +8,7 @@ import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
+import ReplacementPool from './ReplacementPool';
 
 interface RoofrAppointment {
     eventId: string;
@@ -351,6 +352,8 @@ const TodayBoard: React.FC = () => {
     const [searchError, setSearchError] = useState<string | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
+    const [showPool, setShowPool] = useState(false);
+    const [poolCount, setPoolCount] = useState(0);
 
     const fetchAppointments = useCallback(async () => {
         setIsRefreshing(true);
@@ -702,6 +705,17 @@ const TodayBoard: React.FC = () => {
                     >
                         {isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}
                     </button>
+                    <button
+                        onClick={() => setShowPool(v => !v)}
+                        className={`ml-1 px-2 py-1 text-[11px] font-bold rounded-md border transition ${
+                            showPool
+                                ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary hover:text-brand-primary'
+                        }`}
+                        title="Future quality appointments available to pull into cancelled slots"
+                    >
+                        🔥 Replacements{poolCount > 0 ? ` (${poolCount})` : ''}
+                    </button>
                 </div>
             </div>
 
@@ -945,6 +959,12 @@ const TodayBoard: React.FC = () => {
                 appointment={selectedAppointment?.appointment || null}
                 repName={selectedAppointment?.repName || ''}
                 onClose={() => setSelectedAppointment(null)}
+            />
+
+            <ReplacementPool
+                open={showPool}
+                onClose={() => setShowPool(false)}
+                onCountChange={setPoolCount}
             />
         </div>
     );
