@@ -31,6 +31,9 @@ interface RoofrAppointment {
     bookingCsr?: string;
     lat?: number | null;
     lng?: number | null;
+    kind?: 'sales' | 'self_gen' | 'followup' | 'adjuster';
+    eventSubtype?: string;
+    pinned?: boolean;
 }
 
 type BoardAppointment = RoofrAppointment & {
@@ -533,6 +536,40 @@ const TodayBoard: React.FC = () => {
         ))
     ), [groupedAppointments]);
 
+    // Double bookings: same rep with overlapping active appointments, or the same
+    // job carrying two active events today (e.g. moved up without deleting the old one).
+    const doubleBookedIds = useMemo(() => {
+        const ids = new Set<string>();
+        groupedAppointments.forEach(group => {
+            const active = group.appointments.filter(a => a.status === 'active');
+            for (let i = 0; i < active.length; i++) {
+                for (let j = i + 1; j < active.length; j++) {
+                    const aStart = getAppointmentMinutes(active[i].start);
+                    const bStart = getAppointmentMinutes(active[j].start);
+                    if (aStart === null || bStart === null) continue;
+                    const aEnd = getAppointmentMinutes(active[i].end) ?? aStart + 60;
+                    const bEnd = getAppointmentMinutes(active[j].end) ?? bStart + 60;
+                    if (aStart < bEnd && bStart < aEnd) {
+                        ids.add(active[i].eventId);
+                        ids.add(active[j].eventId);
+                    }
+                }
+            }
+        });
+        const eventsByJob = new Map<string, Set<string>>();
+        boardAppointments.forEach(({ appointment }) => {
+            if (appointment.status !== 'active' || !appointment.jobId) return;
+            const key = String(appointment.jobId);
+            const set = eventsByJob.get(key) || new Set<string>();
+            set.add(appointment.eventId);
+            eventsByJob.set(key, set);
+        });
+        eventsByJob.forEach(set => {
+            if (set.size > 1) set.forEach(eventId => ids.add(eventId));
+        });
+        return ids;
+    }, [groupedAppointments, boardAppointments]);
+
     const goToDate = useCallback((newKey: string) => {
         // Reset the red/green baseline so switching days doesn't flag the new
         // day's appointments as cancelled/new on the first fetch.
@@ -696,9 +733,15 @@ const TodayBoard: React.FC = () => {
                     <h2 className="text-sm font-bold text-text-primary truncate">
                         {relativeLabel ? `${relativeLabel} Appointments` : 'Appointments'} - {formatDateHeading(dateKey)}
                     </h2>
-                    <div className="text-[11px] text-text-tertiary">
-                        {activeCount} active{cancelledCount > 0 ? `, ${cancelledCount} cancelled` : ''}{source ? ` - ${source}` : ''}
-                        {error && <span className="ml-2 text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
+                    <div className="text-[11px] text-text-tertiary flex items-center gap-x-3 gap-y-0.5 flex-wrap">
+                        <span>
+                            {activeCount} active{cancelledCount > 0 ? `, ${cancelledCount} cancelled` : ''}{source ? ` - ${source}` : ''}
+                        </span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-indigo-400 inline-block" />Adjuster</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400 inline-block" />Self-gen</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-2 border-orange-500 inline-block" />Double-booked</span>
+                        {error && <span className="text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
                     </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -878,13 +921,22 @@ const TodayBoard: React.FC = () => {
                                                     const isCancelled = appointment.status === 'cancelled';
                                                     const isNew = appointment.isNew;
                                                     const isCsr = group.departmentGroup === 'CSR';
+                                                    const isDouble = doubleBookedIds.has(appointment.eventId) && !isCancelled;
+                                                    const kind = appointment.kind || 'sales';
                                                     const position = getAppointmentPosition(appointment);
                                                     const cardClass = isCancelled
                                                         ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border opacity-90'
                                                         : isNew
                                                             ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border ring-2 ring-tag-green-border/60'
-                                                            : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
-                                                    const csrClass = isCsr ? 'ring-2 ring-tag-red-border' : '';
+                                                            : kind === 'adjuster'
+                                                                ? 'bg-indigo-100 text-indigo-950 border-indigo-400 hover:border-indigo-600 hover:shadow-md'
+                                                                : kind === 'self_gen'
+                                                                    ? 'bg-emerald-100 text-emerald-950 border-emerald-400 hover:border-emerald-600 hover:shadow-md'
+                                                                    : kind === 'followup'
+                                                                        ? 'bg-amber-100 text-amber-950 border-amber-400 hover:border-amber-600 hover:shadow-md'
+                                                                        : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
+                                                    // Double-booking warning outranks the CSR ring (outline composes with rings).
+                                                    const csrClass = isDouble ? 'outline outline-2 outline-orange-500' : isCsr ? 'ring-2 ring-tag-red-border' : '';
                                                     const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
                                                     const isDimmedBySearch = activeSearch && !isClosestRep;
                                                     const isClosestAppointment = !!activeSearch && proximityResults.closestAppointmentEventIds.has(appointment.eventId);
@@ -911,6 +963,18 @@ const TodayBoard: React.FC = () => {
                                                                     )}
                                                                     {isNew && !isCancelled && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0">New</span>
+                                                                    )}
+                                                                    {isDouble && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-orange-500 bg-orange-100 text-orange-800">Double</span>
+                                                                    )}
+                                                                    {kind === 'adjuster' && !isCancelled && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-indigo-400 bg-indigo-200 text-indigo-900">Adjuster</span>
+                                                                    )}
+                                                                    {kind === 'self_gen' && !isCancelled && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-emerald-400 bg-emerald-200 text-emerald-900">Self-gen</span>
+                                                                    )}
+                                                                    {kind === 'followup' && !isCancelled && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-amber-400 bg-amber-200 text-amber-900">Follow-up</span>
                                                                     )}
                                                                     {isCsr && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">CSR</span>
