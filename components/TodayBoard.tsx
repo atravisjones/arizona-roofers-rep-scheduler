@@ -62,7 +62,7 @@ const STATIC_GROUPS: Record<Exclude<DepartmentGroup, 'Other'>, string[]> = {
     Retail: ['Alex Tillotson', 'Bradley Crohurst', 'Christian Noren', 'Connor Hamby', 'Jonathan Marino', 'Josh Jewett', 'Justin Parker', 'London Smith', 'Niko Pagoulatos', 'Nikolas Pagoulatos', 'Orlando Chavarria', 'Richard Hadsall', 'Stephen Chaidez', 'Tanner Broadbent'],
     D2D: ['Brandon Cook', 'Brenda Ochoa', 'Carson Anderson', 'Dylan Lopez', 'Israel Silva', 'James Chernek', 'James DeCoursey', 'Jordan Depue', 'Josiah Vasquez', 'Kory Dumone', 'Michael Hurff', 'Nahum Sandoval', 'Tanner Stephens', 'Vincent Echeveste'],
     Management: ['Andrew Clark', 'Anthony Bonomo', 'John Risi', 'Travis Jones', 'Yousef Ayad'],
-    CSR: ['Bronté Pisz', 'Diva Shahpur', 'Ervennica Mae Javier', 'Madi Meyers', 'Madison Meyers', 'Mariana Franco Caballos', 'Nica Javier'],
+    CSR: ['Bronté Pisz', 'Diva Shahpur', 'Ervennica Mae Javier', 'Madi Meyers', 'Madison Meyers', 'Mariana Franco', 'Mariana Franco Caballos', 'Nica Javier'],
 };
 
 const todayKey = () => {
@@ -772,6 +772,7 @@ const TodayBoard: React.FC = () => {
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400 inline-block" />Self-gen</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-2 border-orange-500 inline-block" />Double-booked</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-red-200 border border-red-400 inline-block" />CSR-owned job</span>
                         {error && <span className="text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
                     </div>
                 </div>
@@ -954,18 +955,22 @@ const TodayBoard: React.FC = () => {
                                                     const isCsr = group.departmentGroup === 'CSR';
                                                     const isDouble = doubleBookedIds.has(appointment.eventId) && !isCancelled;
                                                     const kind = appointment.kind || 'sales';
+                                                    // Job still owned by a CSR in Roofr (not yet transferred to the rep) -> light red.
+                                                    const isCsrOwnedJob = getRepGroup((appointment.jobOwner || '').trim()) === 'CSR';
                                                     const position = getAppointmentPosition(appointment);
                                                     const cardClass = isCancelled
                                                         ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border opacity-90'
                                                         : isNew
                                                             ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border ring-2 ring-tag-green-border/60'
-                                                            : kind === 'adjuster'
-                                                                ? 'bg-indigo-100 text-indigo-950 border-indigo-400 hover:border-indigo-600 hover:shadow-md'
-                                                                : kind === 'self_gen'
-                                                                    ? 'bg-emerald-100 text-emerald-950 border-emerald-400 hover:border-emerald-600 hover:shadow-md'
-                                                                    : kind === 'followup'
-                                                                        ? 'bg-amber-100 text-amber-950 border-amber-400 hover:border-amber-600 hover:shadow-md'
-                                                                        : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
+                                                            : isCsrOwnedJob
+                                                                ? 'bg-red-50 text-red-950 border-red-300 hover:border-red-500 hover:shadow-md'
+                                                                : kind === 'adjuster'
+                                                                    ? 'bg-indigo-100 text-indigo-950 border-indigo-400 hover:border-indigo-600 hover:shadow-md'
+                                                                    : kind === 'self_gen'
+                                                                        ? 'bg-emerald-100 text-emerald-950 border-emerald-400 hover:border-emerald-600 hover:shadow-md'
+                                                                        : kind === 'followup'
+                                                                            ? 'bg-amber-100 text-amber-950 border-amber-400 hover:border-amber-600 hover:shadow-md'
+                                                                            : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
                                                     // Double-booking warning outranks the CSR ring (outline composes with rings).
                                                     const csrClass = isDouble ? 'outline outline-2 outline-orange-500' : isCsr ? 'ring-2 ring-tag-red-border' : '';
                                                     const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
@@ -1009,7 +1014,7 @@ const TodayBoard: React.FC = () => {
                                                                     {kind === 'followup' && !isCancelled && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-amber-400 bg-amber-200 text-amber-900">Follow-up</span>
                                                                     )}
-                                                                    {isCsr && (
+                                                                    {(isCsr || isCsrOwnedJob) && !isCancelled && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">CSR</span>
                                                                     )}
                                                                     {isClosestAppointment && (
