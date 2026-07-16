@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { supabase } from '../services/supabaseClient';
+import type { Coordinates } from '../services/osmService';
+import { haversineDistance } from '../services/geography';
+
+export type PoolAnchor = { label: string; coordinates: Coordinates };
 
 // Cancel Culture replacement pool: when a same-day appointment cancels, CSRs pull a
 // future quality (#-rated) appointment forward. Claim locks + cooldowns live in the
@@ -16,6 +20,8 @@ interface PoolEntry {
     address: string | null;
     jobOwner: string | null;
     leadSource: string | null;
+    lat: string | null;
+    lng: string | null;
     status: 'open' | 'claimed' | 'cooldown' | 'exhausted' | 'unqualified' | 'moved';
     claimedBy: string | null;
     attempts: number;
@@ -33,6 +39,14 @@ const CSR_STORAGE_KEY = 'replacementPoolCsr';
 const OPEN_REFRESH_MS = 30000;
 const CLOSED_REFRESH_MS = 300000;
 const MAX_ATTEMPTS = 3;
+const KM_TO_MILES = 0.621371;
+
+const getEntryCoordinates = (entry: PoolEntry): Coordinates | null => {
+    const lat = Number(entry.lat);
+    const lon = Number(entry.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) return null;
+    return { lat, lon };
+};
 
 const getCity = (title: string) => (title.split('[')[0] || '').trim();
 
@@ -129,7 +143,9 @@ const ReplacementPool: React.FC<{
     open: boolean;
     onClose: () => void;
     onCountChange: (count: number) => void;
-}> = ({ open, onClose, onCountChange }) => {
+    anchor?: PoolAnchor | null;
+    onClearAnchor?: () => void;
+}> = ({ open, onClose, onCountChange, anchor = null, onClearAnchor }) => {
     const [entries, setEntries] = useState<PoolEntry[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -225,11 +241,29 @@ const ReplacementPool: React.FC<{
         handleOutcome(entry, 'moved', movedTo.trim() || null);
     };
 
-    const sections = useMemo(() => ({
-        available: entries.filter(e => e.status === 'open' || e.status === 'claimed'),
-        cooldown: entries.filter(e => e.status === 'cooldown'),
-        removed: entries.filter(e => e.status === 'unqualified' || e.status === 'moved' || e.status === 'exhausted'),
-    }), [entries]);
+    const distanceByJobId = useMemo(() => {
+        const byId: Record<string, number | null> = {};
+        if (!anchor) return byId;
+        entries.forEach(entry => {
+            const coords = getEntryCoordinates(entry);
+            byId[entry.jobId] = coords ? haversineDistance(anchor.coordinates, coords) * KM_TO_MILES : null;
+        });
+        return byId;
+    }, [anchor, entries]);
+
+    const sections = useMemo(() => {
+        // Server order = quality desc, date asc; with an anchor set, closest wins instead.
+        const byProximity = (list: PoolEntry[]) => (
+            anchor
+                ? [...list].sort((a, b) => (distanceByJobId[a.jobId] ?? Infinity) - (distanceByJobId[b.jobId] ?? Infinity))
+                : list
+        );
+        return {
+            available: byProximity(entries.filter(e => e.status === 'open' || e.status === 'claimed')),
+            cooldown: byProximity(entries.filter(e => e.status === 'cooldown')),
+            removed: entries.filter(e => e.status === 'unqualified' || e.status === 'moved' || e.status === 'exhausted'),
+        };
+    }, [anchor, distanceByJobId, entries]);
 
     if (!open) return null;
 
@@ -254,6 +288,11 @@ const ReplacementPool: React.FC<{
                 <div className="flex items-center gap-1.5 min-w-0">
                     <QualityBadge quality={entry.quality} />
                     <span className="text-[11px] font-bold text-text-primary truncate">{getCity(entry.title)}</span>
+                    {anchor && (
+                        <span className="text-[10px] font-black text-brand-primary flex-shrink-0 px-1 rounded border border-brand-primary/50 bg-brand-bg-light">
+                            {distanceByJobId[entry.jobId] != null ? `${distanceByJobId[entry.jobId]!.toFixed(1)} mi` : '? mi'}
+                        </span>
+                    )}
                     <span className="text-[10px] font-semibold text-brand-primary flex-shrink-0 ml-auto">{formatStart(entry.start)}</span>
                 </div>
 
@@ -354,6 +393,19 @@ const ReplacementPool: React.FC<{
                     {CSR_NAMES.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
             </div>
+
+            {anchor && (
+                <div className="flex-shrink-0 mx-3 mt-2 px-2 py-1.5 text-[11px] rounded border border-brand-primary/50 bg-brand-bg-light text-brand-primary flex items-center gap-2">
+                    <span className="truncate font-semibold">📍 Closest first — near {anchor.label}</span>
+                    <button
+                        onClick={onClearAnchor}
+                        className="ml-auto flex-shrink-0 font-bold hover:opacity-70 transition"
+                        title="Back to quality order"
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
 
             {notice && (
                 <div className="flex-shrink-0 mx-3 mt-2 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">

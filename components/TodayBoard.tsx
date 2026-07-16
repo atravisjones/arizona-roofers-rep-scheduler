@@ -8,7 +8,7 @@ import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
-import ReplacementPool from './ReplacementPool';
+import ReplacementPool, { type PoolAnchor } from './ReplacementPool';
 
 interface RoofrAppointment {
     eventId: string;
@@ -242,7 +242,8 @@ const AppointmentDetailModal: React.FC<{
     appointment: BoardAppointment | null;
     repName: string;
     onClose: () => void;
-}> = ({ appointment, repName, onClose }) => {
+    onFindReplacements: (appointment: BoardAppointment) => void;
+}> = ({ appointment, repName, onClose, onFindReplacements }) => {
     useEffect(() => {
         if (!appointment) return;
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -290,6 +291,13 @@ const AppointmentDetailModal: React.FC<{
                 </div>
 
                 <footer className="px-5 py-4 bg-bg-secondary/30 border-t border-border-primary flex flex-wrap justify-end gap-2 rounded-b-xl">
+                    <button
+                        onClick={() => onFindReplacements(appointment)}
+                        title="Open the replacement pool sorted by distance from this appointment"
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md border bg-brand-primary text-brand-text-on-primary border-brand-primary hover:bg-brand-secondary shadow-sm transition-all mr-auto"
+                    >
+                        🔥 Find Replacements
+                    </button>
                     <DetailActionButton
                         onClick={() => window.open(roofrUrl, '_blank')}
                         disabled={!roofrUrl}
@@ -354,6 +362,7 @@ const TodayBoard: React.FC = () => {
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
     const [showPool, setShowPool] = useState(false);
     const [poolCount, setPoolCount] = useState(0);
+    const [poolAnchor, setPoolAnchor] = useState<PoolAnchor | null>(null);
 
     const fetchAppointments = useCallback(async () => {
         setIsRefreshing(true);
@@ -617,6 +626,24 @@ const TodayBoard: React.FC = () => {
         };
     }, [activeSearch, ensureMissingAppointmentCoordinates]);
 
+    const handleFindReplacements = useCallback(async (appointment: BoardAppointment) => {
+        setSelectedAppointment(null);
+        setShowPool(true);
+        const address = getAppointmentAddress(appointment);
+        let coords = getAppointmentCoordinates(appointment, appointmentCoordinates);
+        if (!coords && address) {
+            try {
+                const [result] = await geocodeAddresses([address]);
+                coords = result?.coordinates || null;
+            } catch (err) {
+                console.warn('Failed to geocode replacement anchor', err);
+                coords = null;
+            }
+        }
+        // No coordinates -> pool still opens, just in default quality order.
+        setPoolAnchor(coords ? { label: getShortAddress(appointment), coordinates: coords } : null);
+    }, [appointmentCoordinates]);
+
     const clearSearch = useCallback(() => {
         setSearchInput('');
         setActiveSearch(null);
@@ -866,9 +893,8 @@ const TodayBoard: React.FC = () => {
                                                     return (
                                                         <button
                                                             key={`${appointment.status}-${appointment.eventId}`}
-                                                            onClick={() => !isCancelled && setSelectedAppointment({ appointment, repName: group.repName })}
-                                                            disabled={isCancelled}
-                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} ${isCancelled ? 'cursor-default' : 'cursor-pointer active:scale-[0.99]'} ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
+                                                            onClick={() => setSelectedAppointment({ appointment, repName: group.repName })}
+                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} cursor-pointer active:scale-[0.99] ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
                                                             style={{
                                                                 top: position.top,
                                                                 height: Math.max(position.height - 2, 30),
@@ -959,12 +985,15 @@ const TodayBoard: React.FC = () => {
                 appointment={selectedAppointment?.appointment || null}
                 repName={selectedAppointment?.repName || ''}
                 onClose={() => setSelectedAppointment(null)}
+                onFindReplacements={handleFindReplacements}
             />
 
             <ReplacementPool
                 open={showPool}
                 onClose={() => setShowPool(false)}
                 onCountChange={setPoolCount}
+                anchor={poolAnchor}
+                onClearAnchor={() => setPoolAnchor(null)}
             />
         </div>
     );
