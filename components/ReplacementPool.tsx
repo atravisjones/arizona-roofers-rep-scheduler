@@ -364,7 +364,7 @@ const ReplacementPool: React.FC<{
                 <div className="min-w-0">
                     <h2 className="text-sm font-bold text-text-primary">🔥 Replacement Pool</h2>
                     <div className="text-[10px] text-text-tertiary">
-                        Quality appointments to pull into cancelled slots · next 2 weeks
+                        Quality appointments to pull into cancelled slots · tomorrow → 2 weeks out
                     </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
