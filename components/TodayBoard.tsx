@@ -143,6 +143,37 @@ const getAppointmentPosition = (appointment: RoofrAppointment) => {
     };
 };
 
+// Lay out a column's appointments in side-by-side lanes when they overlap in
+// time, so double-booked cards don't stack invisibly on top of each other.
+const layoutAppointments = (appointments: BoardAppointment[]) => {
+    type Laid = { appointment: BoardAppointment; lane: number; lanes: number };
+    const sorted = [...appointments].sort((a, b) => getSortTime(a) - getSortTime(b));
+    const results: Laid[] = [];
+    let cluster: { appointment: BoardAppointment; lane: number; end: number }[] = [];
+    let clusterMaxEnd = -1;
+
+    const flush = () => {
+        if (!cluster.length) return;
+        const lanes = Math.max(...cluster.map(c => c.lane)) + 1;
+        cluster.forEach(c => results.push({ appointment: c.appointment, lane: c.lane, lanes }));
+        cluster = [];
+        clusterMaxEnd = -1;
+    };
+
+    sorted.forEach(appointment => {
+        const start = getAppointmentMinutes(appointment.start) ?? DAY_VIEW_START_HOUR * 60;
+        const end = Math.max(getAppointmentMinutes(appointment.end) ?? start + 60, start + 30);
+        if (cluster.length && start >= clusterMaxEnd) flush();
+        const usedLanes = new Set(cluster.filter(c => c.end > start).map(c => c.lane));
+        let lane = 0;
+        while (usedLanes.has(lane)) lane++;
+        cluster.push({ appointment, lane, end });
+        clusterMaxEnd = Math.max(clusterMaxEnd, end);
+    });
+    flush();
+    return results;
+};
+
 const getShortAddress = (appointment: RoofrAppointment) => {
     const address = appointment.masterAddress || appointment.address || '';
     return address.split(',')[0] || 'No address';
@@ -917,7 +948,7 @@ const TodayBoard: React.FC = () => {
                                                     );
                                                 })}
 
-                                                {group.appointments.map(appointment => {
+                                                {layoutAppointments(group.appointments).map(({ appointment, lane, lanes }) => {
                                                     const isCancelled = appointment.status === 'cancelled';
                                                     const isNew = appointment.isNew;
                                                     const isCsr = group.departmentGroup === 'CSR';
@@ -946,10 +977,12 @@ const TodayBoard: React.FC = () => {
                                                         <button
                                                             key={`${appointment.status}-${appointment.eventId}`}
                                                             onClick={() => setSelectedAppointment({ appointment, repName: group.repName })}
-                                                            className={`absolute left-1 right-1 z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} cursor-pointer active:scale-[0.99] ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
+                                                            className={`absolute z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} cursor-pointer active:scale-[0.99] ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
                                                             style={{
                                                                 top: position.top,
                                                                 height: Math.max(position.height - 2, 30),
+                                                                left: `calc(${(lane / lanes) * 100}% + 4px)`,
+                                                                width: `calc(${100 / lanes}% - 8px)`,
                                                             }}
                                                             title={appointment.title}
                                                         >
