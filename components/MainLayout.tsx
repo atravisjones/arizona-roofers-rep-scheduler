@@ -146,14 +146,18 @@ const MainLayout: React.FC = () => {
 
   const handleStartupStartFresh = useCallback(() => setShowStartupModal(false), []);
   const handleStartupLoadMostRecent = useCallback(async () => {
+    if (!startupBackupInfo) { setShowStartupModal(false); return; }
     setIsLoadingMostRecent(true);
     try {
-      await context.loadMostRecentFromCloud();
+      // Load the exact backup the modal identified (same Supabase backup table +
+      // proven path the "Load from Cloud" modal uses), not the separate
+      // daily-schedules table that handleLoadStateFromCloud reads.
+      await context.loadSelectedBackup(startupBackupInfo.id);
     } finally {
       setIsLoadingMostRecent(false);
       setShowStartupModal(false);
     }
-  }, [context]);
+  }, [context, startupBackupInfo]);
 
   // Today Board has its own URL (/today-board) so it's linkable and browser back/forward works.
   const toggleTodayBoard = useCallback(() => {

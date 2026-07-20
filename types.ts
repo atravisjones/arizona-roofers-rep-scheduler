@@ -299,7 +299,6 @@ export interface AppContextType {
   setSelectedDate: (date: Date) => void;
   getJobCountsForDay: (dateKey: string) => { assigned: number; total: number };
   getAppStateForDay: (dateKey: string) => AppState | undefined;
-  loadMostRecentFromCloud: (dateKey?: string) => Promise<void>;
   getMostRecentBackupInfo: () => Promise<BackupListItem | null>;
   expandedRepIds: Set<string>;
   isOverrideActive: boolean;

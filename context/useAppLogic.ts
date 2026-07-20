@@ -3871,7 +3871,6 @@ export const useAppLogic = () => {
         handleLoadStateFromFile: confirmLoadStateFromFile,
         handleSaveStateToCloud: confirmSaveStateToCloud,
         handleLoadStateFromCloud: confirmLoadStateFromCloud,
-        loadMostRecentFromCloud: handleLoadStateFromCloud,
         getMostRecentBackupInfo,
         handleUndo, handleRedo, canUndo, canRedo,
         hoveredJobId, setHoveredJobId,
