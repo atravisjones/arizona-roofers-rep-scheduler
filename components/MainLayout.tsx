@@ -19,12 +19,13 @@ import NeedsRescheduleModal from './NeedsRescheduleModal';
 import UnplottedJobsModal from './UnplottedJobsModal';
 import ChangeLogModal from './ChangeLogModal';
 import { TAG_KEYWORDS } from '../constants';
-import { Job } from '../types';
+import { Job, BackupListItem } from '../types';
 import SettingsPanel from './SettingsPanel';
 import AssignmentSettingsModal from './SettingsModal';
 import ThemeEditorModal from './ThemeEditorModal';
 import ConfirmationModal from './ConfirmationModal';
 import LoadOptionsModal from './LoadOptionsModal';
+import StartupModal from './StartupModal';
 import { ToastContainer } from './Toast';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 
@@ -122,6 +123,37 @@ const MainLayout: React.FC = () => {
   );
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Startup prompt: on a fresh page load, offer to load the most recent saved
+  // schedule (in-memory state is empty on load) or start fresh.
+  const [showStartupModal, setShowStartupModal] = useState(false);
+  const [startupBackupInfo, setStartupBackupInfo] = useState<BackupListItem | null>(null);
+  const [isLoadingMostRecent, setIsLoadingMostRecent] = useState(false);
+  const startupCheckedRef = useRef(false);
+
+  useEffect(() => {
+    if (startupCheckedRef.current) return;
+    startupCheckedRef.current = true;
+    (async () => {
+      const info = await context.getMostRecentBackupInfo();
+      if (info) {
+        setStartupBackupInfo(info);
+        setShowStartupModal(true); // only prompt when there is actually something to load
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStartupStartFresh = useCallback(() => setShowStartupModal(false), []);
+  const handleStartupLoadMostRecent = useCallback(async () => {
+    setIsLoadingMostRecent(true);
+    try {
+      await context.loadMostRecentFromCloud();
+    } finally {
+      setIsLoadingMostRecent(false);
+      setShowStartupModal(false);
+    }
+  }, [context]);
 
   // Today Board has its own URL (/today-board) so it's linkable and browser back/forward works.
   const toggleTodayBoard = useCallback(() => {
@@ -1049,6 +1081,14 @@ const MainLayout: React.FC = () => {
         onLoadBackup={context.loadSelectedBackup}
         onStartFresh={context.closeLoadOptionsModal}
         onClose={context.closeLoadOptionsModal}
+      />
+
+      <StartupModal
+        isOpen={showStartupModal}
+        backupInfo={startupBackupInfo}
+        isLoading={isLoadingMostRecent}
+        onStartFresh={handleStartupStartFresh}
+        onLoadMostRecent={handleStartupLoadMostRecent}
       />
 
       <ToastContainer

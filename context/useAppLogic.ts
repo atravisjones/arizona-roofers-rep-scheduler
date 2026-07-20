@@ -3752,6 +3752,22 @@ export const useAppLogic = () => {
         }
     }, [dailyStates, activeDayKeys, log, showToast, closeLoadOptionsModal]);
 
+    // Startup prompt helper: the single most-recent saved backup (any type), for the
+    // "Start fresh vs Load most recent" popup shown on a fresh page load.
+    const getMostRecentBackupInfo = useCallback(async (): Promise<BackupListItem | null> => {
+        try {
+            const result = await fetchBackupList();
+            if (result.success && result.backups && result.backups.length > 0) {
+                return [...result.backups].sort(
+                    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+                )[0];
+            }
+        } catch (error) {
+            console.error('Error fetching most recent backup info:', error);
+        }
+        return null;
+    }, []);
+
     // Auto-load on mount DISABLED — Travis prefers manual "Load from Sheet" click.
     // useEffect(() => {
     //     if (!hasAutoLoadedRef.current && activeDayKeys.length > 0) {
@@ -3855,6 +3871,8 @@ export const useAppLogic = () => {
         handleLoadStateFromFile: confirmLoadStateFromFile,
         handleSaveStateToCloud: confirmSaveStateToCloud,
         handleLoadStateFromCloud: confirmLoadStateFromCloud,
+        loadMostRecentFromCloud: handleLoadStateFromCloud,
+        getMostRecentBackupInfo,
         handleUndo, handleRedo, canUndo, canRedo,
         hoveredJobId, setHoveredJobId,
         hoveredRepId, setHoveredRepId,
