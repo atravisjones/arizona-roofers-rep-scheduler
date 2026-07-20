@@ -6,7 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import type { AppState, Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
-import { haversineDistance } from '../services/geography';
+import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
 import ReplacementPool, { type PoolAnchor } from './ReplacementPool';
 
@@ -22,6 +22,7 @@ interface RoofrAppointment {
     attendees: string;
     customerName: string;
     masterAddress: string;
+    city?: string;
     jobOwner: string;
     workflow: string;
     tags: string;
@@ -111,6 +112,7 @@ const buildTentativeAppointments = (dateKey: string, appState: AppState | undefi
             attendees: rep.name,
             customerName: job.customerName,
             masterAddress: job.address,
+            city: job.city,
             jobOwner: rep.name,
             workflow: '',
             tags: '',
@@ -134,6 +136,52 @@ const dateToKey = (date: Date) => {
 
 const countAssignedJobs = (appState: AppState | undefined): number =>
     appState?.reps.reduce((sum, rep) => sum + rep.schedule.reduce((slotSum, slot) => slotSum + slot.jobs.length, 0), 0) ?? 0;
+
+// ── Region sectioning ────────────────────────────────────────────────────────
+// Reps are grouped left→right: Phoenix (main) | Tucson | Up North, by where their
+// appointments actually are that day (city match against the geography sets).
+type BoardRegion = 'PHX' | 'SOUTH' | 'NORTH';
+const REGION_ORDER: Record<BoardRegion, number> = { PHX: 0, SOUTH: 1, NORTH: 2 };
+const REGION_LABEL: Record<BoardRegion, string> = { PHX: '', SOUTH: 'Tucson', NORTH: 'Up North' };
+const REGION_TINT: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgba(245, 158, 11, 0.08)', NORTH: 'rgba(59, 130, 246, 0.09)' };
+const REGION_BADGE: Record<BoardRegion, string> = {
+    PHX: '',
+    SOUTH: 'bg-amber-500/15 text-amber-600 border border-amber-500/40',
+    NORTH: 'bg-blue-500/15 text-blue-500 border border-blue-500/40',
+};
+const REGION_LABEL_COLOR: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgb(217, 119, 6)', NORTH: 'rgb(37, 99, 235)' };
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const buildCityRegex = (cities: Iterable<string>) => {
+    const list = Array.from(new Set(Array.from(cities)))
+        .sort((a, b) => b.length - a.length) // longest first so "south tucson" wins over "tucson"
+        .map(escapeRegExp);
+    return new RegExp(`(^|[\\s,])(${list.join('|')})([\\s,.]|$)`, 'i');
+};
+const NORTH_CITY_RE = buildCityRegex([...NORTHERN_AZ_CITIES, ...FLAGSTAFF_ZONE_CITIES, ...I17_CORRIDOR_CITIES, ...SR87_CORRIDOR_CITIES]);
+const SOUTH_CITY_RE = buildCityRegex(SOUTHERN_AZ_CITIES);
+
+// Classify one appointment. Matches only the address tail (city/state/zip), never
+// the street part, so a street named e.g. "Globe Ave" doesn't read as Tucson.
+const getAppointmentRegion = (appt: RoofrAppointment): BoardRegion => {
+    const parts = (appt.address || appt.masterAddress || '').split(',').map(s => s.trim()).filter(Boolean);
+    const tail = parts.length > 1 ? parts.slice(1).join(', ') : '';
+    const text = `${appt.city || ''}, ${tail}`;
+    if (NORTH_CITY_RE.test(text)) return 'NORTH';
+    if (SOUTH_CITY_RE.test(text)) return 'SOUTH';
+    return 'PHX';
+};
+
+// A rep's column region: any North stop wins, else any Tucson stop, else Phoenix.
+const getRepColumnRegion = (appts: RoofrAppointment[]): BoardRegion => {
+    let hasSouth = false;
+    for (const appt of appts) {
+        const region = getAppointmentRegion(appt);
+        if (region === 'NORTH') return 'NORTH';
+        if (region === 'SOUTH') hasSouth = true;
+    }
+    return hasSouth ? 'SOUTH' : 'PHX';
+};
 
 const addDays = (dateKey: string, delta: number) => {
     const d = new Date(`${dateKey}T12:00:00`);
@@ -633,13 +681,18 @@ const TodayBoard: React.FC = () => {
         });
 
         return Array.from(byRep.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([repName, group]) => ({
-                repName,
-                departmentGroup: group.departmentGroup,
-                appointments: group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b)),
-            }))
-            .filter(group => group.appointments.length > 0);
+            .map(([repName, group]) => {
+                const appointments = group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b));
+                return {
+                    repName,
+                    departmentGroup: group.departmentGroup,
+                    region: getRepColumnRegion(appointments),
+                    appointments,
+                };
+            })
+            .filter(group => group.appointments.length > 0)
+            // Phoenix (main) first, then Tucson, then Up North; alphabetical within each section.
+            .sort((a, b) => (REGION_ORDER[a.region] - REGION_ORDER[b.region]) || a.repName.localeCompare(b.repName));
     }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource]);
 
     const boardAppointments = useMemo(() => (
@@ -1015,19 +1068,35 @@ const TodayBoard: React.FC = () => {
                                 ))}
                             </div>
 
-                            {groupedAppointments.map(group => (
+                            {groupedAppointments.map((group, groupIndex) => (
                                 (() => {
                                     const matchedRep = repsByName.get(normalizeRepName(group.repName));
                                     const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
                                     const isFullyUnavailable = unavailableSlotIds.length >= 4;
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
+                                    const prevRegion = groupIndex > 0 ? groupedAppointments[groupIndex - 1].region : null;
+                                    const isSectionStart = group.region !== 'PHX' && group.region !== prevRegion;
 
                                     return (
+                                        <React.Fragment key={group.repName}>
+                                            {isSectionStart && (
+                                                <div
+                                                    className="flex items-center justify-center flex-shrink-0 border-r border-border-primary"
+                                                    style={{ width: 26, backgroundColor: REGION_TINT[group.region] }}
+                                                    title={`${REGION_LABEL[group.region]} appointments`}
+                                                >
+                                                    <span
+                                                        className="text-[10px] font-extrabold uppercase tracking-widest whitespace-nowrap"
+                                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: REGION_LABEL_COLOR[group.region] }}
+                                                    >
+                                                        {REGION_LABEL[group.region]}
+                                                    </span>
+                                                </div>
+                                            )}
                                         <div
-                                            key={group.repName}
-                                            className={`flex flex-col border-r border-border-primary bg-bg-primary min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
-                                            style={{ flex: '1 1 0' }}
+                                            className={`flex flex-col border-r border-border-primary ${group.region === 'PHX' ? 'bg-bg-primary' : ''} min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
+                                            style={{ flex: '1 1 0', backgroundColor: group.region !== 'PHX' ? REGION_TINT[group.region] : undefined }}
                                         >
                                             <div
                                                 className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
@@ -1039,6 +1108,11 @@ const TodayBoard: React.FC = () => {
                                                         {isFullyUnavailable && (
                                                             <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
                                                                 Off
+                                                            </span>
+                                                        )}
+                                                        {group.region !== 'PHX' && (
+                                                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${REGION_BADGE[group.region]}`}>
+                                                                {REGION_LABEL[group.region]}
                                                             </span>
                                                         )}
                                                         <span className="text-[10px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
@@ -1154,6 +1228,7 @@ const TodayBoard: React.FC = () => {
                                                 })}
                                             </div>
                                         </div>
+                                        </React.Fragment>
                                     );
                                 })()
                             ))}
