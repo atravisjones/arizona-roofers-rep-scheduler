@@ -336,6 +336,7 @@ export const useAppLogic = () => {
     }, [history, historyIndex, selectedDate, updateGeoCache]);
 
     const dailyStates = useMemo(() => history[historyIndex] || new Map(), [history, historyIndex]);
+    const getAppStateForDay = useCallback((dateKey: string): AppState | undefined => dailyStates.get(dateKey), [dailyStates]);
 
     // Ref that always holds the latest dailyStates — used by async functions to avoid stale closures
     const dailyStatesRef = useRef(dailyStates);
@@ -3839,7 +3840,7 @@ export const useAppLogic = () => {
 
     return {
         appState, setAppState, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
-        selectedRepId, usingMockData, activeSheetName, selectedDate, activeDayKeys, addActiveDay, removeActiveDay, setSelectedDate, expandedRepIds, getJobCountsForDay,
+        selectedRepId, usingMockData, activeSheetName, selectedDate, activeDayKeys, addActiveDay, removeActiveDay, setSelectedDate, expandedRepIds, getJobCountsForDay, getAppStateForDay,
         isOverrideActive, sortConfig, setSortConfig, debugLogs, log, aiThoughts, activeRoute, isRouting,
         draggedJob, setDraggedJob, draggedOverRepId, setDraggedOverRepId, handleJobDragEnd,
         handleRefreshRoute, settings: appState.settings, updateSettings,

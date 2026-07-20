@@ -298,6 +298,7 @@ export interface AppContextType {
   removeActiveDay: (dateKey: string) => void;
   setSelectedDate: (date: Date) => void;
   getJobCountsForDay: (dateKey: string) => { assigned: number; total: number };
+  getAppStateForDay: (dateKey: string) => AppState | undefined;
   expandedRepIds: Set<string>;
   isOverrideActive: boolean;
   sortConfig: SortConfig;

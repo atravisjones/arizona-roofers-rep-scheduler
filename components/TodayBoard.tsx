@@ -3,7 +3,7 @@ import { DAY_VIEW_CELL_HEIGHT, DAY_VIEW_END_HOUR, DAY_VIEW_START_HOUR } from '..
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
-import type { Rep } from '../types';
+import type { AppState, Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance } from '../services/geography';
@@ -74,6 +74,56 @@ const todayKey = () => {
 };
 
 const parseLocalDate = (value: string) => new Date(value.replace(' ', 'T'));
+
+const getTentativeSlotStart = (label: string, slotIndex: number) => {
+    const match = label.match(/^\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    if (match) {
+        let hour = Number(match[1]);
+        const minute = Number(match[2] || 0);
+        const period = match[3].toLowerCase();
+        if (hour >= 1 && hour <= 12 && minute < 60) {
+            if (period === 'pm' && hour < 12) hour += 12;
+            if (period === 'am' && hour === 12) hour = 0;
+            return { hour, minute };
+        }
+    }
+    return { hour: 8 + slotIndex * 3, minute: 0 };
+};
+
+const buildTentativeAppointments = (dateKey: string, appState: AppState | undefined): BoardAppointment[] => (
+    appState?.reps.flatMap(rep => rep.schedule.flatMap((slot, slotIndex) => {
+        const { hour, minute } = getTentativeSlotStart(slot.label, slotIndex);
+        const startDate = new Date(`${dateKey}T00:00:00`);
+        startDate.setHours(hour, minute, 0, 0);
+        const endDate = new Date(startDate);
+        endDate.setHours(endDate.getHours() + 2);
+        const toLocalDateTime = (date: Date) => `${dateKey} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+        return slot.jobs.map(job => ({
+            eventId: `tentative-${rep.id}-${slot.id}-${job.id}`,
+            jobId: job.id,
+            address: job.address,
+            title: job.customerName || job.address || '',
+            start: toLocalDateTime(startDate),
+            end: toLocalDateTime(endDate),
+            allDay: false,
+            category: '',
+            attendees: rep.name,
+            customerName: job.customerName,
+            masterAddress: job.address,
+            jobOwner: rep.name,
+            workflow: '',
+            tags: '',
+            lat: job.lat ?? null,
+            lng: job.lng ?? null,
+            kind: job.pinnedKind ?? 'sales',
+            eventSubtype: job.eventSubtype,
+            pinned: !!job.pinnedKind,
+            status: 'active',
+            isNew: false,
+        }));
+    })) || []
+);
 
 const addDays = (dateKey: string, delta: number) => {
     const d = new Date(`${dateKey}T12:00:00`);
@@ -368,8 +418,9 @@ const AppointmentDetailModal: React.FC<{
 };
 
 const TodayBoard: React.FC = () => {
-    const { appState } = useAppContext();
+    const { appState, getAppStateForDay } = useAppContext();
     const [dateKey, setDateKey] = useState(() => todayKey());
+    const [dataSource, setDataSource] = useState<'live' | 'tentative'>('live');
     const dayName = useMemo(() => getDayName(dateKey), [dateKey]);
     const relativeLabel = useMemo(() => {
         const t = todayKey();
@@ -466,6 +517,16 @@ const TodayBoard: React.FC = () => {
     }, [dateKey]);
 
     useEffect(() => {
+        if (dataSource !== 'live') {
+            setAppointments(buildTentativeAppointments(dateKey, getAppStateForDay(dateKey)));
+            setCancelledAppointments({});
+            setNewEventIds({});
+            setIsLoading(false);
+            setIsRefreshing(false);
+            setError(null);
+            setSource('');
+            return;
+        }
         fetchAppointments();
 
         const intervalId = window.setInterval(() => { if (!document.hidden) fetchAppointments(); }, REFRESH_MS);
@@ -478,7 +539,7 @@ const TodayBoard: React.FC = () => {
             window.clearInterval(intervalId);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [fetchAppointments]);
+    }, [dataSource, dateKey, fetchAppointments, getAppStateForDay]);
 
     useEffect(() => {
         const cleanupId = window.setInterval(() => {
@@ -529,7 +590,9 @@ const TodayBoard: React.FC = () => {
         appointments.forEach(appointment => {
             const repName = getRepName(appointment);
             const departmentGroup = getRepGroup(repName);
-            if (departmentGroup === 'D2D') return;
+            // Live board hides D2D reps (door-knock events clutter it). Tentative view
+            // is the user's own deliberate plan, so show every rep they assigned to.
+            if (dataSource !== 'tentative' && departmentGroup === 'D2D') return;
 
             const group = byRep.get(repName) || { departmentGroup, appointments: [] };
             group.appointments.push({
@@ -544,7 +607,9 @@ const TodayBoard: React.FC = () => {
             if (expiresAt <= now) return;
             const repName = getRepName(appointment);
             const departmentGroup = getRepGroup(repName);
-            if (departmentGroup === 'D2D') return;
+            // Live board hides D2D reps (door-knock events clutter it). Tentative view
+            // is the user's own deliberate plan, so show every rep they assigned to.
+            if (dataSource !== 'tentative' && departmentGroup === 'D2D') return;
 
             const group = byRep.get(repName) || { departmentGroup, appointments: [] };
             group.appointments.push({ ...appointment, status: 'cancelled' });
@@ -559,7 +624,7 @@ const TodayBoard: React.FC = () => {
                 appointments: group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b)),
             }))
             .filter(group => group.appointments.length > 0);
-    }, [appointments, cancelledAppointments, getRepGroup, newEventIds]);
+    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource]);
 
     const boardAppointments = useMemo(() => (
         groupedAppointments.flatMap(group => (
@@ -799,9 +864,24 @@ const TodayBoard: React.FC = () => {
                     >
                         <ChevronRightIcon className="h-4 w-4" />
                     </button>
+                    <div className="ml-1 inline-flex rounded border border-border-primary overflow-hidden">
+                        {(['live', 'tentative'] as const).map(value => (
+                            <button
+                                key={value}
+                                onClick={() => setDataSource(value)}
+                                className={`px-2 py-1 text-[11px] font-semibold transition ${
+                                    dataSource === value
+                                        ? 'bg-brand-primary text-brand-text-on-primary'
+                                        : 'text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                                }`}
+                            >
+                                {value === 'live' ? 'Live' : 'Tentative'}
+                            </button>
+                        ))}
+                    </div>
                     <button
                         onClick={fetchAppointments}
-                        disabled={isRefreshing}
+                        disabled={isRefreshing || dataSource !== 'live'}
                         className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition ml-1"
                         title="Refresh appointments"
                     >
@@ -865,7 +945,7 @@ const TodayBoard: React.FC = () => {
                 </div>
             ) : groupedAppointments.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center text-text-quaternary">
-                    <p className="text-sm italic">No sales appointments found for today.</p>
+                    <p className="text-sm italic">{dataSource === 'tentative' ? 'No tentative assignments for this day. Build the schedule in the planner.' : 'No sales appointments found for today.'}</p>
                 </div>
             ) : (
                 <div className="flex-1 min-h-0 flex overflow-hidden">
