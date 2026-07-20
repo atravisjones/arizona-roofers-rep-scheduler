@@ -743,14 +743,18 @@ export const useAppLogic = () => {
             setIsLoadingReps(true);
             log('Refreshing availability from Google Sheets...');
             const { reps: freshReps } = await fetchSheetData(selectedDate);
-            const freshMap = new Map(freshReps.map(r => [r.id, r]));
+            // Match by name, not id: rep ids are position-based (`rep-<index>-<name>`),
+            // so adding/removing a sheet row shifts ids and silently breaks id matching.
+            const freshByName = new Map(freshReps.map(r => [r.name.trim(), r]));
 
             recordChange(currentDailyStates => {
                 const dayState = currentDailyStates.get(dateKey);
                 if (!dayState) return currentDailyStates;
                 const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
+
+                // 1. Update reps already on the board (keeps their assigned jobs).
                 newState.reps = newState.reps.map(rep => {
-                    const fresh = freshMap.get(rep.id);
+                    const fresh = freshByName.get(rep.name.trim());
                     if (!fresh) return rep;
                     return {
                         ...rep,
@@ -762,6 +766,22 @@ export const useAppLogic = () => {
                         salesRank: fresh.salesRank,
                     };
                 });
+
+                // 2. Add reps newly present in the sheet (this is what the old code missed —
+                //    a rep added to the sheet only appeared after a hard page refresh).
+                const existingNames = new Set(newState.reps.map(r => r.name.trim()));
+                const addedReps = freshReps
+                    .filter(fresh => !existingNames.has(fresh.name.trim()))
+                    .map(fresh => ({
+                        ...fresh,
+                        schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
+                        isLocked: false,
+                        isOptimized: false,
+                    }));
+                if (addedReps.length > 0) {
+                    newState.reps = [...newState.reps, ...addedReps];
+                }
+
                 const newDailyStates = new Map(currentDailyStates);
                 newDailyStates.set(dateKey, newState);
                 return newDailyStates;
