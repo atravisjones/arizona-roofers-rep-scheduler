@@ -125,6 +125,16 @@ const buildTentativeAppointments = (dateKey: string, appState: AppState | undefi
     })) || []
 );
 
+const dateToKey = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const countAssignedJobs = (appState: AppState | undefined): number =>
+    appState?.reps.reduce((sum, rep) => sum + rep.schedule.reduce((slotSum, slot) => slotSum + slot.jobs.length, 0), 0) ?? 0;
+
 const addDays = (dateKey: string, delta: number) => {
     const d = new Date(`${dateKey}T12:00:00`);
     d.setDate(d.getDate() + delta);
@@ -418,9 +428,15 @@ const AppointmentDetailModal: React.FC<{
 };
 
 const TodayBoard: React.FC = () => {
-    const { appState, getAppStateForDay } = useAppContext();
+    const { appState, getAppStateForDay, selectedDate, activeDayKeys } = useAppContext();
     const [dateKey, setDateKey] = useState(() => todayKey());
     const [dataSource, setDataSource] = useState<'live' | 'tentative'>('live');
+    // Days (in the workspace) that actually have tentative assignments — used to
+    // auto-jump to the planned day on toggle and to guide the empty state.
+    const tentativeDaysWithPlans = useMemo(
+        () => (activeDayKeys || []).filter(k => countAssignedJobs(getAppStateForDay(k)) > 0),
+        [activeDayKeys, getAppStateForDay],
+    );
     const dayName = useMemo(() => getDayName(dateKey), [dateKey]);
     const relativeLabel = useMemo(() => {
         const t = todayKey();
@@ -868,7 +884,20 @@ const TodayBoard: React.FC = () => {
                         {(['live', 'tentative'] as const).map(value => (
                             <button
                                 key={value}
-                                onClick={() => setDataSource(value)}
+                                onClick={() => {
+                                    // Switching to Tentative on a day with no plan? Jump to the
+                                    // day being planned (planner's selected date, else first day
+                                    // that has assignments) so the plan is visible immediately.
+                                    if (value === 'tentative' && countAssignedJobs(getAppStateForDay(dateKey)) === 0) {
+                                        const planKey = dateToKey(selectedDate);
+                                        if (countAssignedJobs(getAppStateForDay(planKey)) > 0) {
+                                            goToDate(planKey);
+                                        } else if (tentativeDaysWithPlans.length > 0) {
+                                            goToDate(tentativeDaysWithPlans[0]);
+                                        }
+                                    }
+                                    setDataSource(value);
+                                }}
                                 className={`px-2 py-1 text-[11px] font-semibold transition ${
                                     dataSource === value
                                         ? 'bg-brand-primary text-brand-text-on-primary'
@@ -945,7 +974,11 @@ const TodayBoard: React.FC = () => {
                 </div>
             ) : groupedAppointments.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center text-text-quaternary">
-                    <p className="text-sm italic">{dataSource === 'tentative' ? 'No tentative assignments for this day. Build the schedule in the planner.' : 'No sales appointments found for today.'}</p>
+                    <p className="text-sm italic max-w-md text-center px-4">{dataSource === 'tentative'
+                        ? (tentativeDaysWithPlans.length > 0
+                            ? `No tentative assignments for ${dateKey}. Your plan has assignments for ${tentativeDaysWithPlans.join(', ')} — use the ◀ ▶ arrows to jump there.`
+                            : 'No tentative plan is loaded in this browser session. Build it in the planner (or Load from Cloud), then switch to Tentative.')
+                        : 'No sales appointments found for today.'}</p>
                 </div>
             ) : (
                 <div className="flex-1 min-h-0 flex overflow-hidden">
