@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DAY_VIEW_CELL_HEIGHT, DAY_VIEW_END_HOUR, DAY_VIEW_START_HOUR } from '../constants';
+import { COMPANY_ROSTER_DATA_RANGE, COMPANY_ROSTER_SHEET_TITLE, COMPANY_ROSTER_SPREADSHEET_ID, DAY_VIEW_CELL_HEIGHT, DAY_VIEW_END_HOUR, DAY_VIEW_START_HOUR } from '../constants';
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
@@ -322,6 +322,27 @@ const getRuntimeRepGroup = (rep: Rep): DepartmentGroup | null => {
     return DEPT_TO_GROUP[rawDepartment] || null;
 };
 
+// Pull department classification straight from the Company Team Roster (Active
+// Roster tab) so the board's rep/CSR grouping stays current without code edits.
+// Department column maps to a group via DEPT_TO_GROUP; 'Lead Center' = CSR.
+// Falls back to the STATIC_GROUPS lists above if the sheet is unreachable.
+const fetchRosterGroups = async (): Promise<Record<string, DepartmentGroup>> => {
+    const range = `'${COMPANY_ROSTER_SHEET_TITLE}'!${COMPANY_ROSTER_DATA_RANGE}`;
+    const url = `/api/sheets?spreadsheetId=${COMPANY_ROSTER_SPREADSHEET_ID}&range=${encodeURIComponent(range)}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Roster sheet returned ${response.status}`);
+    const data = await response.json();
+    const rows: string[][] = Array.isArray(data.values) ? data.values : [];
+    const groups: Record<string, DepartmentGroup> = {};
+    rows.forEach(row => {
+        const dept = String(row?.[0] || '').trim();   // col B: Department
+        const name = String(row?.[2] || '').trim();   // col D: Name
+        const group = DEPT_TO_GROUP[dept];
+        if (name && group) groups[normalizeRepName(name)] = group;
+    });
+    return groups;
+};
+
 const getDayName = (dateKey: string) => new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
 
 const getFeedCoordinates = (appointment: RoofrAppointment): Coordinates | null => {
@@ -512,6 +533,16 @@ const TodayBoard: React.FC = () => {
     const [showPool, setShowPool] = useState(false);
     const [poolCount, setPoolCount] = useState(0);
     const [poolAnchor, setPoolAnchor] = useState<PoolAnchor | null>(null);
+    const [rosterGroups, setRosterGroups] = useState<Record<string, DepartmentGroup>>({});
+
+    // Load the live department roster once so CSR/rep classification stays current.
+    useEffect(() => {
+        let cancelled = false;
+        fetchRosterGroups()
+            .then(groups => { if (!cancelled && Object.keys(groups).length) setRosterGroups(groups); })
+            .catch(err => console.warn('Failed to load company roster groups', err));
+        return () => { cancelled = true; };
+    }, []);
 
     const fetchAppointments = useCallback(async () => {
         setIsRefreshing(true);
@@ -636,12 +667,14 @@ const TodayBoard: React.FC = () => {
 
     const repGroupsByName = useMemo(() => {
         const byName = new Map<string, DepartmentGroup>(Object.entries(STATIC_NAME_GROUPS));
+        // Live roster overrides the static fallback so classification stays current.
+        Object.entries(rosterGroups).forEach(([name, group]) => byName.set(name, group));
         appState.reps.forEach(rep => {
             const runtimeGroup = getRuntimeRepGroup(rep);
             if (runtimeGroup) byName.set(normalizeRepName(rep.name), runtimeGroup);
         });
         return byName;
-    }, [appState.reps]);
+    }, [appState.reps, rosterGroups]);
 
     const getRepGroup = useCallback((repName: string): DepartmentGroup => (
         repGroupsByName.get(normalizeRepName(repName)) || 'Other'
@@ -683,16 +716,27 @@ const TodayBoard: React.FC = () => {
         return Array.from(byRep.entries())
             .map(([repName, group]) => {
                 const appointments = group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b));
+                const isCsr = group.departmentGroup === 'CSR';
                 return {
                     repName,
                     departmentGroup: group.departmentGroup,
-                    region: getRepColumnRegion(appointments),
+                    // CSR columns are pending-assignment bookings (still in the CSR's name),
+                    // not a rep working a region — keep them region-neutral so the Tucson/Up
+                    // North sections stay clean, and pull them to the far left instead.
+                    region: (isCsr ? 'PHX' : getRepColumnRegion(appointments)) as BoardRegion,
                     appointments,
                 };
             })
             .filter(group => group.appointments.length > 0)
-            // Phoenix (main) first, then Tucson, then Up North; alphabetical within each section.
-            .sort((a, b) => (REGION_ORDER[a.region] - REGION_ORDER[b.region]) || a.repName.localeCompare(b.repName));
+            // CSRs (unassigned bookings) far left, then Phoenix (main), Tucson, Up North;
+            // alphabetical within each section.
+            .sort((a, b) => {
+                const aCsr = a.departmentGroup === 'CSR' ? 0 : 1;
+                const bCsr = b.departmentGroup === 'CSR' ? 0 : 1;
+                return (aCsr - bCsr)
+                    || (REGION_ORDER[a.region] - REGION_ORDER[b.region])
+                    || a.repName.localeCompare(b.repName);
+            });
     }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource]);
 
     const boardAppointments = useMemo(() => (
@@ -1075,11 +1119,29 @@ const TodayBoard: React.FC = () => {
                                     const isFullyUnavailable = unavailableSlotIds.length >= 4;
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
-                                    const prevRegion = groupIndex > 0 ? groupedAppointments[groupIndex - 1].region : null;
-                                    const isSectionStart = group.region !== 'PHX' && group.region !== prevRegion;
+                                    const isCsrColumn = group.departmentGroup === 'CSR';
+                                    const prevGroup = groupIndex > 0 ? groupedAppointments[groupIndex - 1] : null;
+                                    const isCsrSectionStart = isCsrColumn && prevGroup?.departmentGroup !== 'CSR';
+                                    const prevRegion = prevGroup ? prevGroup.region : null;
+                                    // CSR columns are region-neutral, so region dividers only fire on rep columns.
+                                    const isSectionStart = !isCsrColumn && group.region !== 'PHX' && group.region !== prevRegion;
 
                                     return (
                                         <React.Fragment key={group.repName}>
+                                            {isCsrSectionStart && (
+                                                <div
+                                                    className="flex items-center justify-center flex-shrink-0 border-r border-border-primary"
+                                                    style={{ width: 26, backgroundColor: 'rgba(239, 68, 68, 0.10)' }}
+                                                    title="Jobs still owned by a CSR — pending assignment to a rep"
+                                                >
+                                                    <span
+                                                        className="text-[10px] font-extrabold uppercase tracking-widest whitespace-nowrap"
+                                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: 'rgb(220, 38, 38)' }}
+                                                    >
+                                                        CSR
+                                                    </span>
+                                                </div>
+                                            )}
                                             {isSectionStart && (
                                                 <div
                                                     className="flex items-center justify-center flex-shrink-0 border-r border-border-primary"
@@ -1095,8 +1157,8 @@ const TodayBoard: React.FC = () => {
                                                 </div>
                                             )}
                                         <div
-                                            className={`flex flex-col border-r border-border-primary ${group.region === 'PHX' ? 'bg-bg-primary' : ''} min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
-                                            style={{ flex: '1 1 0', backgroundColor: group.region !== 'PHX' ? REGION_TINT[group.region] : undefined }}
+                                            className={`flex flex-col border-r border-border-primary ${!isCsrColumn && group.region === 'PHX' ? 'bg-bg-primary' : ''} min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
+                                            style={{ flex: '1 1 0', backgroundColor: isCsrColumn ? 'rgba(239, 68, 68, 0.05)' : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
                                         >
                                             <div
                                                 className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
@@ -1108,6 +1170,11 @@ const TodayBoard: React.FC = () => {
                                                         {isFullyUnavailable && (
                                                             <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
                                                                 Off
+                                                            </span>
+                                                        )}
+                                                        {isCsrColumn && (
+                                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-tag-red-bg text-tag-red-text border border-tag-red-border">
+                                                                CSR
                                                             </span>
                                                         )}
                                                         {group.region !== 'PHX' && (

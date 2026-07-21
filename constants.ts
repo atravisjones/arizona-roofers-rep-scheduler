@@ -29,6 +29,13 @@ export const APT_OUTCOME_SPREADSHEET_ID = "1TtweJEEhVEO_DAgmvTY7PcaPQdmbxlOtPfff
 export const APT_OUTCOME_SHEET_TITLE = 'Appointment Summary';
 export const APT_OUTCOME_DATA_RANGE = 'B68:N100'; // Row 68 has headers, B=Sales Rep, M=30 days Close rate %
 
+// Company Team Roster - live department roster (Active Roster tab). The Today Board
+// reads this so rep/CSR classification stays current without editing code.
+// Row 7 = header; B=Department, C=Role/Title, D=Name. Lead Center dept = CSRs.
+export const COMPANY_ROSTER_SPREADSHEET_ID = "1XFJHD0IVZ8sJrQ7H2CrqU26a6n-FulPM8ABKc1hrh9o";
+export const COMPANY_ROSTER_SHEET_TITLE = 'Active Roster';
+export const COMPANY_ROSTER_DATA_RANGE = 'B7:D200';
+
 // If fetching data fails, use mock data to allow the app to run.
 export const USE_MOCK_DATA_ON_FAILURE = true;
 
