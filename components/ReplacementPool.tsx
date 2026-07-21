@@ -157,6 +157,9 @@ const ReplacementPool: React.FC<{
     const [showRemoved, setShowRemoved] = useState(false);
     const [busyJobId, setBusyJobId] = useState<string | null>(null);
     const [csr, setCsr] = useState(() => localStorage.getItem(CSR_STORAGE_KEY) || '');
+    // Anchored search controls: how many nearby to show, and a quality (##) filter.
+    const [nearbyCount, setNearbyCount] = useState(5);
+    const [qualityFilter, setQualityFilter] = useState<'all' | '3' | '2' | '1'>('all');
     const noticeTimerRef = useRef<number | null>(null);
 
     const setCsrPersisted = useCallback((name: string) => {
@@ -262,18 +265,22 @@ const ReplacementPool: React.FC<{
                 ? [...list].sort((a, b) => (distanceByJobId[a.jobId] ?? Infinity) - (distanceByJobId[b.jobId] ?? Infinity))
                 : list
         );
-        const available = byProximity(entries.filter(e => e.status === 'open' || e.status === 'claimed'));
+        const passesQuality = (q: number) => (
+            qualityFilter === 'all' ? true : qualityFilter === '3' ? q >= 3 : q === Number(qualityFilter)
+        );
+        const available = byProximity(entries.filter(e => (e.status === 'open' || e.status === 'claimed') && passesQuality(e.quality)));
         // Anchored: only appointments within MAX_ANCHOR_MILES (a distance we can measure),
-        // then the 5 closest. Entries without coordinates can't be confirmed in-range → dropped.
+        // then the N closest (nearbyCount — bump to 10/15 to reach further out in range).
+        // Entries without coordinates can't be confirmed in-range → dropped.
         const availableWithinRange = anchor
-            ? available.filter(e => { const d = distanceByJobId[e.jobId]; return d != null && d <= MAX_ANCHOR_MILES; }).slice(0, 5)
+            ? available.filter(e => { const d = distanceByJobId[e.jobId]; return d != null && d <= MAX_ANCHOR_MILES; }).slice(0, nearbyCount)
             : available;
         return {
             available: availableWithinRange,
-            cooldown: byProximity(entries.filter(e => e.status === 'cooldown')),
+            cooldown: byProximity(entries.filter(e => e.status === 'cooldown' && passesQuality(e.quality))),
             removed: entries.filter(e => e.status === 'unqualified' || e.status === 'moved' || e.status === 'exhausted'),
         };
-    }, [anchor, distanceByJobId, entries]);
+    }, [anchor, distanceByJobId, entries, nearbyCount, qualityFilter]);
 
     if (!open) return null;
 
@@ -404,9 +411,46 @@ const ReplacementPool: React.FC<{
                 </select>
             </div>
 
+            <div className="flex-shrink-0 px-3 py-1.5 border-b border-border-secondary flex items-center gap-x-3 gap-y-1 flex-wrap">
+                {anchor && (
+                    <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-semibold text-text-tertiary uppercase">Show</span>
+                        {[5, 10, 15].map(n => (
+                            <button
+                                key={n}
+                                onClick={() => setNearbyCount(n)}
+                                className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+                                    nearbyCount === n
+                                        ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                        : 'bg-bg-secondary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'
+                                }`}
+                            >
+                                {n}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-semibold text-text-tertiary uppercase">Quality</span>
+                    {([['all', 'All'], ['3', '3+'], ['2', '2'], ['1', '1']] as const).map(([value, label]) => (
+                        <button
+                            key={value}
+                            onClick={() => setQualityFilter(value)}
+                            className={`px-1.5 py-0.5 text-[10px] font-bold rounded border transition ${
+                                qualityFilter === value
+                                    ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                    : 'bg-bg-secondary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
             {anchor && (
                 <div className="flex-shrink-0 mx-3 mt-2 px-2 py-1.5 text-[11px] rounded border border-brand-primary/50 bg-brand-bg-light text-brand-primary flex items-center gap-2">
-                    <span className="truncate font-semibold">📍 Within {MAX_ANCHOR_MILES} mi of {anchor.label}</span>
+                    <span className="truncate font-semibold">📍 {nearbyCount} closest within {MAX_ANCHOR_MILES} mi of {anchor.label}</span>
                     <button
                         onClick={onClearAnchor}
                         className="ml-auto flex-shrink-0 font-bold hover:opacity-70 transition"
@@ -435,7 +479,9 @@ const ReplacementPool: React.FC<{
                     <>
                         {sections.available.length === 0 && (
                             <p className="text-xs italic text-text-quaternary py-4 text-center">
-                                {anchor ? `No quality appointments within ${MAX_ANCHOR_MILES} miles.` : 'No quality appointments available right now.'}
+                                {anchor
+                                    ? `No ${qualityFilter === 'all' ? '' : qualityFilter === '3' ? '3+ ' : `${qualityFilter}# `}appointments within ${MAX_ANCHOR_MILES} miles.`
+                                    : qualityFilter === 'all' ? 'No quality appointments available right now.' : 'No appointments match this quality filter.'}
                             </p>
                         )}
                         {sections.available.map(renderEntry)}
