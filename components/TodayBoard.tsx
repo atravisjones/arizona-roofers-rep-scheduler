@@ -377,11 +377,17 @@ const getRuntimeRepGroup = (rep: Rep): DepartmentGroup | null => {
     return DEPT_TO_GROUP[rawDepartment] || null;
 };
 
+// Roles that shouldn't be offered gap-fill even when their department is a sales dept
+// (e.g. "Retail Sales Manager" — a manager who occasionally runs appts but isn't a
+// bookable rep). Detected by title so it generalizes; no hardcoded names.
+const MANAGER_ROLE_RE = /\b(manager|owner|ceo|cfo|coo|president|director|vp)\b/i;
+
 // Pull department classification straight from the Company Team Roster (Active
 // Roster tab) so the board's rep/CSR grouping stays current without code edits.
-// Department column maps to a group via DEPT_TO_GROUP; 'Lead Center' = CSR.
+// Department column maps to a group via DEPT_TO_GROUP; 'Lead Center' = CSR. Also
+// collects manager/owner names (by role title) to exclude from gap-fill.
 // Falls back to the STATIC_GROUPS lists above if the sheet is unreachable.
-const fetchRosterGroups = async (): Promise<Record<string, DepartmentGroup>> => {
+const fetchRosterInfo = async (): Promise<{ groups: Record<string, DepartmentGroup>; managers: string[] }> => {
     const range = `'${COMPANY_ROSTER_SHEET_TITLE}'!${COMPANY_ROSTER_DATA_RANGE}`;
     const url = `/api/sheets?spreadsheetId=${COMPANY_ROSTER_SPREADSHEET_ID}&range=${encodeURIComponent(range)}`;
     const response = await fetch(url);
@@ -389,13 +395,16 @@ const fetchRosterGroups = async (): Promise<Record<string, DepartmentGroup>> => 
     const data = await response.json();
     const rows: string[][] = Array.isArray(data.values) ? data.values : [];
     const groups: Record<string, DepartmentGroup> = {};
+    const managers: string[] = [];
     rows.forEach(row => {
         const dept = String(row?.[0] || '').trim();   // col B: Department
+        const role = String(row?.[1] || '').trim();   // col C: Role / Title
         const name = String(row?.[2] || '').trim();   // col D: Name
         const group = DEPT_TO_GROUP[dept];
         if (name && group) groups[normalizeRepName(name)] = group;
+        if (name && MANAGER_ROLE_RE.test(role)) managers.push(normalizeRepName(name));
     });
-    return groups;
+    return { groups, managers };
 };
 
 const getDayName = (dateKey: string) => new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' });
@@ -589,13 +598,19 @@ const TodayBoard: React.FC = () => {
     const [poolCount, setPoolCount] = useState(0);
     const [poolAnchor, setPoolAnchor] = useState<PoolAnchor | null>(null);
     const [rosterGroups, setRosterGroups] = useState<Record<string, DepartmentGroup>>({});
+    const [rosterManagers, setRosterManagers] = useState<Set<string>>(new Set());
 
-    // Load the live department roster once so CSR/rep classification stays current.
+    // Load the live department roster once so CSR/rep classification + manager
+    // (non-bookable) detection stay current without code edits.
     useEffect(() => {
         let cancelled = false;
-        fetchRosterGroups()
-            .then(groups => { if (!cancelled && Object.keys(groups).length) setRosterGroups(groups); })
-            .catch(err => console.warn('Failed to load company roster groups', err));
+        fetchRosterInfo()
+            .then(({ groups, managers }) => {
+                if (cancelled) return;
+                if (Object.keys(groups).length) setRosterGroups(groups);
+                if (managers.length) setRosterManagers(new Set(managers));
+            })
+            .catch(err => console.warn('Failed to load company roster info', err));
         return () => { cancelled = true; };
     }, []);
 
@@ -1289,11 +1304,12 @@ const TodayBoard: React.FC = () => {
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
                                     const leftSection = group.leftSection;
                                     const isCsrColumn = group.departmentGroup === 'CSR';
-                                    // Open booking windows → clickable green OPEN blocks. Only for actual sales
-                                    // reps we can confirm are bookable: not CSR/Management, and matched to the
-                                    // availability sheet (matchedRep) so we honor real availability — never offer
-                                    // a window the rep is off for, or one whose time has already passed.
-                                    const openWindows = (leftSection || !matchedRep) ? [] : FILL_WINDOWS.filter(win => (
+                                    const isRosterManager = rosterManagers.has(normalizeRepName(group.repName));
+                                    // Open booking windows → clickable green OPEN blocks. Only for actual bookable
+                                    // sales reps: not CSR/Management, not a manager/owner by role, and matched to
+                                    // the availability sheet (matchedRep) so we honor real availability — never
+                                    // offer a window the rep is off for, or one whose time has already passed.
+                                    const openWindows = (leftSection || isRosterManager || !matchedRep) ? [] : FILL_WINDOWS.filter(win => (
                                         win.endMin > nowCutoffMinutes &&
                                         !unavailableSlotIds.includes(win.id) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
@@ -1358,6 +1374,11 @@ const TodayBoard: React.FC = () => {
                                                         {leftSection === 'MGMT' && (
                                                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 border border-slate-400">
                                                                 MGMT
+                                                            </span>
+                                                        )}
+                                                        {!leftSection && isRosterManager && (
+                                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 border border-slate-400" title="Manager — not offered for gap-fill">
+                                                                MGR
                                                             </span>
                                                         )}
                                                         {group.region !== 'PHX' && (
