@@ -869,7 +869,7 @@ const TodayBoard: React.FC = () => {
             byRep.set(repName, group);
         });
 
-        return Array.from(byRep.entries())
+        const feedGroups = Array.from(byRep.entries())
             .map(([repName, group]) => {
                 const appointments = group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b));
                 const leftSection = leftSectionOf(group.departmentGroup);
@@ -884,7 +884,35 @@ const TodayBoard: React.FC = () => {
                     appointments,
                 };
             })
-            .filter(group => group.appointments.length > 0)
+            .filter(group => group.appointments.length > 0);
+
+        // Live board: also surface available sales reps who have NO bookings today
+        // (e.g. Orlando) as empty columns, so their open slots show and can be
+        // reserved/filled. Skip anyone already a column (nickname-aware), off all day,
+        // or not a bookable rep (CSR/Management/D2D/manager-by-role).
+        const present = new Set<string>();
+        feedGroups.forEach(g => { present.add(normalizeRepName(g.repName)); present.add(normalizeName(g.repName)); });
+        const emptyRepGroups = dataSource === 'live'
+            ? appState.reps
+                .filter(rep => {
+                    const norm = normalizeRepName(rep.name);
+                    if (present.has(norm) || present.has(normalizeName(rep.name))) return false;
+                    const grp = getRepGroup(rep.name);
+                    if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
+                    if (rosterManagers.has(norm)) return false;
+                    if (getEffectiveUnavailableSlots(rep, dayName).length >= FILL_WINDOWS.length) return false;
+                    return true;
+                })
+                .map(rep => ({
+                    repName: rep.name,
+                    departmentGroup: getRepGroup(rep.name),
+                    leftSection: null as LeftSection | null,
+                    region: (rep.region === 'NORTH' || rep.region === 'SOUTH' ? rep.region : 'PHX') as BoardRegion,
+                    appointments: [] as BoardAppointment[],
+                }))
+            : [];
+
+        return [...feedGroups, ...emptyRepGroups]
             // Left rail (CSR, then Management), then Phoenix (main), Tucson, Up North;
             // alphabetical within each section.
             .sort((a, b) => {
@@ -894,7 +922,7 @@ const TodayBoard: React.FC = () => {
                     || (REGION_ORDER[a.region] - REGION_ORDER[b.region])
                     || a.repName.localeCompare(b.repName);
             });
-    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource]);
+    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers]);
 
     const boardAppointments = useMemo(() => (
         groupedAppointments.flatMap(group => (
