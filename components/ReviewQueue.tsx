@@ -64,7 +64,6 @@ const getRiskReasons = (row: ReviewRow) => {
     if (!row.address?.trim()) reasons.push('no address');
     if (!row.phone?.trim()) reasons.push('no phone');
     if (!row.lead_source?.trim()) reasons.push('no lead source');
-    if (!row.tags?.trim()) reasons.push('no tags');
     const latitude = Number.parseFloat(String(row.latitude));
     const longitude = Number.parseFloat(String(row.longitude));
     if (Number.isFinite(latitude) && (latitude < 31.2 || latitude > 37.1 || (Number.isFinite(longitude) && (longitude < -115 || longitude > -108.9)))) reasons.push('out-of-AZ geo');
