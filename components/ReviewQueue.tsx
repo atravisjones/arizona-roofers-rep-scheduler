@@ -1,0 +1,224 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ExternalLinkIcon, LoadingIcon, RefreshIcon } from './icons';
+import { supabase } from '../services/supabaseClient';
+
+const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
+const POLL_MS = 60000;
+const FLAG_REASONS = ['Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
+
+type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
+type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
+
+interface ReviewRow {
+    job_id: string;
+    customer: string | null;
+    name: string | null;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    latitude: string | number | null;
+    longitude: string | number | null;
+    lead_source: string | null;
+    workflow: string | null;
+    tags: string | null;
+    appt_booked_at: string | null;
+    appt_booker: string | null;
+    link: string | null;
+    value: number | null;
+    roof_age: string | number | null;
+    prop_sqft: string | number | null;
+    year_built: string | number | null;
+    stories: string | number | null;
+    property_type: string | null;
+    review_status: ReviewStatus;
+    flag_reason: string | null;
+    review_note: string | null;
+    reviewed_by: string | null;
+    reviewed_at: string | null;
+}
+
+const formatPhoenixDate = (value: string | null) => {
+    if (!value) return 'Unknown time';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('en-US', {
+        timeZone: 'America/Phoenix', weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+};
+
+const formatRelativeTime = (value: string | null) => {
+    if (!value) return '';
+    const delta = new Date(value).getTime() - Date.now();
+    if (Number.isNaN(delta)) return '';
+    const minutes = Math.round(Math.abs(delta) / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ${delta < 0 ? 'ago' : 'from now'}`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 48) return `${hours}h ${delta < 0 ? 'ago' : 'from now'}`;
+    const days = Math.round(hours / 24);
+    return `${days}d ${delta < 0 ? 'ago' : 'from now'}`;
+};
+
+const getRiskReasons = (row: ReviewRow) => {
+    const reasons: string[] = [];
+    if (!row.address?.trim()) reasons.push('no address');
+    if (!row.phone?.trim()) reasons.push('no phone');
+    if (!row.lead_source?.trim()) reasons.push('no lead source');
+    if (!row.tags?.trim()) reasons.push('no tags');
+    const latitude = Number.parseFloat(String(row.latitude));
+    const longitude = Number.parseFloat(String(row.longitude));
+    if (Number.isFinite(latitude) && (latitude < 31.2 || latitude > 37.1 || (Number.isFinite(longitude) && (longitude < -115 || longitude > -108.9)))) reasons.push('out-of-AZ geo');
+    return reasons;
+};
+
+const LinkPill: React.FC<{ href: string; label: string }> = ({ href, label }) => (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">
+        <ExternalLinkIcon className="h-3 w-3" />{label}
+    </a>
+);
+
+const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onCountChange }) => {
+    const [rows, setRows] = useState<ReviewRow[]>([]);
+    const [tab, setTab] = useState<ReviewTab>('needs_review');
+    const [reviewer, setReviewer] = useState(() => localStorage.getItem(REVIEWER_STORAGE_KEY) || '');
+    const [isLoading, setIsLoading] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
+    const [busyJobId, setBusyJobId] = useState<string | null>(null);
+    const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
+    const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
+    const [flagNote, setFlagNote] = useState('');
+    const priorNeedsIdsRef = useRef<Set<string> | null>(null);
+    const noticeTimerRef = useRef<number | null>(null);
+
+    const flashNotice = useCallback((message: string) => {
+        setNotice(message);
+        if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = window.setTimeout(() => setNotice(null), 6000);
+    }, []);
+
+    const fetchQueue = useCallback(async (checkForNewBooking = false) => {
+        setIsRefreshing(true);
+        try {
+            const { data, error: rpcError } = await supabase.rpc('get_review_queue', { p_days: 7 });
+            if (rpcError) throw new Error(rpcError.message);
+            const next = (Array.isArray(data) ? data : []) as ReviewRow[];
+            const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
+            if (checkForNewBooking && priorNeedsIdsRef.current) {
+                const hasNewBooking = [...nextNeedsIds].some(jobId => !priorNeedsIdsRef.current!.has(jobId));
+                if (hasNewBooking) {
+                    try {
+                        const context = new AudioContext();
+                        const oscillator = context.createOscillator();
+                        const gain = context.createGain();
+                        oscillator.frequency.value = 880;
+                        gain.gain.setValueAtTime(0.08, context.currentTime);
+                        oscillator.connect(gain).connect(context.destination);
+                        oscillator.start();
+                        oscillator.stop(context.currentTime + 0.15);
+                        oscillator.addEventListener('ended', () => void context.close());
+                    } catch { /* Audio is optional. */ }
+                }
+            }
+            priorNeedsIdsRef.current = nextNeedsIds;
+            setRows(next);
+            setError(null);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to load review queue');
+        } finally {
+            setIsLoading(false);
+            setIsRefreshing(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchQueue();
+        const intervalId = window.setInterval(() => { if (!document.hidden) fetchQueue(true); }, POLL_MS);
+        return () => {
+            window.clearInterval(intervalId);
+            if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+        };
+    }, [fetchQueue]);
+
+    const needsReviewCount = useMemo(() => rows.filter(row => row.review_status === 'needs_review').length, [rows]);
+    useEffect(() => { onCountChange(needsReviewCount); }, [needsReviewCount, onCountChange]);
+
+    const visibleRows = useMemo(() => rows
+        .filter(row => tab === 'all' || row.review_status === tab)
+        .sort((a, b) => {
+            if (tab === 'needs_review') {
+                const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
+                if (riskDifference) return riskDifference;
+            }
+            return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
+        }), [rows, tab]);
+
+    const setReviewerPersisted = (name: string) => {
+        setReviewer(name);
+        localStorage.setItem(REVIEWER_STORAGE_KEY, name);
+    };
+
+    const runReviewAction = async (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
+        setBusyJobId(row.job_id);
+        try {
+            const { data, error: rpcError } = await supabase.rpc('set_job_review', {
+                p_job_id: row.job_id, p_status: status, p_flag_reason: reason, p_note: note, p_reviewer: reviewer.trim() || null,
+            });
+            if (rpcError) throw new Error(rpcError.message);
+            if (!(data as { ok?: boolean } | null)?.ok) throw new Error('Review update was not accepted');
+            setFlaggingJobId(null);
+            setFlagNote('');
+        } catch (err) {
+            flashNotice(err instanceof Error ? err.message : 'Review update failed');
+        } finally {
+            setBusyJobId(null);
+            fetchQueue();
+        }
+    };
+
+    const tabs: Array<{ key: ReviewTab; label: string; count?: number }> = [
+        { key: 'needs_review', label: 'Needs Review', count: needsReviewCount }, { key: 'reviewed', label: 'Reviewed' }, { key: 'flagged', label: 'Flagged' }, { key: 'all', label: 'All' },
+    ];
+
+    return (
+        <main className="h-full min-h-0 flex flex-col rounded-lg border border-border-primary bg-bg-primary shadow-lg overflow-hidden">
+            <header className="flex-shrink-0 px-4 py-3 bg-bg-secondary border-b border-border-primary space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div><h1 className="text-base font-bold text-text-primary">Review Queue</h1><p className="text-[11px] text-text-tertiary">Bookings from the last 7 days</p></div>
+                    <div className="flex items-center gap-2">
+                        <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
+                        <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="w-32 px-2 py-1 text-xs rounded-md border border-border-primary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                        <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="p-1.5 rounded text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
+                    </div>
+                </div>
+                <nav className="flex flex-wrap gap-1" aria-label="Review status">
+                    {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
+                </nav>
+            </header>
+            {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
+            {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
+            <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
+                {isLoading ? <div className="text-sm text-text-tertiary">Loading review queue…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">No bookings in the last 7 days.</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'No bookings in this view.'}</div> : <div className="grid gap-3 xl:grid-cols-2">{visibleRows.map(row => {
+                    const risks = getRiskReasons(row);
+                    const isRisky = row.review_status === 'needs_review' && risks.length > 0;
+                    const isBusy = busyJobId === row.job_id;
+                    const phoneDigits = (row.phone || '').replace(/\D/g, '').slice(-10);
+                    const propertyFields = [['Roof age', row.roof_age], ['Sq ft', row.prop_sqft], ['Built', row.year_built], ['Stories', row.stories], ['Type', row.property_type]].filter(([, value]) => value != null && String(value).trim() !== '');
+                    return <article key={row.job_id} className={`rounded-md border border-border-primary bg-bg-primary p-3 space-y-2 ${isRisky ? 'border-l-4 border-l-tag-amber-border' : ''}`}>
+                        <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h2 className="text-sm font-bold text-text-primary truncate">{row.customer || row.name || 'Unknown customer'}</h2><div className="text-[10px] text-text-tertiary"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)} Phoenix</div></div>{isRisky && <span className="flex-shrink-0 px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
+                        <div className="text-[11px] text-text-secondary">Booked by <span className="font-semibold">{row.appt_booker || 'Unknown'}</span></div>
+                        <div className="flex flex-wrap gap-1 text-[10px]">{row.lead_source && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.lead_source}</span>}{row.workflow && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.workflow}</span>}{(row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary text-text-tertiary">{tag}</span>)}</div>
+                        {row.address && <div className="text-[11px] text-text-secondary">{row.address}</div>}{row.phone && <div className="text-[11px] text-text-secondary">{row.phone}</div>}{row.value != null && <div className="text-[11px] font-semibold text-text-primary">Value: ${row.value.toLocaleString()}</div>}
+                        {propertyFields.length > 0 && <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-text-tertiary">{propertyFields.map(([label, value]) => <span key={label}>{label}: <span className="font-semibold text-text-secondary">{String(value)}</span></span>)}</div>}
+                        <div className="flex flex-wrap gap-1">{row.link && <LinkPill href={row.link} label="Roofr" />}{phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}{row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}</div>
+                        {row.review_status === 'needs_review' ? <div className="flex flex-wrap gap-1"><button onClick={() => runReviewAction(row, 'reviewed')} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text disabled:opacity-50">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center gap-2 text-[10px] text-text-tertiary"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
+                        {flaggingJobId === row.job_id && <div className="flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{FLAG_REASONS.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => runReviewAction(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
+                    </article>;
+                })}</div>}
+            </section>
+        </main>
+    );
+};
+
+export default ReviewQueue;

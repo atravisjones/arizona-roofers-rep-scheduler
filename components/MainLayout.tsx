@@ -4,6 +4,7 @@ import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, 
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import TodayBoard from './TodayBoard';
+import ReviewQueue from './ReviewQueue';
 import JobsPanel from './JobsPanel';
 import RouteMapPanel from './RoutePanel';
 import DebugLogModal from './DebugLog';
@@ -54,6 +55,7 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
 };
 
 const TODAY_BOARD_PATH = '/today-board';
+const REVIEW_PATH = '/review';
 
 const MainLayout: React.FC = () => {
   const context = useAppContext();
@@ -121,6 +123,10 @@ const MainLayout: React.FC = () => {
   const [showTodayBoard, setShowTodayBoard] = useState(
     () => typeof window !== 'undefined' && window.location.pathname === TODAY_BOARD_PATH
   );
+  const [showReviewQueue, setShowReviewQueue] = useState(
+    () => typeof window !== 'undefined' && window.location.pathname === REVIEW_PATH
+  );
+  const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -165,12 +171,26 @@ const MainLayout: React.FC = () => {
       const next = !prev;
       const url = next ? TODAY_BOARD_PATH : '/';
       if (window.location.pathname !== url) window.history.pushState({}, '', url);
+      if (next) setShowReviewQueue(false);
+      return next;
+    });
+  }, []);
+
+  const toggleReviewQueue = useCallback(() => {
+    setShowReviewQueue(prev => {
+      const next = !prev;
+      const url = next ? REVIEW_PATH : '/';
+      if (window.location.pathname !== url) window.history.pushState({}, '', url);
+      if (next) setShowTodayBoard(false);
       return next;
     });
   }, []);
 
   useEffect(() => {
-    const syncFromUrl = () => setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
+    const syncFromUrl = () => {
+      setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
+      setShowReviewQueue(window.location.pathname === REVIEW_PATH);
+    };
     window.addEventListener('popstate', syncFromUrl);
     return () => window.removeEventListener('popstate', syncFromUrl);
   }, []);
@@ -878,6 +898,18 @@ const MainLayout: React.FC = () => {
               <CalendarIcon className="h-3.5 w-3.5" />
               <span>{showTodayBoard ? 'Back to Planner' : 'Today Board'}</span>
             </button>
+
+            <button
+              onClick={toggleReviewQueue}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue
+                ? 'bg-brand-primary text-brand-text-on-primary'
+                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                }`}
+              title="Booking review queue"
+            >
+              <span>Review</span>
+              {reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+            </button>
           </div>
 
           {/* Right: Date Navigation */}
@@ -888,7 +920,11 @@ const MainLayout: React.FC = () => {
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
-      {showTodayBoard ? (
+      {showReviewQueue ? (
+        <div className="flex-grow min-h-0 p-4 overflow-hidden">
+          <ReviewQueue onCountChange={setReviewNeedsCount} />
+        </div>
+      ) : showTodayBoard ? (
         <div className="flex-grow min-h-0 p-4 overflow-hidden">
           <TodayBoard />
         </div>
