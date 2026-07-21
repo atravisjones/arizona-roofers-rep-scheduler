@@ -5,9 +5,17 @@ import { supabase } from '../services/supabaseClient';
 const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
 const POLL_MS = 60000;
 const FLAG_REASONS = ['One legger', 'No legger', 'Roof age unknown', 'Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
+// Flag reasons for the Outcomes view (QA of unqualified/lost dispositions).
+const OUTCOME_FLAG_REASONS = ['Should be qualified', 'Wrongly unqualified', 'No-show mislabeled', 'Weak disposition', 'Rep gave up early', 'Needs follow-up', 'Bad reason given', 'Other'] as const;
 
 type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
+type ReviewMode = 'bookings' | 'outcomes';
+type OutcomeFilter = 'unqualified' | 'lost' | 'all';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const daysAgoStr = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toDateStr(d); };
 
 interface ReviewRow {
     job_id: string;
@@ -30,6 +38,9 @@ interface ReviewRow {
     year_built: string | number | null;
     stories: string | number | null;
     property_type: string | null;
+    job_owner?: string | null;   // outcomes: the rep who ran/dispositioned it
+    appt_date?: string | null;   // outcomes: the appointment date (YYYY-MM-DD)
+    outcome?: string | null;     // outcomes: stage_category (unqualified|lost)
     review_status: ReviewStatus;
     flag_reason: string | null;
     review_note: string | null;
@@ -101,6 +112,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
     const [windowDays, setWindowDays] = useState(7);
     const [bookerFilter, setBookerFilter] = useState('');
+    const [mode, setMode] = useState<ReviewMode>('bookings');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('unqualified');
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -116,13 +131,20 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const fetchQueue = useCallback(async (checkForNewBooking = false) => {
         setIsRefreshing(true);
         try {
-            const { data, error: rpcError } = await supabase.rpc('get_review_queue', { p_days: windowDays });
-            if (rpcError) throw new Error(rpcError.message);
-            const next = (Array.isArray(data) ? data : []) as ReviewRow[];
+            const resp = mode === 'outcomes'
+                ? await supabase.rpc('get_outcome_review', {
+                    p_start: dateFrom || null, p_end: dateTo || null,
+                    p_outcome: outcomeFilter === 'all' ? null : outcomeFilter,
+                })
+                : await supabase.rpc('get_review_queue', (dateFrom && dateTo)
+                    ? { p_days: windowDays, p_start: dateFrom, p_end: dateTo }
+                    : { p_days: windowDays });
+            if (resp.error) throw new Error(resp.error.message);
+            const next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
             if (checkForNewBooking && priorNeedsIdsRef.current) {
-                const hasNewBooking = [...nextNeedsIds].some(jobId => !priorNeedsIdsRef.current!.has(jobId));
-                if (hasNewBooking) {
+                const hasNew = [...nextNeedsIds].some(jobId => !priorNeedsIdsRef.current!.has(jobId));
+                if (hasNew) {
                     try {
                         const context = new AudioContext();
                         const oscillator = context.createOscillator();
@@ -139,15 +161,19 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             priorNeedsIdsRef.current = nextNeedsIds;
             setRows(next);
             setError(null);
-            const { data: statsData } = await supabase.rpc('get_review_stats');
-            if (statsData) setStats(statsData as ReviewStats);
+            if (mode === 'bookings') {
+                const { data: statsData } = await supabase.rpc('get_review_stats');
+                if (statsData) setStats(statsData as ReviewStats);
+            } else {
+                setStats(null);
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load review queue');
         } finally {
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [windowDays]);
+    }, [mode, windowDays, dateFrom, dateTo, outcomeFilter]);
 
     useEffect(() => {
         fetchQueue();
@@ -161,17 +187,29 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const needsReviewCount = useMemo(() => rows.filter(row => row.review_status === 'needs_review').length, [rows]);
     useEffect(() => { onCountChange(needsReviewCount); }, [needsReviewCount, onCountChange]);
 
-    const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row.appt_booker || '').trim()).filter(Boolean))).sort(), [rows]);
+    // Bookings filter by the CSR who booked; Outcomes by the rep who dispositioned it.
+    const filterKey: 'appt_booker' | 'job_owner' = mode === 'outcomes' ? 'job_owner' : 'appt_booker';
+    const filterLabel = mode === 'outcomes' ? 'Rep' : 'CSR';
+    const activeFlagReasons: readonly string[] = mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS;
+
+    // Reset view state when switching between Bookings and Outcomes.
+    useEffect(() => {
+        setTab('needs_review'); setBookerFilter(''); setFlaggingJobId(null); setActiveJobId(null);
+        setUndoStack([]); setRedoStack([]);
+        setFlagReason((mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS)[0]);
+    }, [mode]);
+
+    const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row[filterKey] || '').toString().trim()).filter(Boolean))).sort(), [rows, filterKey]);
 
     const visibleRows = useMemo(() => rows
-        .filter(row => (tab === 'all' || row.review_status === tab) && (!bookerFilter || (row.appt_booker || '').trim() === bookerFilter))
+        .filter(row => (tab === 'all' || row.review_status === tab) && (!bookerFilter || (row[filterKey] || '').toString().trim() === bookerFilter))
         .sort((a, b) => {
-            if (tab === 'needs_review') {
+            if (mode === 'bookings' && tab === 'needs_review') {
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
                 if (riskDifference) return riskDifference;
             }
             return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
-        }), [rows, tab, bookerFilter]);
+        }), [rows, tab, bookerFilter, filterKey, mode]);
 
     const sortedReps = useMemo(() => stats ? [...stats.by_rep].sort((a, b) => (Number(b[statsSort]) - Number(a[statsSort])) || a.rep.localeCompare(b.rep)) : [], [stats, statsSort]);
 
@@ -183,7 +221,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const runReviewAction = async (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
         setBusyJobId(row.job_id);
         try {
-            const { data, error: rpcError } = await supabase.rpc('set_job_review', {
+            const { data, error: rpcError } = await supabase.rpc(mode === 'outcomes' ? 'set_outcome_review' : 'set_job_review', {
                 p_job_id: row.job_id, p_status: status, p_flag_reason: reason, p_note: note, p_reviewer: reviewer.trim() || null,
             });
             if (rpcError) throw new Error(rpcError.message);
@@ -219,14 +257,14 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
 
     const applySnapshot = useCallback(async (jobId: string, snap: ReviewSnapshot) => {
         try {
-            const { error: rpcError } = await supabase.rpc('set_job_review', { p_job_id: jobId, p_status: snap.status, p_flag_reason: snap.reason, p_note: snap.note, p_reviewer: snap.reviewer });
+            const { error: rpcError } = await supabase.rpc(mode === 'outcomes' ? 'set_outcome_review' : 'set_job_review', { p_job_id: jobId, p_status: snap.status, p_flag_reason: snap.reason, p_note: snap.note, p_reviewer: snap.reviewer });
             if (rpcError) throw new Error(rpcError.message);
         } catch (err) {
             flashNotice(err instanceof Error ? err.message : 'Undo failed');
         } finally {
             fetchQueue();
         }
-    }, [fetchQueue, flashNotice]);
+    }, [fetchQueue, flashNotice, mode]);
 
     const undo = useCallback(() => {
         setUndoStack(prev => {
@@ -268,7 +306,18 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         <main className="h-full min-h-0 flex flex-col rounded-lg border border-border-primary bg-bg-primary shadow-lg overflow-hidden">
             <header className="flex-shrink-0 px-4 py-3 bg-bg-secondary border-b border-border-primary space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div><h1 className="text-base font-bold text-text-primary">Review Queue</h1><p className="text-[11px] text-text-tertiary">Bookings from the last {windowDays} days</p></div>
+                    <div className="flex items-center gap-3">
+                        <div className="inline-flex rounded-md border border-border-primary overflow-hidden">
+                            {(['bookings', 'outcomes'] as const).map(m => (
+                                <button key={m} onClick={() => setMode(m)} className={`px-2.5 py-1 text-[11px] font-bold transition ${mode === m ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>
+                                    {m === 'bookings' ? 'Bookings' : 'Outcomes'}
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[11px] text-text-tertiary">{mode === 'outcomes'
+                            ? `Appointments turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter}${dateFrom && dateTo ? ` · ${dateFrom} → ${dateTo}` : ' · yesterday'}`
+                            : `Bookings from ${dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : `the last ${windowDays} days`}`}</p>
+                    </div>
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
                         <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="w-32 px-2 py-1 text-xs rounded-md border border-border-primary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
@@ -281,11 +330,25 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
                 </nav>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <span className="text-text-tertiary">Window:</span>
-                    {[7, 30, 90].map(d => <button key={d} onClick={() => setWindowDays(d)} className={`px-2 py-0.5 rounded border transition ${windowDays === d ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{d}d</button>)}
-                    <span className="text-text-tertiary ml-2">CSR:</span>
-                    <select value={bookerFilter} onChange={event => setBookerFilter(event.target.value)} className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary max-w-[180px] outline-none focus:border-brand-primary"><option value="">All CSRs</option>{bookers.map(booker => <option key={booker} value={booker}>{booker}</option>)}</select>
-                    {bookerFilter && <button onClick={() => setBookerFilter('')} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear CSR filter">✕ {bookerFilter} · {visibleRows.length}</button>}
+                    {mode === 'bookings' ? <>
+                        <span className="text-text-tertiary">Window:</span>
+                        {[7, 30, 90].map(d => <button key={d} onClick={() => { setWindowDays(d); setDateFrom(''); setDateTo(''); }} className={`px-2 py-0.5 rounded border transition ${windowDays === d && !(dateFrom && dateTo) ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{d}d</button>)}
+                    </> : <>
+                        <span className="text-text-tertiary">Outcome:</span>
+                        {(['unqualified', 'lost', 'all'] as const).map(o => <button key={o} onClick={() => setOutcomeFilter(o)} className={`px-2 py-0.5 rounded border capitalize transition ${outcomeFilter === o ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{o}</button>)}
+                        <span className="text-text-tertiary ml-2">Quick:</span>
+                        <button onClick={() => { setDateFrom(daysAgoStr(1)); setDateTo(daysAgoStr(1)); }} className={`px-2 py-0.5 rounded border transition ${dateFrom === daysAgoStr(1) && dateTo === daysAgoStr(1) ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>Yesterday</button>
+                        <button onClick={() => { setDateFrom(daysAgoStr(7)); setDateTo(daysAgoStr(0)); }} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">7d</button>
+                        <button onClick={() => { setDateFrom(daysAgoStr(30)); setDateTo(daysAgoStr(0)); }} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">30d</button>
+                    </>}
+                    <span className="text-text-tertiary ml-2">From</span>
+                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                    <span className="text-text-tertiary">To</span>
+                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                    {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear date range">✕ range</button>}
+                    <span className="text-text-tertiary ml-2">{filterLabel}:</span>
+                    <select value={bookerFilter} onChange={event => setBookerFilter(event.target.value)} className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary max-w-[180px] outline-none focus:border-brand-primary"><option value="">All {filterLabel}s</option>{bookers.map(booker => <option key={booker} value={booker}>{booker}</option>)}</select>
+                    {bookerFilter && <button onClick={() => setBookerFilter('')} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title={`Clear ${filterLabel} filter`}>✕ {bookerFilter} · {visibleRows.length}</button>}
                 </div>
                 {stats && <div className="flex flex-wrap items-center gap-2 text-[11px]">
                     <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
@@ -298,9 +361,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
             <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-                {isLoading ? <div className="text-sm text-text-tertiary">Loading review queue…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">No bookings in the last 7 days.</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'No bookings in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
+                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? 'No unqualified / lost appointments in this range.' : 'No bookings in this window.'}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
                     const risks = getRiskReasons(row);
-                    const isRisky = row.review_status === 'needs_review' && risks.length > 0;
+                    const isRisky = mode === 'bookings' && row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;
                     const exitState = exiting[row.job_id];
                     const phoneDigits = (row.phone || '').replace(/\D/g, '').slice(-10);
@@ -308,8 +371,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border bg-bg-primary px-3 py-2 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] ${activeJobId === row.job_id ? 'border-brand-primary ring-2 ring-brand-primary/40' : 'border-border-primary hover:border-border-secondary'} ${isRisky ? 'border-l-4 border-l-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
-                                <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="text-sm font-bold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2><span className="text-[10px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
-                                <div className="flex flex-wrap items-center gap-1 text-[10px]"><span className="text-text-secondary">Booked by <span className="font-semibold">{row.appt_booker || 'Unknown'}</span></span>{row.lead_source && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.lead_source}</span>}{row.workflow && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.workflow}</span>}{(row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary text-text-tertiary">{tag}</span>)}</div>
+                                <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="text-sm font-bold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <><span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${row.outcome === 'lost' ? 'border-tag-red-border bg-tag-red-bg text-tag-red-text' : 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'}`}>{(row.outcome || '').toUpperCase()}</span><span className="text-[10px] text-text-tertiary whitespace-nowrap">Appt {row.appt_date || '—'}</span></> : <span className="text-[10px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
+                                <div className="flex flex-wrap items-center gap-1 text-[10px]"><span className="text-text-secondary">Booked by <span className="font-semibold">{row.appt_booker || 'Unknown'}</span></span>{mode === 'outcomes' && <span className="text-text-secondary">· Ran by <span className="font-semibold">{row.job_owner || 'Unknown'}</span></span>}{row.lead_source && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.lead_source}</span>}{row.workflow && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.workflow}</span>}{(row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary text-text-tertiary">{tag}</span>)}</div>
                                 <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-text-secondary">{row.address && <span>{row.address}</span>}{row.phone && <span>{row.phone}</span>}{row.value != null && <span className="font-semibold text-text-primary">${row.value.toLocaleString()}</span>}{propertyFields.map(([label, value]) => <span key={label} className="text-[10px] text-text-tertiary">{label}: <span className="font-semibold text-text-secondary">{String(value)}</span></span>)}</div>
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1">
@@ -317,7 +380,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 {row.review_status === 'needs_review' ? <div className="flex flex-wrap justify-end gap-1"><button onClick={() => reviewWithAnimation(row, 'reviewed')} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text disabled:opacity-50">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-text-tertiary text-right"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
                             </div>
                         </div>
-                        {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{FLAG_REASONS.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
+                        {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{activeFlagReasons.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
                     </article>;
                 })}</div>}
             </section>
