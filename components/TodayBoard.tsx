@@ -151,6 +151,23 @@ const REGION_BADGE: Record<BoardRegion, string> = {
 };
 const REGION_LABEL_COLOR: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgb(217, 119, 6)', NORTH: 'rgb(37, 99, 235)' };
 
+// Left rail: CSR (unassigned bookings) and Management/owners aren't bookable sales
+// columns, so they pull to the far left, region-neutral, each with its own label bar.
+// Ordered CSR then Management, ahead of the geographic (Phoenix/Tucson/Up North) sections.
+type LeftSection = 'CSR' | 'MGMT';
+const leftSectionOf = (group: DepartmentGroup): LeftSection | null => (
+    group === 'CSR' ? 'CSR' : group === 'Management' ? 'MGMT' : null
+);
+const LEFT_SECTION_ORDER: Record<LeftSection, number> = { CSR: 0, MGMT: 1 };
+const LEFT_SECTION_LABEL: Record<LeftSection, string> = { CSR: 'CSR', MGMT: 'MGMT' };
+const LEFT_SECTION_BAR_BG: Record<LeftSection, string> = { CSR: 'rgba(239, 68, 68, 0.10)', MGMT: 'rgba(100, 116, 139, 0.14)' };
+const LEFT_SECTION_BAR_COLOR: Record<LeftSection, string> = { CSR: 'rgb(220, 38, 38)', MGMT: 'rgb(71, 85, 105)' };
+const LEFT_SECTION_TINT: Record<LeftSection, string> = { CSR: 'rgba(239, 68, 68, 0.05)', MGMT: 'rgba(100, 116, 139, 0.07)' };
+const LEFT_SECTION_TITLE: Record<LeftSection, string> = {
+    CSR: 'Jobs still owned by a CSR — pending assignment to a rep',
+    MGMT: 'Management / owners — shown for visibility, not offered for gap-fill',
+};
+
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const buildCityRegex = (cities: Iterable<string>) => {
     const list = Array.from(new Set(Array.from(cities)))
@@ -582,6 +599,76 @@ const TodayBoard: React.FC = () => {
         return () => { cancelled = true; };
     }, []);
 
+    // Open-slot reservations: who I am (for reserving/releasing) + active holds keyed
+    // by `${normalizedRep}__${windowId}`, polled fast so a 2nd booker sees it quickly.
+    const [reserverName, setReserverName] = useState<string>(() => localStorage.getItem('todayBoardReserver') || '');
+    const [slotHolds, setSlotHolds] = useState<Record<string, { reservedBy: string; reservedAt: string }>>({});
+    const holdKey = (repName: string, windowId: string) => `${normalizeRepName(repName)}__${windowId}`;
+
+    const setReserverPersisted = useCallback((name: string) => {
+        setReserverName(name);
+        localStorage.setItem('todayBoardReserver', name);
+    }, []);
+
+    const fetchSlotHolds = useCallback(async () => {
+        try {
+            const { data, error } = await supabase.rpc('get_open_slot_holds', { p_date: dateKey });
+            if (error) return;
+            const map: Record<string, { reservedBy: string; reservedAt: string }> = {};
+            (data || []).forEach((h: { rep_name: string; window_id: string; reserved_by: string; reserved_at: string }) => {
+                map[holdKey(h.rep_name, h.window_id)] = { reservedBy: h.reserved_by, reservedAt: h.reserved_at };
+            });
+            setSlotHolds(map);
+        } catch { /* transient — keep last-good holds */ }
+    }, [dateKey]);
+
+    useEffect(() => {
+        fetchSlotHolds();
+        const id = window.setInterval(() => { if (!document.hidden) fetchSlotHolds(); }, 5000);
+        const onVis = () => { if (!document.hidden) fetchSlotHolds(); };
+        document.addEventListener('visibilitychange', onVis);
+        return () => { window.clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
+    }, [fetchSlotHolds]);
+
+    const handleReserveSlot = useCallback(async (repName: string, windowId: string) => {
+        let who = reserverName;
+        if (!who) {
+            who = (window.prompt('Your name (so the reservation shows who has it):') || '').trim();
+            if (!who) return;
+            setReserverPersisted(who);
+        }
+        const key = holdKey(repName, windowId);
+        setSlotHolds(prev => ({ ...prev, [key]: { reservedBy: who, reservedAt: new Date().toISOString() } })); // optimistic
+        try {
+            const { data, error } = await supabase.rpc('reserve_open_slot', {
+                p_rep_name: repName, p_date: dateKey, p_window_id: windowId, p_reserved_by: who,
+            });
+            if (error) throw new Error(error.message);
+            // Lost the race -> reflect whoever actually holds it.
+            if (data && !data.ok && data.reserved_by) {
+                setSlotHolds(prev => ({ ...prev, [key]: { reservedBy: data.reserved_by, reservedAt: data.reserved_at || new Date().toISOString() } }));
+            }
+        } catch (err) {
+            console.warn('reserve failed', err);
+        } finally {
+            fetchSlotHolds();
+        }
+    }, [reserverName, dateKey, setReserverPersisted, fetchSlotHolds]);
+
+    const handleReleaseSlot = useCallback(async (repName: string, windowId: string) => {
+        const key = holdKey(repName, windowId);
+        setSlotHolds(prev => { const next = { ...prev }; delete next[key]; return next; }); // optimistic
+        try {
+            await supabase.rpc('release_open_slot', {
+                p_rep_name: repName, p_date: dateKey, p_window_id: windowId, p_reserved_by: reserverName || null,
+            });
+        } catch (err) {
+            console.warn('release failed', err);
+        } finally {
+            fetchSlotHolds();
+        }
+    }, [dateKey, reserverName, fetchSlotHolds]);
+
     const fetchAppointments = useCallback(async () => {
         setIsRefreshing(true);
         setError(null);
@@ -754,24 +841,25 @@ const TodayBoard: React.FC = () => {
         return Array.from(byRep.entries())
             .map(([repName, group]) => {
                 const appointments = group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b));
-                const isCsr = group.departmentGroup === 'CSR';
+                const leftSection = leftSectionOf(group.departmentGroup);
                 return {
                     repName,
                     departmentGroup: group.departmentGroup,
-                    // CSR columns are pending-assignment bookings (still in the CSR's name),
-                    // not a rep working a region — keep them region-neutral so the Tucson/Up
-                    // North sections stay clean, and pull them to the far left instead.
-                    region: (isCsr ? 'PHX' : getRepColumnRegion(appointments)) as BoardRegion,
+                    leftSection,
+                    // CSR + Management columns aren't region-bound sales routes — keep them
+                    // region-neutral so the Tucson/Up North sections stay clean, and pull
+                    // them to the far left instead.
+                    region: (leftSection ? 'PHX' : getRepColumnRegion(appointments)) as BoardRegion,
                     appointments,
                 };
             })
             .filter(group => group.appointments.length > 0)
-            // CSRs (unassigned bookings) far left, then Phoenix (main), Tucson, Up North;
+            // Left rail (CSR, then Management), then Phoenix (main), Tucson, Up North;
             // alphabetical within each section.
             .sort((a, b) => {
-                const aCsr = a.departmentGroup === 'CSR' ? 0 : 1;
-                const bCsr = b.departmentGroup === 'CSR' ? 0 : 1;
-                return (aCsr - bCsr)
+                const aLeft = a.leftSection ? LEFT_SECTION_ORDER[a.leftSection] : 99;
+                const bLeft = b.leftSection ? LEFT_SECTION_ORDER[b.leftSection] : 99;
+                return (aLeft - bLeft)
                     || (REGION_ORDER[a.region] - REGION_ORDER[b.region])
                     || a.repName.localeCompare(b.repName);
             });
@@ -1021,7 +1109,8 @@ const TodayBoard: React.FC = () => {
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400 inline-block" />Self-gen</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-2 border-orange-500 inline-block" />Double-booked</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-100 border border-dashed border-emerald-400 inline-block" />Open slot (click to fill)</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-100 border border-dashed border-emerald-400 inline-block" />Open slot (reserve / fill)</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-100 border border-amber-400 inline-block" />Reserved</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-red-200 border border-red-400 inline-block" />CSR-owned job</span>
                         {error && <span className="text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
                     </div>
@@ -1084,6 +1173,13 @@ const TodayBoard: React.FC = () => {
                         title="Refresh appointments"
                     >
                         {isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}
+                    </button>
+                    <button
+                        onClick={() => { const n = (window.prompt('Your name — used when you reserve open slots:', reserverName) || '').trim(); if (n) setReserverPersisted(n); }}
+                        className="ml-1 px-2 py-1 text-[11px] font-semibold rounded-md border border-border-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition truncate max-w-[130px]"
+                        title="Set your name — shown on slots you reserve so others don't double-book"
+                    >
+                        {reserverName ? `You: ${reserverName}` : 'Set name'}
                     </button>
                     <button
                         onClick={() => setShowPool(v => !v)}
@@ -1191,33 +1287,36 @@ const TodayBoard: React.FC = () => {
                                     const isFullyUnavailable = unavailableSlotIds.length >= 4;
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
+                                    const leftSection = group.leftSection;
                                     const isCsrColumn = group.departmentGroup === 'CSR';
-                                    // Empty booking windows the rep is free to work → clickable green OPEN blocks.
-                                    // Skip windows whose time has already passed (nowCutoffMinutes).
-                                    const openWindows = isCsrColumn ? [] : FILL_WINDOWS.filter(win => (
+                                    // Open booking windows → clickable green OPEN blocks. Only for actual sales
+                                    // reps we can confirm are bookable: not CSR/Management, and matched to the
+                                    // availability sheet (matchedRep) so we honor real availability — never offer
+                                    // a window the rep is off for, or one whose time has already passed.
+                                    const openWindows = (leftSection || !matchedRep) ? [] : FILL_WINDOWS.filter(win => (
                                         win.endMin > nowCutoffMinutes &&
                                         !unavailableSlotIds.includes(win.id) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
                                     ));
                                     const prevGroup = groupIndex > 0 ? groupedAppointments[groupIndex - 1] : null;
-                                    const isCsrSectionStart = isCsrColumn && prevGroup?.departmentGroup !== 'CSR';
+                                    const isLeftSectionStart = !!leftSection && leftSection !== (prevGroup?.leftSection ?? null);
                                     const prevRegion = prevGroup ? prevGroup.region : null;
-                                    // CSR columns are region-neutral, so region dividers only fire on rep columns.
-                                    const isSectionStart = !isCsrColumn && group.region !== 'PHX' && group.region !== prevRegion;
+                                    // Left-rail columns are region-neutral, so region dividers only fire on sales reps.
+                                    const isSectionStart = !leftSection && group.region !== 'PHX' && group.region !== prevRegion;
 
                                     return (
                                         <React.Fragment key={group.repName}>
-                                            {isCsrSectionStart && (
+                                            {isLeftSectionStart && leftSection && (
                                                 <div
                                                     className="flex items-center justify-center flex-shrink-0 border-r border-border-primary"
-                                                    style={{ width: 26, backgroundColor: 'rgba(239, 68, 68, 0.10)' }}
-                                                    title="Jobs still owned by a CSR — pending assignment to a rep"
+                                                    style={{ width: 26, backgroundColor: LEFT_SECTION_BAR_BG[leftSection] }}
+                                                    title={LEFT_SECTION_TITLE[leftSection]}
                                                 >
                                                     <span
                                                         className="text-[10px] font-extrabold uppercase tracking-widest whitespace-nowrap"
-                                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: 'rgb(220, 38, 38)' }}
+                                                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', color: LEFT_SECTION_BAR_COLOR[leftSection] }}
                                                     >
-                                                        CSR
+                                                        {LEFT_SECTION_LABEL[leftSection]}
                                                     </span>
                                                 </div>
                                             )}
@@ -1236,8 +1335,8 @@ const TodayBoard: React.FC = () => {
                                                 </div>
                                             )}
                                         <div
-                                            className={`flex flex-col border-r border-border-primary ${!isCsrColumn && group.region === 'PHX' ? 'bg-bg-primary' : ''} min-w-0 transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
-                                            style={{ flex: '1 1 0', backgroundColor: isCsrColumn ? 'rgba(239, 68, 68, 0.05)' : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
+                                            className={`flex flex-col border-r border-border-primary ${!leftSection && group.region === 'PHX' ? 'bg-bg-primary' : ''} transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
+                                            style={{ flex: '1 1 0', minWidth: 132, backgroundColor: leftSection ? LEFT_SECTION_TINT[leftSection] : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
                                         >
                                             <div
                                                 className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
@@ -1251,9 +1350,14 @@ const TodayBoard: React.FC = () => {
                                                                 Off
                                                             </span>
                                                         )}
-                                                        {isCsrColumn && (
+                                                        {leftSection === 'CSR' && (
                                                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-tag-red-bg text-tag-red-text border border-tag-red-border">
                                                                 CSR
+                                                            </span>
+                                                        )}
+                                                        {leftSection === 'MGMT' && (
+                                                            <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 border border-slate-400">
+                                                                MGMT
                                                             </span>
                                                         )}
                                                         {group.region !== 'PHX' && (
@@ -1377,17 +1481,58 @@ const TodayBoard: React.FC = () => {
                                                     const top = ((win.startMin - DAY_VIEW_START_HOUR * 60) / 30) * DAY_VIEW_CELL_HEIGHT;
                                                     const height = ((win.endMin - win.startMin) / 30) * DAY_VIEW_CELL_HEIGHT;
                                                     const anchorAppt = getGapAnchorAppointment(group.appointments, win);
+                                                    const hold = slotHolds[holdKey(group.repName, win.id)];
+                                                    const mine = !!hold && !!reserverName && normalizeRepName(hold.reservedBy) === normalizeRepName(reserverName);
+                                                    const blockStyle = { top: top + 2, height: Math.max(height - 4, 36), left: 4, right: 4 };
+
+                                                    if (hold) {
+                                                        return (
+                                                            <div
+                                                                key={`gap-${win.id}`}
+                                                                className={`absolute z-[7] rounded-md border-2 flex flex-col items-center justify-center gap-0.5 px-1 text-center ${
+                                                                    mine ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-300 bg-slate-100 text-slate-500'
+                                                                }`}
+                                                                style={blockStyle}
+                                                                title={`${win.label} reserved by ${hold.reservedBy}${mine ? ' (you)' : ''} — holds until the appointment shows here`}
+                                                            >
+                                                                <span className="text-[10px] font-extrabold uppercase tracking-wide">🔒 Reserved</span>
+                                                                <span className="text-[9px] font-semibold truncate max-w-full">{mine ? 'by you' : hold.reservedBy}</span>
+                                                                {mine && (
+                                                                    <button
+                                                                        onClick={() => handleReleaseSlot(group.repName, win.id)}
+                                                                        className="mt-0.5 px-1.5 py-0.5 text-[9px] font-bold rounded border border-amber-500 text-amber-700 hover:bg-amber-100 transition"
+                                                                    >
+                                                                        Release
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    }
+
                                                     return (
-                                                        <button
+                                                        <div
                                                             key={`gap-${win.id}`}
-                                                            onClick={() => handleFillGap(anchorAppt, `${group.repName}'s open ${win.label}`)}
-                                                            className="absolute z-[6] rounded-md border-2 border-dashed border-emerald-400/80 bg-emerald-50/70 hover:bg-emerald-100 hover:border-emerald-500 text-emerald-700 flex flex-col items-center justify-center gap-0.5 transition-colors group/gap"
-                                                            style={{ top: top + 2, height: Math.max(height - 4, 28), left: 4, right: 4 }}
-                                                            title={`Open ${win.label} — click to find the closest future appointments to pull in`}
+                                                            className="absolute z-[6] rounded-md border-2 border-dashed border-emerald-400/80 bg-emerald-50/70 flex flex-col items-center justify-center gap-1 px-1"
+                                                            style={blockStyle}
                                                         >
-                                                            <span className="text-[10px] font-extrabold uppercase tracking-wide">Open · {win.label}</span>
-                                                            <span className="text-[9px] font-semibold opacity-70 group-hover/gap:opacity-100">🔥 Fill from nearby</span>
-                                                        </button>
+                                                            <span className="text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">Open · {win.label}</span>
+                                                            <div className="flex flex-col items-stretch gap-1 w-full px-1">
+                                                                <button
+                                                                    onClick={() => handleReserveSlot(group.repName, win.id)}
+                                                                    className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                                                                    title="Reserve this slot so no one else books it"
+                                                                >
+                                                                    🔒 Reserve
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleFillGap(anchorAppt, `${group.repName}'s open ${win.label}`)}
+                                                                    className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-100 transition"
+                                                                    title="Find the closest future appointments to pull in"
+                                                                >
+                                                                    🔥 Fill nearby
+                                                                </button>
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })}
                                             </div>
