@@ -5,6 +5,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, Loading
 import { useAppContext } from '../context/AppContext';
 import type { AppState, Rep } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { normalizeName } from '../services/googleSheetsService';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
@@ -807,6 +808,19 @@ const TodayBoard: React.FC = () => {
         return byName;
     }, [appState.reps]);
 
+    // Nickname-tolerant fallback index (Will↔William, Chris↔Christopher, …): the Roofr
+    // feed and the availability sheet often spell the same rep differently, so a rep
+    // matched loosely here still gets their real availability applied. normalizeName
+    // maps nicknames and keys by first+last.
+    const repsByLooseName = useMemo(() => {
+        const byLoose = new Map<string, Rep>();
+        appState.reps.forEach(rep => {
+            const key = normalizeName(rep.name);
+            if (key && !byLoose.has(key)) byLoose.set(key, rep);
+        });
+        return byLoose;
+    }, [appState.reps]);
+
     const repGroupsByName = useMemo(() => {
         const byName = new Map<string, DepartmentGroup>(Object.entries(STATIC_NAME_GROUPS));
         // Live roster overrides the static fallback so classification stays current.
@@ -1299,7 +1313,7 @@ const TodayBoard: React.FC = () => {
 
                             {groupedAppointments.map((group, groupIndex) => (
                                 (() => {
-                                    const matchedRep = repsByName.get(normalizeRepName(group.repName));
+                                    const matchedRep = repsByName.get(normalizeRepName(group.repName)) || repsByLooseName.get(normalizeName(group.repName));
                                     const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
                                     const isFullyUnavailable = unavailableSlotIds.length >= 4;
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
