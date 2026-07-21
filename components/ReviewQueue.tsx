@@ -12,10 +12,34 @@ type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
 type ReviewMode = 'bookings' | 'outcomes';
 type OutcomeFilter = 'unqualified' | 'lost' | 'all';
+type PeriodKind = 'day' | 'week' | 'month' | 'custom';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const daysAgoStr = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return toDateStr(d); };
+const fmtDateStr = (s: string) => {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+// Resolve Day/Week/Month (+ offset steps back) to a concrete date range. Weeks start Sunday.
+const getPeriodRange = (kind: Exclude<PeriodKind, 'custom'>, offset: number): { start: string; end: string; label: string } => {
+    const today = new Date();
+    if (kind === 'day') {
+        const d = new Date(today); d.setDate(d.getDate() + offset);
+        const label = offset === 0 ? 'Today' : offset === -1 ? 'Yesterday' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        return { start: toDateStr(d), end: toDateStr(d), label };
+    }
+    if (kind === 'week') {
+        const start = new Date(today); start.setDate(start.getDate() - start.getDay() + offset * 7);
+        const end = new Date(start); end.setDate(end.getDate() + 6);
+        const label = offset === 0 ? 'This Week' : offset === -1 ? 'Last Week' : `Wk of ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        return { start: toDateStr(start), end: toDateStr(end), label };
+    }
+    const start = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + offset + 1, 0);
+    const label = offset === 0 ? 'This Month' : start.toLocaleDateString('en-US', start.getFullYear() === today.getFullYear() ? { month: 'long' } : { month: 'long', year: 'numeric' });
+    return { start: toDateStr(start), end: toDateStr(end), label };
+};
 
 interface ReviewRow {
     job_id: string;
@@ -110,7 +134,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [stats, setStats] = useState<ReviewStats | null>(null);
     const [showStats, setShowStats] = useState(false);
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
-    const [windowDays, setWindowDays] = useState(7);
+    const [periodKind, setPeriodKind] = useState<PeriodKind>('day');
+    const [periodOffset, setPeriodOffset] = useState(0);
     const [bookerFilter, setBookerFilter] = useState('');
     const [mode, setMode] = useState<ReviewMode>('bookings');
     const [dateFrom, setDateFrom] = useState('');
@@ -131,14 +156,18 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const fetchQueue = useCallback(async (checkForNewBooking = false) => {
         setIsRefreshing(true);
         try {
+            // Range resolved at call time so the midnight rollover is picked up by the poll.
+            const range = periodKind === 'custom'
+                ? (dateFrom && dateTo ? { start: dateFrom, end: dateTo } : null)
+                : getPeriodRange(periodKind, periodOffset);
             const resp = mode === 'outcomes'
                 ? await supabase.rpc('get_outcome_review', {
-                    p_start: dateFrom || null, p_end: dateTo || null,
+                    p_start: range?.start || null, p_end: range?.end || null,
                     p_outcome: outcomeFilter === 'all' ? null : outcomeFilter,
                 })
-                : await supabase.rpc('get_review_queue', (dateFrom && dateTo)
-                    ? { p_days: windowDays, p_start: dateFrom, p_end: dateTo }
-                    : { p_days: windowDays });
+                : await supabase.rpc('get_review_queue', range
+                    ? { p_days: 7, p_start: range.start, p_end: range.end }
+                    : { p_days: 7 });
             if (resp.error) throw new Error(resp.error.message);
             const next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
@@ -173,7 +202,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, [mode, windowDays, dateFrom, dateTo, outcomeFilter]);
+    }, [mode, periodKind, periodOffset, dateFrom, dateTo, outcomeFilter]);
 
     useEffect(() => {
         fetchQueue();
@@ -200,6 +229,24 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     }, [mode]);
 
     const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row[filterKey] || '').toString().trim()).filter(Boolean))).sort(), [rows, filterKey]);
+
+    // Switching into Custom pre-fills From/To with the currently shown range.
+    const selectPeriod = (kind: PeriodKind) => {
+        if (kind === 'custom' && periodKind !== 'custom') {
+            const current = getPeriodRange(periodKind, periodOffset);
+            setDateFrom(current.start);
+            setDateTo(current.end);
+        }
+        setPeriodKind(kind);
+        if (kind !== 'custom') setPeriodOffset(0);
+    };
+
+    const period = periodKind === 'custom'
+        ? { start: dateFrom, end: dateTo, label: 'Custom' }
+        : getPeriodRange(periodKind, periodOffset);
+    const rangeText = period.start && period.end
+        ? (period.start === period.end ? fmtDateStr(period.start) : `${fmtDateStr(period.start)} – ${fmtDateStr(period.end)}`)
+        : 'pick dates';
 
     const visibleRows = useMemo(() => rows
         .filter(row => (tab === 'all' || row.review_status === tab) && (!bookerFilter || (row[filterKey] || '').toString().trim() === bookerFilter))
@@ -315,8 +362,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             ))}
                         </div>
                         <p className="text-[11px] text-text-tertiary">{mode === 'outcomes'
-                            ? `Appointments turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter}${dateFrom && dateTo ? ` · ${dateFrom} → ${dateTo}` : ' · yesterday'}`
-                            : `Bookings from ${dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : `the last ${windowDays} days`}`}</p>
+                            ? `Turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter} · booked ${rangeText} · future appts count`
+                            : `Bookings made ${rangeText}`}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
@@ -326,42 +373,51 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="p-1.5 rounded text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
                     </div>
                 </div>
-                <nav className="flex flex-wrap gap-1" aria-label="Review status">
-                    {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
-                </nav>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    {mode === 'bookings' ? <>
-                        <span className="text-text-tertiary">Window:</span>
-                        {[7, 30, 90].map(d => <button key={d} onClick={() => { setWindowDays(d); setDateFrom(''); setDateTo(''); }} className={`px-2 py-0.5 rounded border transition ${windowDays === d && !(dateFrom && dateTo) ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{d}d</button>)}
-                    </> : <>
-                        <span className="text-text-tertiary">Outcome:</span>
-                        {(['unqualified', 'lost', 'all'] as const).map(o => <button key={o} onClick={() => setOutcomeFilter(o)} className={`px-2 py-0.5 rounded border capitalize transition ${outcomeFilter === o ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{o}</button>)}
-                        <span className="text-text-tertiary ml-2">Quick:</span>
-                        <button onClick={() => { setDateFrom(daysAgoStr(1)); setDateTo(daysAgoStr(1)); }} className={`px-2 py-0.5 rounded border transition ${dateFrom === daysAgoStr(1) && dateTo === daysAgoStr(1) ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>Yesterday</button>
-                        <button onClick={() => { setDateFrom(daysAgoStr(7)); setDateTo(daysAgoStr(0)); }} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">7d</button>
-                        <button onClick={() => { setDateFrom(daysAgoStr(30)); setDateTo(daysAgoStr(0)); }} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">30d</button>
-                    </>}
-                    <span className="text-text-tertiary ml-2">From</span>
-                    <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
-                    <span className="text-text-tertiary">To</span>
-                    <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
-                    {(dateFrom || dateTo) && <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear date range">✕ range</button>}
-                    <span className="text-text-tertiary ml-2">{filterLabel}:</span>
+                    <div className="inline-flex rounded-md border border-border-primary overflow-hidden">
+                        {(['day', 'week', 'month', 'custom'] as const).map(k => (
+                            <button key={k} onClick={() => selectPeriod(k)} className={`px-2.5 py-1 font-semibold capitalize transition ${periodKind === k ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>{k}</button>
+                        ))}
+                    </div>
+                    {periodKind !== 'custom' ? (
+                        <div className="inline-flex items-center rounded-md border border-border-primary overflow-hidden">
+                            <button onClick={() => setPeriodOffset(o => o - 1)} title={`Previous ${periodKind}`} className="px-2 py-1 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary transition">◀</button>
+                            <span className="px-2 py-1 min-w-[96px] text-center font-semibold text-text-primary border-x border-border-primary">{period.label}</span>
+                            <button onClick={() => setPeriodOffset(o => o + 1)} disabled={periodOffset === 0} title={`Next ${periodKind}`} className="px-2 py-1 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-30 transition">▶</button>
+                        </div>
+                    ) : (
+                        <div className="inline-flex items-center gap-1.5">
+                            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                            <span className="text-text-tertiary">→</span>
+                            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                        </div>
+                    )}
+                    {mode === 'outcomes' && <div className="inline-flex rounded-md border border-border-primary overflow-hidden ml-1">
+                        {(['unqualified', 'lost', 'all'] as const).map(o => (
+                            <button key={o} onClick={() => setOutcomeFilter(o)} className={`px-2.5 py-1 font-semibold capitalize transition ${outcomeFilter === o ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>{o}</button>
+                        ))}
+                    </div>}
+                    <span className="text-text-tertiary ml-auto">{filterLabel}:</span>
                     <select value={bookerFilter} onChange={event => setBookerFilter(event.target.value)} className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary max-w-[180px] outline-none focus:border-brand-primary"><option value="">All {filterLabel}s</option>{bookers.map(booker => <option key={booker} value={booker}>{booker}</option>)}</select>
                     {bookerFilter && <button onClick={() => setBookerFilter('')} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title={`Clear ${filterLabel} filter`}>✕ {bookerFilter} · {visibleRows.length}</button>}
                 </div>
-                {stats && <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
-                    <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
-                    <span className="px-2 py-0.5 rounded bg-tag-red-bg text-tag-red-text"><b>{stats.today.flagged}</b> flagged</span>
-                    <button onClick={() => setShowStats(value => !value)} className="ml-auto px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
-                </div>}
-                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setBookerFilter(rep.rep); setTab('flagged'); if (windowDays < 30) setWindowDays(30); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
+                <div className="flex flex-wrap items-center gap-2">
+                    <nav className="flex flex-wrap gap-1" aria-label="Review status">
+                        {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
+                    </nav>
+                    {stats && <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
+                        <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
+                        <span className="px-2 py-0.5 rounded bg-tag-red-bg text-tag-red-text"><b>{stats.today.flagged}</b> flagged</span>
+                        <button onClick={() => setShowStats(value => !value)} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
+                    </div>}
+                </div>
+                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setBookerFilter(rep.rep); setTab('flagged'); setPeriodKind('month'); setPeriodOffset(0); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
             </header>
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
             <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? 'No unqualified / lost appointments in this range.' : 'No bookings in this window.'}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
+                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()} have turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter}. Use ◀ to check earlier periods.` : `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}. Use ◀ to check earlier periods.`}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
                     const risks = getRiskReasons(row);
                     const isRisky = mode === 'bookings' && row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;
