@@ -99,6 +99,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [stats, setStats] = useState<ReviewStats | null>(null);
     const [showStats, setShowStats] = useState(false);
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
+    const [windowDays, setWindowDays] = useState(7);
+    const [bookerFilter, setBookerFilter] = useState('');
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -114,7 +116,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const fetchQueue = useCallback(async (checkForNewBooking = false) => {
         setIsRefreshing(true);
         try {
-            const { data, error: rpcError } = await supabase.rpc('get_review_queue', { p_days: 7 });
+            const { data, error: rpcError } = await supabase.rpc('get_review_queue', { p_days: windowDays });
             if (rpcError) throw new Error(rpcError.message);
             const next = (Array.isArray(data) ? data : []) as ReviewRow[];
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
@@ -145,7 +147,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }, []);
+    }, [windowDays]);
 
     useEffect(() => {
         fetchQueue();
@@ -159,15 +161,17 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const needsReviewCount = useMemo(() => rows.filter(row => row.review_status === 'needs_review').length, [rows]);
     useEffect(() => { onCountChange(needsReviewCount); }, [needsReviewCount, onCountChange]);
 
+    const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row.appt_booker || '').trim()).filter(Boolean))).sort(), [rows]);
+
     const visibleRows = useMemo(() => rows
-        .filter(row => tab === 'all' || row.review_status === tab)
+        .filter(row => (tab === 'all' || row.review_status === tab) && (!bookerFilter || (row.appt_booker || '').trim() === bookerFilter))
         .sort((a, b) => {
             if (tab === 'needs_review') {
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
                 if (riskDifference) return riskDifference;
             }
             return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
-        }), [rows, tab]);
+        }), [rows, tab, bookerFilter]);
 
     const sortedReps = useMemo(() => stats ? [...stats.by_rep].sort((a, b) => (Number(b[statsSort]) - Number(a[statsSort])) || a.rep.localeCompare(b.rep)) : [], [stats, statsSort]);
 
@@ -264,7 +268,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         <main className="h-full min-h-0 flex flex-col rounded-lg border border-border-primary bg-bg-primary shadow-lg overflow-hidden">
             <header className="flex-shrink-0 px-4 py-3 bg-bg-secondary border-b border-border-primary space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div><h1 className="text-base font-bold text-text-primary">Review Queue</h1><p className="text-[11px] text-text-tertiary">Bookings from the last 7 days</p></div>
+                    <div><h1 className="text-base font-bold text-text-primary">Review Queue</h1><p className="text-[11px] text-text-tertiary">Bookings from the last {windowDays} days</p></div>
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
                         <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="w-32 px-2 py-1 text-xs rounded-md border border-border-primary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
@@ -276,13 +280,20 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 <nav className="flex flex-wrap gap-1" aria-label="Review status">
                     {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
                 </nav>
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="text-text-tertiary">Window:</span>
+                    {[7, 30, 90].map(d => <button key={d} onClick={() => setWindowDays(d)} className={`px-2 py-0.5 rounded border transition ${windowDays === d ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{d}d</button>)}
+                    <span className="text-text-tertiary ml-2">CSR:</span>
+                    <select value={bookerFilter} onChange={event => setBookerFilter(event.target.value)} className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary max-w-[180px] outline-none focus:border-brand-primary"><option value="">All CSRs</option>{bookers.map(booker => <option key={booker} value={booker}>{booker}</option>)}</select>
+                    {bookerFilter && <button onClick={() => setBookerFilter('')} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear CSR filter">✕ {bookerFilter} · {visibleRows.length}</button>}
+                </div>
                 {stats && <div className="flex flex-wrap items-center gap-2 text-[11px]">
                     <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
                     <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
                     <span className="px-2 py-0.5 rounded bg-tag-red-bg text-tag-red-text"><b>{stats.today.flagged}</b> flagged</span>
                     <button onClick={() => setShowStats(value => !value)} className="ml-auto px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
                 </div>}
-                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
+                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setBookerFilter(rep.rep); setTab('flagged'); if (windowDays < 30) setWindowDays(30); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
             </header>
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
