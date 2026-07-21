@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 
 const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
 const POLL_MS = 60000;
-const FLAG_REASONS = ['One legger', 'No legger', 'Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
+const FLAG_REASONS = ['One legger', 'No legger', 'Roof age unknown', 'Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
 
 type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
