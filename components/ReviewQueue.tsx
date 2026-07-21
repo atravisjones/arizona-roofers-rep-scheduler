@@ -37,6 +37,9 @@ interface ReviewRow {
     reviewed_at: string | null;
 }
 
+interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
+interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
+
 const formatPhoenixDate = (value: string | null) => {
     if (!value) return 'Unknown time';
     const date = new Date(value);
@@ -71,8 +74,8 @@ const getRiskReasons = (row: ReviewRow) => {
 };
 
 const LinkPill: React.FC<{ href: string; label: string }> = ({ href, label }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">
-        <ExternalLinkIcon className="h-3 w-3" />{label}
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary hover:bg-bg-tertiary transition">
+        <ExternalLinkIcon className="h-3.5 w-3.5" />{label}
     </a>
 );
 
@@ -86,6 +89,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [notice, setNotice] = useState<string | null>(null);
     const [busyJobId, setBusyJobId] = useState<string | null>(null);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [exiting, setExiting] = useState<Record<string, 'reviewed' | 'flagged'>>({});
+    const [undoStack, setUndoStack] = useState<ReviewAction[]>([]);
+    const [redoStack, setRedoStack] = useState<ReviewAction[]>([]);
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -177,6 +183,68 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         }
     };
 
+    const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
+        setFlaggingJobId(null);
+        setFlagNote('');
+        setUndoStack(prev => [...prev, {
+            row,
+            before: { status: row.review_status, reason: row.flag_reason, note: row.review_note, reviewer: row.reviewed_by },
+            after: { status, reason, note, reviewer: reviewer.trim() || null },
+        }]);
+        setRedoStack([]);
+        // In the "All" tab the card stays (status change only) — no exit animation.
+        if (tab === 'all' || status === 'needs_review') { runReviewAction(row, status, reason, note); return; }
+        setExiting(prev => ({ ...prev, [row.job_id]: status === 'flagged' ? 'flagged' : 'reviewed' }));
+        window.setTimeout(() => {
+            setRows(prev => prev.filter(r => r.job_id !== row.job_id)); // optimistic remove → list slides up
+            setExiting(prev => { const next = { ...prev }; delete next[row.job_id]; return next; });
+            runReviewAction(row, status, reason, note);
+        }, 320);
+    };
+
+    const applySnapshot = useCallback(async (jobId: string, snap: ReviewSnapshot) => {
+        try {
+            const { error: rpcError } = await supabase.rpc('set_job_review', { p_job_id: jobId, p_status: snap.status, p_flag_reason: snap.reason, p_note: snap.note, p_reviewer: snap.reviewer });
+            if (rpcError) throw new Error(rpcError.message);
+        } catch (err) {
+            flashNotice(err instanceof Error ? err.message : 'Undo failed');
+        } finally {
+            fetchQueue();
+        }
+    }, [fetchQueue, flashNotice]);
+
+    const undo = useCallback(() => {
+        setUndoStack(prev => {
+            if (prev.length === 0) return prev;
+            const action = prev[prev.length - 1];
+            applySnapshot(action.row.job_id, action.before);
+            setRedoStack(r => [...r, action]);
+            flashNotice(`Undid: ${action.row.customer || action.row.name || action.row.job_id} back to ${action.before.status.replace('_', ' ')}`);
+            return prev.slice(0, -1);
+        });
+    }, [applySnapshot, flashNotice]);
+
+    const redo = useCallback(() => {
+        setRedoStack(prev => {
+            if (prev.length === 0) return prev;
+            const action = prev[prev.length - 1];
+            applySnapshot(action.row.job_id, action.after);
+            setUndoStack(u => [...u, action]);
+            return prev.slice(0, -1);
+        });
+    }, [applySnapshot]);
+
+    useEffect(() => {
+        const onKey = (event: KeyboardEvent) => {
+            if (!(event.ctrlKey || event.metaKey)) return;
+            const key = event.key.toLowerCase();
+            if (key === 'z' && !event.shiftKey) { event.preventDefault(); event.stopPropagation(); undo(); }
+            else if (key === 'y' || (key === 'z' && event.shiftKey)) { event.preventDefault(); event.stopPropagation(); redo(); }
+        };
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [undo, redo]);
+
     const tabs: Array<{ key: ReviewTab; label: string; count?: number }> = [
         { key: 'needs_review', label: 'Needs Review', count: needsReviewCount }, { key: 'reviewed', label: 'Reviewed' }, { key: 'flagged', label: 'Flagged' }, { key: 'all', label: 'All' },
     ];
@@ -189,6 +257,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
                         <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="w-32 px-2 py-1 text-xs rounded-md border border-border-primary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                        <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="px-2 py-1 text-[11px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
+                        <button onClick={redo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)" className="px-2 py-1 text-[11px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition">Forward ▶</button>
                         <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="p-1.5 rounded text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
                     </div>
                 </div>
@@ -199,13 +269,14 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
             <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-                {isLoading ? <div className="text-sm text-text-tertiary">Loading review queue…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">No bookings in the last 7 days.</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'No bookings in this view.'}</div> : <div className="flex flex-col gap-2">{visibleRows.map(row => {
+                {isLoading ? <div className="text-sm text-text-tertiary">Loading review queue…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">No bookings in the last 7 days.</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'No bookings in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
                     const risks = getRiskReasons(row);
                     const isRisky = row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;
+                    const exitState = exiting[row.job_id];
                     const phoneDigits = (row.phone || '').replace(/\D/g, '').slice(-10);
                     const propertyFields = [['Roof age', row.roof_age], ['Sq ft', row.prop_sqft], ['Built', row.year_built], ['Stories', row.stories], ['Type', row.property_type]].filter(([, value]) => value != null && String(value).trim() !== '');
-                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border bg-bg-primary px-3 py-2 transition ${activeJobId === row.job_id ? 'border-brand-primary ring-2 ring-brand-primary/40' : 'border-border-primary hover:border-border-secondary'} ${isRisky ? 'border-l-4 border-l-tag-amber-border' : ''}`}>
+                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border bg-bg-primary px-3 py-2 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] ${activeJobId === row.job_id ? 'border-brand-primary ring-2 ring-brand-primary/40' : 'border-border-primary hover:border-border-secondary'} ${isRisky ? 'border-l-4 border-l-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="text-sm font-bold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2><span className="text-[10px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
@@ -214,10 +285,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1">
                                 <div className="flex flex-wrap justify-end gap-1">{row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" />}{phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}{row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}</div>
-                                {row.review_status === 'needs_review' ? <div className="flex flex-wrap justify-end gap-1"><button onClick={() => runReviewAction(row, 'reviewed')} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text disabled:opacity-50">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-text-tertiary text-right"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
+                                {row.review_status === 'needs_review' ? <div className="flex flex-wrap justify-end gap-1"><button onClick={() => reviewWithAnimation(row, 'reviewed')} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text disabled:opacity-50">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-text-tertiary text-right"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
                             </div>
                         </div>
-                        {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{FLAG_REASONS.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => runReviewAction(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
+                        {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{FLAG_REASONS.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
                     </article>;
                 })}</div>}
             </section>

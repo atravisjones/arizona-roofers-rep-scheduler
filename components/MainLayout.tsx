@@ -203,6 +203,7 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (showReviewQueue) return; // Review tab has its own undo/redo (Ctrl+Z/Y)
       const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
       const isUndo = (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && e.key === 'z';
       const isRedo = (isMac ? e.metaKey && e.shiftKey : e.ctrlKey) && e.key === 'y' || (isMac && e.metaKey && e.shiftKey && e.key === 'z');
