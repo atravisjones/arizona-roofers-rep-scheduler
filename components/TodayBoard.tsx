@@ -251,6 +251,44 @@ const getAppointmentPosition = (appointment: RoofrAppointment) => {
     };
 };
 
+// ── Gap filling ────────────────────────────────────────────────────────────────
+// The 4 standard booking windows. A rep "hole" = a window they have no appointment
+// in and aren't marked off for. Clicking the green OPEN block opens the Replacement
+// Pool anchored on the rep's nearest existing stop, so the closest future
+// appointments to that route surface first to pull forward. Window ids align 1:1
+// with the sheet's availability slots (ts-1..ts-4 = TIME_SLOTS), so availability is
+// checked directly by id.
+type FillWindow = { id: string; label: string; startMin: number; endMin: number };
+const FILL_WINDOWS: FillWindow[] = [
+    { id: 'ts-1', label: '8–11', startMin: 8 * 60, endMin: 11 * 60 },
+    { id: 'ts-2', label: '11–1', startMin: 11 * 60, endMin: 13 * 60 },
+    { id: 'ts-3', label: '2–5', startMin: 14 * 60, endMin: 17 * 60 },
+    { id: 'ts-4', label: '5–8', startMin: 17 * 60, endMin: 20 * 60 },
+];
+
+const appointmentOverlapsWindow = (appointment: BoardAppointment, win: FillWindow) => {
+    const start = getAppointmentMinutes(appointment.start);
+    if (start === null) return false;
+    const end = getAppointmentMinutes(appointment.end) ?? start + 120;
+    return start < win.endMin && end > win.startMin;
+};
+
+// The stop to route the gap search from: the active appointment ending just before
+// the window, else the one starting just after (appointments arrive sorted by start).
+const getGapAnchorAppointment = (appointments: BoardAppointment[], win: FillWindow): BoardAppointment | null => {
+    const actives = appointments.filter(appt => appt.status === 'active');
+    let before: BoardAppointment | null = null;
+    let after: BoardAppointment | null = null;
+    for (const appt of actives) {
+        const start = getAppointmentMinutes(appt.start);
+        if (start === null) continue;
+        const end = getAppointmentMinutes(appt.end) ?? start + 120;
+        if (end <= win.startMin) before = appt;                 // sorted → last match = closest before
+        else if (start >= win.endMin && !after) after = appt;   // first match after = closest after
+    }
+    return before || after || actives[0] || null;
+};
+
 // Lay out a column's appointments in side-by-side lanes when they overlap in
 // time, so double-booked cards don't stack invisibly on top of each other.
 const layoutAppointments = (appointments: BoardAppointment[]) => {
@@ -890,6 +928,27 @@ const TodayBoard: React.FC = () => {
         setPoolAnchor(coords ? { label: getShortAddress(appointment), coordinates: coords } : null);
     }, [appointmentCoordinates]);
 
+    // Click an empty green window -> open the Replacement Pool anchored on the rep's
+    // nearest existing stop, so the closest future appointments to fill the hole win.
+    const handleFillGap = useCallback(async (anchorAppointment: BoardAppointment | null, windowLabel: string) => {
+        setSelectedAppointment(null);
+        setShowPool(true);
+        if (!anchorAppointment) { setPoolAnchor(null); return; }
+        const address = getAppointmentAddress(anchorAppointment);
+        let coords = getAppointmentCoordinates(anchorAppointment, appointmentCoordinates);
+        if (!coords && address) {
+            try {
+                const [result] = await geocodeAddresses([address]);
+                coords = result?.coordinates || null;
+            } catch (err) {
+                console.warn('Failed to geocode gap anchor', err);
+                coords = null;
+            }
+        }
+        // No coordinates -> pool still opens in quality order (no nearby stop to route from).
+        setPoolAnchor(coords ? { label: `${windowLabel} · near ${getShortAddress(anchorAppointment)}`, coordinates: coords } : null);
+    }, [appointmentCoordinates]);
+
     const clearSearch = useCallback(() => {
         setSearchInput('');
         setActiveSearch(null);
@@ -935,6 +994,18 @@ const TodayBoard: React.FC = () => {
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
 
+    // Open-slot cutoff: on TODAY, hide windows whose time has already passed (keep the
+    // one we're currently in). Future days show every window; past days show none.
+    // Plain const (not memoized) so it re-evaluates on each render — the 30s cleanup
+    // tick re-renders the board, so slots drop within ~30s of their end time.
+    const nowCutoffMinutes = (() => {
+        const t = todayKey();
+        if (dateKey < t) return Infinity;   // whole day already passed
+        if (dateKey > t) return -Infinity;  // nothing has passed yet
+        const now = new Date();
+        return now.getHours() * 60 + now.getMinutes();
+    })();
+
     return (
         <div className="flex flex-col h-full min-h-0 overflow-hidden bg-bg-primary">
             <div className="flex-shrink-0 px-3 py-2 bg-bg-secondary border-b border-border-primary flex items-center justify-between gap-3">
@@ -950,6 +1021,7 @@ const TodayBoard: React.FC = () => {
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400 inline-block" />Self-gen</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-2 border-orange-500 inline-block" />Double-booked</span>
+                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-100 border border-dashed border-emerald-400 inline-block" />Open slot (click to fill)</span>
                         <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-red-200 border border-red-400 inline-block" />CSR-owned job</span>
                         {error && <span className="text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
                     </div>
@@ -1120,6 +1192,13 @@ const TodayBoard: React.FC = () => {
                                     const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
                                     const isCsrColumn = group.departmentGroup === 'CSR';
+                                    // Empty booking windows the rep is free to work → clickable green OPEN blocks.
+                                    // Skip windows whose time has already passed (nowCutoffMinutes).
+                                    const openWindows = isCsrColumn ? [] : FILL_WINDOWS.filter(win => (
+                                        win.endMin > nowCutoffMinutes &&
+                                        !unavailableSlotIds.includes(win.id) &&
+                                        !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
+                                    ));
                                     const prevGroup = groupIndex > 0 ? groupedAppointments[groupIndex - 1] : null;
                                     const isCsrSectionStart = isCsrColumn && prevGroup?.departmentGroup !== 'CSR';
                                     const prevRegion = prevGroup ? prevGroup.region : null;
@@ -1290,6 +1369,24 @@ const TodayBoard: React.FC = () => {
                                                                     </div>
                                                                 )}
                                                             </div>
+                                                        </button>
+                                                    );
+                                                })}
+
+                                                {openWindows.map(win => {
+                                                    const top = ((win.startMin - DAY_VIEW_START_HOUR * 60) / 30) * DAY_VIEW_CELL_HEIGHT;
+                                                    const height = ((win.endMin - win.startMin) / 30) * DAY_VIEW_CELL_HEIGHT;
+                                                    const anchorAppt = getGapAnchorAppointment(group.appointments, win);
+                                                    return (
+                                                        <button
+                                                            key={`gap-${win.id}`}
+                                                            onClick={() => handleFillGap(anchorAppt, `${group.repName}'s open ${win.label}`)}
+                                                            className="absolute z-[6] rounded-md border-2 border-dashed border-emerald-400/80 bg-emerald-50/70 hover:bg-emerald-100 hover:border-emerald-500 text-emerald-700 flex flex-col items-center justify-center gap-0.5 transition-colors group/gap"
+                                                            style={{ top: top + 2, height: Math.max(height - 4, 28), left: 4, right: 4 }}
+                                                            title={`Open ${win.label} — click to find the closest future appointments to pull in`}
+                                                        >
+                                                            <span className="text-[10px] font-extrabold uppercase tracking-wide">Open · {win.label}</span>
+                                                            <span className="text-[9px] font-semibold opacity-70 group-hover/gap:opacity-100">🔥 Fill from nearby</span>
                                                         </button>
                                                     );
                                                 })}
