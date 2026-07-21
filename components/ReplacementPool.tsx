@@ -40,6 +40,9 @@ const OPEN_REFRESH_MS = 30000;
 const CLOSED_REFRESH_MS = 300000;
 const MAX_ATTEMPTS = 3;
 const KM_TO_MILES = 0.621371;
+// When anchored (gap-fill / cancelled-slot), only recommend appointments within this
+// many miles of the rep's stop — a nearby customer is realistic to move; a far one isn't.
+const MAX_ANCHOR_MILES = 15;
 
 const getEntryCoordinates = (entry: PoolEntry): Coordinates | null => {
     const lat = Number(entry.lat);
@@ -260,8 +263,13 @@ const ReplacementPool: React.FC<{
                 : list
         );
         const available = byProximity(entries.filter(e => e.status === 'open' || e.status === 'claimed'));
+        // Anchored: only appointments within MAX_ANCHOR_MILES (a distance we can measure),
+        // then the 5 closest. Entries without coordinates can't be confirmed in-range → dropped.
+        const availableWithinRange = anchor
+            ? available.filter(e => { const d = distanceByJobId[e.jobId]; return d != null && d <= MAX_ANCHOR_MILES; }).slice(0, 5)
+            : available;
         return {
-            available: anchor ? available.slice(0, 5) : available,
+            available: availableWithinRange,
             cooldown: byProximity(entries.filter(e => e.status === 'cooldown')),
             removed: entries.filter(e => e.status === 'unqualified' || e.status === 'moved' || e.status === 'exhausted'),
         };
@@ -398,7 +406,7 @@ const ReplacementPool: React.FC<{
 
             {anchor && (
                 <div className="flex-shrink-0 mx-3 mt-2 px-2 py-1.5 text-[11px] rounded border border-brand-primary/50 bg-brand-bg-light text-brand-primary flex items-center gap-2">
-                    <span className="truncate font-semibold">📍 5 closest to {anchor.label}</span>
+                    <span className="truncate font-semibold">📍 Within {MAX_ANCHOR_MILES} mi of {anchor.label}</span>
                     <button
                         onClick={onClearAnchor}
                         className="ml-auto flex-shrink-0 font-bold hover:opacity-70 transition"
@@ -426,7 +434,9 @@ const ReplacementPool: React.FC<{
                 ) : (
                     <>
                         {sections.available.length === 0 && (
-                            <p className="text-xs italic text-text-quaternary py-4 text-center">No quality appointments available right now.</p>
+                            <p className="text-xs italic text-text-quaternary py-4 text-center">
+                                {anchor ? `No quality appointments within ${MAX_ANCHOR_MILES} miles.` : 'No quality appointments available right now.'}
+                            </p>
                         )}
                         {sections.available.map(renderEntry)}
 

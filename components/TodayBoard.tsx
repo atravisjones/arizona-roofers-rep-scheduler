@@ -400,7 +400,9 @@ const fetchRosterInfo = async (): Promise<{ groups: Record<string, DepartmentGro
         const dept = String(row?.[0] || '').trim();   // col B: Department
         const role = String(row?.[1] || '').trim();   // col C: Role / Title
         const name = String(row?.[2] || '').trim();   // col D: Name
-        const group = DEPT_TO_GROUP[dept];
+        // A "CSR" in the role title sits with the CSRs regardless of department — e.g.
+        // the CSR/Lead Manager, who runs bookings like a CSR rather than a sales rep.
+        const group = /\bcsr\b/i.test(role) ? 'CSR' : DEPT_TO_GROUP[dept];
         if (name && group) groups[normalizeRepName(name)] = group;
         if (name && MANAGER_ROLE_RE.test(role)) managers.push(normalizeRepName(name));
     });
@@ -1305,13 +1307,14 @@ const TodayBoard: React.FC = () => {
                                     const leftSection = group.leftSection;
                                     const isCsrColumn = group.departmentGroup === 'CSR';
                                     const isRosterManager = rosterManagers.has(normalizeRepName(group.repName));
-                                    // Open booking windows → clickable green OPEN blocks. Only for actual bookable
-                                    // sales reps: not CSR/Management, not a manager/owner by role, and matched to
-                                    // the availability sheet (matchedRep) so we honor real availability — never
-                                    // offer a window the rep is off for, or one whose time has already passed.
-                                    const openWindows = (leftSection || isRosterManager || !matchedRep) ? [] : FILL_WINDOWS.filter(win => (
+                                    // Open booking windows → clickable green OPEN blocks. Excluded: CSR/Management
+                                    // columns and managers/owners (by role). For everyone else, show empty windows
+                                    // that haven't passed; when we HAVE the rep's sheet availability, also skip the
+                                    // windows they're off for (reps not on the sheet are assumed available so they
+                                    // still get blocks — e.g. William Ludewig, who isn't on the SRA rota).
+                                    const openWindows = (leftSection || isRosterManager) ? [] : FILL_WINDOWS.filter(win => (
                                         win.endMin > nowCutoffMinutes &&
-                                        !unavailableSlotIds.includes(win.id) &&
+                                        (!matchedRep || !unavailableSlotIds.includes(win.id)) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
                                     ));
                                     const prevGroup = groupIndex > 0 ? groupedAppointments[groupIndex - 1] : null;
@@ -1351,15 +1354,15 @@ const TodayBoard: React.FC = () => {
                                                 </div>
                                             )}
                                         <div
-                                            className={`flex flex-col border-r border-border-primary ${!leftSection && group.region === 'PHX' ? 'bg-bg-primary' : ''} transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
-                                            style={{ flex: '1 1 0', minWidth: 132, backgroundColor: leftSection ? LEFT_SECTION_TINT[leftSection] : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
+                                            className={`flex flex-col border-r border-border-primary min-w-0 ${!leftSection && group.region === 'PHX' ? 'bg-bg-primary' : ''} transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
+                                            style={{ flex: '1 1 0', backgroundColor: leftSection ? LEFT_SECTION_TINT[leftSection] : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
                                         >
                                             <div
                                                 className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
                                                 style={{ height: HEADER_HEIGHT }}
                                             >
                                                 <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                                    <div className="text-xs font-bold text-text-primary truncate min-w-0" title={group.repName}>{group.repName}</div>
+                                                    <div className="text-[10px] font-bold text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0" title={group.repName}>{group.repName}</div>
                                                     <div className="flex items-center gap-1 flex-shrink-0">
                                                         {isFullyUnavailable && (
                                                             <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
@@ -1379,11 +1382,6 @@ const TodayBoard: React.FC = () => {
                                                         {!leftSection && isRosterManager && (
                                                             <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 border border-slate-400" title="Manager — not offered for gap-fill">
                                                                 MGR
-                                                            </span>
-                                                        )}
-                                                        {group.region !== 'PHX' && (
-                                                            <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full ${REGION_BADGE[group.region]}`}>
-                                                                {REGION_LABEL[group.region]}
                                                             </span>
                                                         )}
                                                         <span className="text-[10px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
