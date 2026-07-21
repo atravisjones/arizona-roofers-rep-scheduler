@@ -4,7 +4,7 @@ import { supabase } from '../services/supabaseClient';
 
 const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
 const POLL_MS = 60000;
-const FLAG_REASONS = ['Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
+const FLAG_REASONS = ['One legger', 'No legger', 'Bad address', 'Wrong appt window', 'Missing info', 'Out of area', 'Low intent', 'Other'] as const;
 
 type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
@@ -39,6 +39,8 @@ interface ReviewRow {
 
 interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
 interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
+interface RepStat { rep: string; flagged_day: number; flagged_week: number; flagged_month: number; reviewed_day: number; reviewed_week: number; reviewed_month: number; }
+interface ReviewStats { today: { booked: number; reviewed: number; flagged: number }; by_rep: RepStat[]; }
 
 const formatPhoenixDate = (value: string | null) => {
     if (!value) return 'Unknown time';
@@ -92,6 +94,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [exiting, setExiting] = useState<Record<string, 'reviewed' | 'flagged'>>({});
     const [undoStack, setUndoStack] = useState<ReviewAction[]>([]);
     const [redoStack, setRedoStack] = useState<ReviewAction[]>([]);
+    const [stats, setStats] = useState<ReviewStats | null>(null);
+    const [showStats, setShowStats] = useState(false);
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -130,6 +134,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             priorNeedsIdsRef.current = nextNeedsIds;
             setRows(next);
             setError(null);
+            const { data: statsData } = await supabase.rpc('get_review_stats');
+            if (statsData) setStats(statsData as ReviewStats);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load review queue');
         } finally {
@@ -265,6 +271,13 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 <nav className="flex flex-wrap gap-1" aria-label="Review status">
                     {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
                 </nav>
+                {stats && <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
+                    <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
+                    <span className="px-2 py-0.5 rounded bg-tag-red-bg text-tag-red-text"><b>{stats.today.flagged}</b> flagged</span>
+                    <button onClick={() => setShowStats(value => !value)} className="ml-auto px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
+                </div>}
+                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary"><tr className="text-text-tertiary"><th className="py-1 px-2 text-left">CSR</th><th className="px-1.5 text-center" title="Flagged today">Flag D</th><th className="px-1.5 text-center" title="Flagged last 7 days">W</th><th className="px-1.5 text-center" title="Flagged last 30 days">M</th><th className="px-1.5 text-center" title="Reviewed today">Rev D</th><th className="px-1.5 text-center" title="Reviewed last 7 days">W</th><th className="px-1.5 text-center pr-2" title="Reviewed last 30 days">M</th></tr></thead><tbody>{stats.by_rep.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : stats.by_rep.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap">{rep.rep}</td><td className={`px-1.5 text-center ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
             </header>
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
