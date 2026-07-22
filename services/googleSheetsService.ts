@@ -760,6 +760,37 @@ export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
  * This requires the spreadsheet to be public ("Anyone with the link can view").
  * @param date The date for which to fetch availability. Defaults to today.
  */
+/**
+ * Lightweight slot-layout lookup for a date's week tab. Used by the Today Board,
+ * whose selected date can differ from the day loaded in the planner (a storm week
+ * has 5 slots while today runs 4). Reads only the right-side slot labels (I2:I12):
+ * the rows between the "Appointment…" header and the "Total" row. 5 labels ->
+ * ts-1..ts-5 with the sheet's labels; anything else -> the standard TIME_SLOTS.
+ */
+export async function fetchTimeSlotsForDate(date: Date): Promise<TimeSlot[]> {
+    try {
+        const metaResponse = await fetchWithRetry(buildSheetsUrl(SPREADSHEET_ID));
+        if (!metaResponse.ok) return TIME_SLOTS;
+        const metaData = await metaResponse.json();
+        const sheetName = findSheetNameForDate(date, metaData.sheets);
+        if (!sheetName) return TIME_SLOTS;
+        const resp = await fetchWithRetry(buildSheetsUrl(SPREADSHEET_ID, `'${sheetName}'!I2:I12`, 'FORMATTED_VALUE'));
+        if (!resp.ok) return TIME_SLOTS;
+        const rows: string[] = (((await resp.json()).values || []) as any[][]).map(r => String(r?.[0] || '').trim());
+        const headerIdx = rows.findIndex(v => v.toUpperCase().startsWith('APPOINTMENT'));
+        if (headerIdx < 0) return TIME_SLOTS;
+        const labels: string[] = [];
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+            if (!rows[i] || rows[i].toUpperCase().startsWith('TOTAL')) break;
+            labels.push(rows[i]);
+        }
+        if (labels.length === 5) return labels.map((label, i) => ({ id: `ts-${i + 1}`, label }));
+        return TIME_SLOTS;
+    } catch {
+        return TIME_SLOTS;
+    }
+}
+
 export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string, timeSlots: TimeSlot[] }> {
     let sheetName = '';
     try {

@@ -4,8 +4,8 @@ import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import type { AppState, Rep, TimeSlot } from '../types';
-import { getEffectiveUnavailableSlots } from '../utils/repUtils';
-import { normalizeName } from '../services/googleSheetsService';
+import { getEffectiveUnavailableSlots, isLondon } from '../utils/repUtils';
+import { normalizeName, fetchTimeSlotsForDate } from '../services/googleSheetsService';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
@@ -809,7 +809,27 @@ const TodayBoard: React.FC = () => {
         }
     }, [appointments]);
 
-    const fillWindows = useMemo(() => getFillWindows(appState.timeSlots), [appState.timeSlots]);
+    // The board's date can be a different WEEK than the day loaded in the planner
+    // (storm weeks run 5 slots while today runs 4). Resolve the slot layout for the
+    // board's own date: from that day's workspace state if it's loaded, else a
+    // lightweight sheet lookup. Falls back to the planner's layout meanwhile.
+    const [boardDateTimeSlots, setBoardDateTimeSlots] = useState<TimeSlot[] | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const dayState = getAppStateForDay(dateKey);
+        if (dayState?.timeSlots?.length) {
+            setBoardDateTimeSlots(dayState.timeSlots);
+            return;
+        }
+        setBoardDateTimeSlots(null);
+        fetchTimeSlotsForDate(new Date(`${dateKey}T12:00:00`))
+            .then(slots => { if (!cancelled) setBoardDateTimeSlots(slots); })
+            .catch(() => { /* keep planner layout */ });
+        return () => { cancelled = true; };
+    }, [dateKey, getAppStateForDay]);
+    const boardSlots = boardDateTimeSlots || appState.timeSlots;
+
+    const fillWindows = useMemo(() => getFillWindows(boardSlots), [boardSlots]);
 
     const repsByName = useMemo(() => {
         const byName = new Map<string, Rep>();
@@ -911,6 +931,9 @@ const TodayBoard: React.FC = () => {
                     const grp = getRepGroup(rep.name);
                     if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
                     if (rosterManagers.has(norm)) return false;
+                    // Commercial reps aren't gap-fill candidates — their open time
+                    // is not bookable residential capacity.
+                    if (rep.region === 'COMMERCIAL' || isLondon(rep)) return false;
                     if (getEffectiveUnavailableSlots(rep, dayName).length >= fillWindows.length) return false;
                     return true;
                 })
@@ -1354,18 +1377,20 @@ const TodayBoard: React.FC = () => {
                                 (() => {
                                     const matchedRep = repsByName.get(normalizeRepName(group.repName)) || repsByLooseName.get(normalizeName(group.repName));
                                     const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
-                                    const isFullyUnavailable = unavailableSlotIds.length >= appState.timeSlots.length;
-                                    const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes, appState.timeSlots));
+                                    const isFullyUnavailable = unavailableSlotIds.length >= boardSlots.length;
+                                    const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes, boardSlots));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
                                     const leftSection = group.leftSection;
                                     const isCsrColumn = group.departmentGroup === 'CSR';
                                     const isRosterManager = rosterManagers.has(normalizeRepName(group.repName));
+                                    const isCommercialRep = !!matchedRep && (matchedRep.region === 'COMMERCIAL' || isLondon(matchedRep));
                                     // Open booking windows → clickable green OPEN blocks. Excluded: CSR/Management
-                                    // columns and managers/owners (by role). For everyone else, show empty windows
+                                    // columns, managers/owners (by role), and commercial reps (their open time is
+                                    // not bookable residential capacity). For everyone else, show empty windows
                                     // that haven't passed; when we HAVE the rep's sheet availability, also skip the
                                     // windows they're off for (reps not on the sheet are assumed available so they
                                     // still get blocks — e.g. William Ludewig, who isn't on the SRA rota).
-                                    const openWindows = (leftSection || isRosterManager) ? [] : fillWindows.filter(win => (
+                                    const openWindows = (leftSection || isRosterManager || isCommercialRep) ? [] : fillWindows.filter(win => (
                                         win.endMin > nowCutoffMinutes &&
                                         (!matchedRep || !unavailableSlotIds.includes(win.id)) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
