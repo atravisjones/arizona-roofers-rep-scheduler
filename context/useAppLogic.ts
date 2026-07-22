@@ -562,6 +562,10 @@ export const useAppLogic = () => {
         if (isLondon(rep) || rep.region === 'COMMERCIAL') return isCommercialJob;
         if (isCommercialJob) return false;
 
+        // Spanish-speaking customer: auto-assign only to reps marked in the sheet's
+        // 'Spanish' column (Appointment Blocks skills grid). Manual drag-drop bypasses.
+        if (/\bspanish\b/i.test(job.notes || '') && !((rep.skills?.['Spanish'] ?? 0) > 0)) return false;
+
         const jobCity = norm(job.city);
         if (!jobCity) return true;
         const northZone = getNorthZone(jobCity);
@@ -1946,6 +1950,7 @@ export const useAppLogic = () => {
                 const hasInsurance = /\binsurance\b/i.test(allTagText);
                 const hasCommercial = /\bcommercial\b/i.test(allTagText);
                 const hasPaint = /\bpaint\b/i.test(allTagText);
+                const hasSpanish = /\bspanish\b/i.test(allTagText);
 
                 // Preserve # priority markers — skip titleAfterDash (address can have "Unit #5")
                 const priorityMatch =
@@ -1963,6 +1968,7 @@ export const useAppLogic = () => {
                 if (hasInsurance || apt.workflow === 'Insurance') notesParts.push('Insurance');
                 if (hasCommercial) notesParts.push('Commercial');
                 if (hasPaint) notesParts.push('Paint');
+                if (hasSpanish) notesParts.push('Spanish Speaker');
                 const sqft = titleSqft ? titleSqft[1].replace(/,/g, '') : '';
                 const stories = titleStories ? titleStories[1] : '';
                 const roofAge = titleRoofAge ? titleRoofAge[1] : '';

@@ -16,7 +16,7 @@ export const MAX_REP_ROW = 175; // Reps below this row in the sheet are excluded
 
 // Rep skillsets sheet details
 export const SKILLS_SHEET_TITLE = 'Appointment Blocks';
-export const SKILLS_DATA_RANGE = 'A19:H39';
+export const SKILLS_DATA_RANGE = 'A19:N39'; // header-driven; includes cols past Zip Code (2 Story Ladder, Veteran, Stories, Spanish)
 
 // Job ID / Roofr URL sheet details — reads from Apt Outcome Tracker (Master Sheet tab)
 // Column B = Address, Column O = Job ID

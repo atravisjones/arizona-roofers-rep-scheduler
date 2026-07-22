@@ -638,15 +638,15 @@ async function fetchRepSkills(): Promise<Map<string, { skills: Record<string, nu
             const normalizedName = normalizeName(repName);
             const skills: Record<string, number> = {};
 
-            const skillHeaders = headers.slice(1, zipCodeColumnIndex > 0 ? zipCodeColumnIndex : headers.length);
-
-            skillHeaders.forEach((skillName: string, headerIndex: number) => {
-                const dataColumnIndex = headerIndex + 1; // +1 to account for 'Rep Name' column (A) being at index 0.
-                const skillValueString = currentRow[dataColumnIndex];
-                const skillValue = parseInt(skillValueString, 10);
-                if (!isNaN(skillValue)) {
-                    skills[skillName] = skillValue;
-                }
+            // Every headed column except Rep (A) and the Zip column is a skill — the sheet
+            // has columns on both sides of Zip Code (…Commercial | Zip | 2 Story Ladder,
+            // Veteran, Stories, Spanish). Binary columns use "Yes"-style marks → 1.
+            headers.forEach((skillName: string, dataColumnIndex: number) => {
+                if (dataColumnIndex === 0 || dataColumnIndex === zipCodeColumnIndex || !skillName) return;
+                const raw = String(currentRow[dataColumnIndex] ?? '').trim();
+                if (!raw) return;
+                const skillValue = parseInt(raw, 10);
+                skills[skillName] = !isNaN(skillValue) ? skillValue : (/^(yes|y|x|si|sí|✓|true)$/i.test(raw) ? 1 : 0);
             });
 
             let zipCodes: string[] = [];
