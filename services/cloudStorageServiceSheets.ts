@@ -1,4 +1,4 @@
-import { AppState } from '../types';
+import { AppState, TimeSlot } from '../types';
 import {
   saveDailySchedule,
   loadDailySchedule,
@@ -109,10 +109,10 @@ export async function saveStateToCloud(dateKey: string, data: AppState): Promise
 /**
  * Load a single day's state from Supabase
  */
-export async function loadStateFromCloud(dateKey: string): Promise<LoadResponse> {
+export async function loadStateFromCloud(dateKey: string, timeSlots?: TimeSlot[]): Promise<LoadResponse> {
   console.log('[CloudStorage] Loading from Supabase for date:', dateKey);
 
-  const result = await loadDailySchedule(dateKey);
+  const result = await loadDailySchedule(dateKey, timeSlots);
 
   if (result.success && result.data) {
     return {
@@ -156,10 +156,10 @@ export async function saveAllStatesToCloud(
 /**
  * Load multiple days' states from Supabase
  */
-export async function loadAllStatesFromCloud(dateKeys: string[]): Promise<LoadAllResponse> {
+export async function loadAllStatesFromCloud(dateKeys: string[], timeSlotsByDate: Record<string, TimeSlot[]> = {}): Promise<LoadAllResponse> {
   console.log('[CloudStorage] Bulk loading', dateKeys.length, 'dates from Supabase');
 
-  const result = await loadAllDailySchedules(dateKeys);
+  const result = await loadAllDailySchedules(dateKeys, timeSlotsByDate);
 
   return {
     success: result.success,

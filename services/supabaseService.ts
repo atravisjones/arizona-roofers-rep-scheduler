@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { AppState, Rep, Job, DisplayJob, Settings, JobChange, ScheduledTimeSlot } from '../types';
+import { AppState, Rep, Job, DisplayJob, Settings, JobChange, ScheduledTimeSlot, TimeSlot } from '../types';
 import { TIME_SLOTS } from '../constants';
 
 // ============================================================================
@@ -62,7 +62,7 @@ function supabaseRepToRep(sr: SupabaseRep, scheduleSlots: ScheduledTimeSlot[] = 
     availability: sr.availability || '',
     schedule: scheduleSlots.length > 0 ? scheduleSlots : TIME_SLOTS.map(ts => ({ ...ts, jobs: [] })),
     skills: sr.skills || {},
-    region: (sr.region as 'PHX' | 'NORTH' | 'SOUTH' | 'UNKNOWN') || 'UNKNOWN',
+    region: (sr.region as Rep['region']) || 'UNKNOWN',
     zipCodes: sr.zip_codes || [],
     salesRank: sr.sales_rank || undefined,
     unavailableSlots: sr.unavailable_slots || {},
@@ -301,7 +301,7 @@ export async function saveDailySchedule(
       .from('scheduler_settings')
       .upsert({
         date_key: dateKey,
-        config: state.settings,
+        config: { ...state.settings, timeSlots: state.timeSlots },
       }, { onConflict: 'date_key' });
     if (settingsError) throw settingsError;
 
@@ -314,7 +314,8 @@ export async function saveDailySchedule(
 }
 
 export async function loadDailySchedule(
-  dateKey: string
+  dateKey: string,
+  timeSlots?: TimeSlot[]
 ): Promise<{ success: boolean; data?: AppState; error?: string; message?: string }> {
   try {
     console.log('[Supabase] Loading schedule for:', dateKey);
@@ -357,6 +358,23 @@ export async function loadDailySchedule(
       .eq('date_key', dateKey)
       .maybeSingle();
 
+    const savedTimeSlots = settingsData?.config?.timeSlots as TimeSlot[] | undefined;
+    const inferredHasFifthSlot = (scheduleData || []).some(schedule => schedule.slot_id === 'ts-5');
+    const stormFallbackLabels: Record<string, string> = {
+      'ts-1': '8am - 10am',
+      'ts-2': '10am - 12pm',
+      'ts-3': '1pm - 3pm',
+      'ts-4': '3pm - 5pm',
+      'ts-5': '5pm - 7pm',
+    };
+    const inferredTimeSlots = inferredHasFifthSlot
+      ? ['ts-1', 'ts-2', 'ts-3', 'ts-4', 'ts-5'].map(id => {
+          const savedRow = (scheduleData || []).find(schedule => schedule.slot_id === id);
+          return { id, label: savedRow?.slot_label || stormFallbackLabels[id] };
+        })
+      : TIME_SLOTS;
+    const activeTimeSlots = timeSlots || savedTimeSlots || inferredTimeSlots;
+
     // 5. Build rep schedules
     const schedulesByRep = new Map<string, Map<string, DisplayJob[]>>();
     const lockedReps = new Set<string>();
@@ -384,7 +402,7 @@ export async function loadDailySchedule(
     // 6. Build reps array with schedules
     const reps: Rep[] = (repsData || []).map(sr => {
       const repSchedule = schedulesByRep.get(sr.external_id);
-      const scheduleSlots: ScheduledTimeSlot[] = TIME_SLOTS.map(ts => ({
+      const scheduleSlots: ScheduledTimeSlot[] = activeTimeSlots.map(ts => ({
         ...ts,
         jobs: repSchedule?.get(ts.id) || [],
       }));
@@ -425,7 +443,8 @@ export async function loadDailySchedule(
       allowRegionalRepsInPhoenix: false,
     };
 
-    const settings: Settings = settingsData?.config || defaultSettings;
+    const { timeSlots: _savedSlots, ...savedSettings } = settingsData?.config || {};
+    const settings: Settings = Object.keys(savedSettings).length > 0 ? savedSettings as Settings : defaultSettings;
 
     // Check if we found any data
     const hasData = (scheduleData && scheduleData.length > 0) ||
@@ -436,14 +455,14 @@ export async function loadDailySchedule(
       return {
         success: false,
         message: `No data found for ${dateKey}`,
-        data: { reps, unassignedJobs: [], settings },
+        data: { reps, unassignedJobs: [], settings, timeSlots: activeTimeSlots },
       };
     }
 
     console.log('[Supabase] Load complete for:', dateKey);
     return {
       success: true,
-      data: { reps, unassignedJobs, settings },
+      data: { reps, unassignedJobs, settings, timeSlots: activeTimeSlots },
     };
   } catch (error) {
     console.error('[Supabase] Error loading daily schedule:', error);
@@ -573,12 +592,13 @@ export async function saveAllDailySchedules(
 }
 
 export async function loadAllDailySchedules(
-  dateKeys: string[]
+  dateKeys: string[],
+  timeSlotsByDate: Record<string, TimeSlot[]> = {}
 ): Promise<{ success: boolean; results: Array<{ dateKey: string; success: boolean; data?: AppState; error?: string }> }> {
   const results: Array<{ dateKey: string; success: boolean; data?: AppState; error?: string }> = [];
 
   for (const dateKey of dateKeys) {
-    const result = await loadDailySchedule(dateKey);
+    const result = await loadDailySchedule(dateKey, timeSlotsByDate[dateKey]);
     results.push({
       dateKey,
       success: result.success,

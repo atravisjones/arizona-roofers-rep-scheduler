@@ -1,5 +1,7 @@
 import { parseTimeRange } from '../../utils/timeUtils';
-import { DAY_VIEW_CELL_HEIGHT, DAY_VIEW_START_HOUR, DAY_VIEW_END_HOUR } from '../../constants';
+import { DAY_VIEW_CELL_HEIGHT, DAY_VIEW_START_HOUR, DAY_VIEW_END_HOUR, TIME_SLOTS } from '../../constants';
+import { TimeSlot } from '../../types';
+import { mapMinutesToActiveSlotId, parseTimeSlotWindow } from '../../utils/timeSlotUtils';
 
 export interface DayViewTimeSlot {
   id: string;
@@ -43,7 +45,8 @@ export const DAY_VIEW_SLOTS = generateDayViewSlots();
 export const calculateJobPosition = (
   originalTimeframe: string | undefined,
   fallbackSlotId?: string,
-  cellHeight: number = DAY_VIEW_CELL_HEIGHT
+  cellHeight: number = DAY_VIEW_CELL_HEIGHT,
+  timeSlots: TimeSlot[] = TIME_SLOTS
 ): { top: number; height: number; startMinutes: number; endMinutes: number } => {
   const gridStartMinutes = DAY_VIEW_START_HOUR * 60; // 6am = 360 minutes
   const DEFAULT_DURATION = 120; // 2 hours default
@@ -106,6 +109,18 @@ export const calculateJobPosition = (
 
   // Fallback: use existing slot ID to determine position
   if (fallbackSlotId) {
+    if (timeSlots.length === 5) {
+      const activeSlot = timeSlots.find(slot => slot.id === fallbackSlotId);
+      const window = activeSlot ? parseTimeSlotWindow(activeSlot.label) : null;
+      if (window) {
+        return {
+          top: Math.max(0, (window.start - gridStartMinutes) / 30 * cellHeight),
+          height: Math.max((window.end - window.start) / 30 * cellHeight, minHeight),
+          startMinutes: window.start,
+          endMinutes: window.end,
+        };
+      }
+    }
     const slotPositions: Record<string, { top: number; height: number; startMinutes: number; endMinutes: number }> = {
       'ts-1': {
         top: (450 - gridStartMinutes) / 30 * cellHeight, // 7:30am
@@ -153,12 +168,8 @@ export const calculateJobPosition = (
  * Map minutes from midnight to the closest traditional slot ID (ts-1 through ts-4)
  * Used when dropping a job on a specific time cell
  */
-export const mapMinutesToSlotId = (minutes: number): string => {
-  if (minutes < 600) return 'ts-1';      // Before 10am -> ts-1 (7:30am-10am)
-  if (minutes < 780) return 'ts-2';      // Before 1pm -> ts-2 (10am-1pm)
-  if (minutes < 960) return 'ts-3';      // Before 4pm -> ts-3 (1pm-4pm)
-  return 'ts-4';                          // 4pm onwards -> ts-4 (4pm-7pm)
-};
+export const mapMinutesToSlotId = (minutes: number, timeSlots: TimeSlot[] = TIME_SLOTS): string =>
+  mapMinutesToActiveSlotId(minutes, timeSlots);
 
 /**
  * Format minutes as a time string (e.g., 600 -> "10:00 AM")

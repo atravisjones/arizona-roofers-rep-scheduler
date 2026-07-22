@@ -3,13 +3,14 @@ import { COMPANY_ROSTER_DATA_RANGE, COMPANY_ROSTER_SHEET_TITLE, COMPANY_ROSTER_S
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
-import type { AppState, Rep } from '../types';
+import type { AppState, Rep, TimeSlot } from '../types';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 import { normalizeName } from '../services/googleSheetsService';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
 import ReplacementPool, { type PoolAnchor } from './ReplacementPool';
+import { parseTimeSlotWindow } from '../utils/timeSlotUtils';
 
 interface RoofrAppointment {
     eventId: string;
@@ -277,12 +278,20 @@ const getAppointmentPosition = (appointment: RoofrAppointment) => {
 // with the sheet's availability slots (ts-1..ts-4 = TIME_SLOTS), so availability is
 // checked directly by id.
 type FillWindow = { id: string; label: string; startMin: number; endMin: number };
-const FILL_WINDOWS: FillWindow[] = [
+const REGULAR_FILL_WINDOWS: FillWindow[] = [
     { id: 'ts-1', label: '8–11', startMin: 8 * 60, endMin: 11 * 60 },
     { id: 'ts-2', label: '11–1', startMin: 11 * 60, endMin: 13 * 60 },
     { id: 'ts-3', label: '2–5', startMin: 14 * 60, endMin: 17 * 60 },
     { id: 'ts-4', label: '5–8', startMin: 17 * 60, endMin: 20 * 60 },
 ];
+
+const getFillWindows = (timeSlots: TimeSlot[]): FillWindow[] => {
+    if (timeSlots.length === 4) return REGULAR_FILL_WINDOWS;
+    return timeSlots.flatMap(slot => {
+        const window = parseTimeSlotWindow(slot.label);
+        return window ? [{ id: slot.id, label: slot.label, startMin: window.start, endMin: window.end }] : [];
+    });
+};
 
 const appointmentOverlapsWindow = (appointment: BoardAppointment, win: FillWindow) => {
     const start = getAppointmentMinutes(appointment.start);
@@ -800,6 +809,8 @@ const TodayBoard: React.FC = () => {
         }
     }, [appointments]);
 
+    const fillWindows = useMemo(() => getFillWindows(appState.timeSlots), [appState.timeSlots]);
+
     const repsByName = useMemo(() => {
         const byName = new Map<string, Rep>();
         appState.reps.forEach(rep => {
@@ -900,7 +911,7 @@ const TodayBoard: React.FC = () => {
                     const grp = getRepGroup(rep.name);
                     if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
                     if (rosterManagers.has(norm)) return false;
-                    if (getEffectiveUnavailableSlots(rep, dayName).length >= FILL_WINDOWS.length) return false;
+                    if (getEffectiveUnavailableSlots(rep, dayName).length >= fillWindows.length) return false;
                     return true;
                 })
                 .map(rep => ({
@@ -922,7 +933,7 @@ const TodayBoard: React.FC = () => {
                     || (REGION_ORDER[a.region] - REGION_ORDER[b.region])
                     || a.repName.localeCompare(b.repName);
             });
-    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers]);
+    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers, fillWindows.length]);
 
     const boardAppointments = useMemo(() => (
         groupedAppointments.flatMap(group => (
@@ -1343,8 +1354,8 @@ const TodayBoard: React.FC = () => {
                                 (() => {
                                     const matchedRep = repsByName.get(normalizeRepName(group.repName)) || repsByLooseName.get(normalizeName(group.repName));
                                     const unavailableSlotIds = matchedRep ? getEffectiveUnavailableSlots(matchedRep, dayName) : [];
-                                    const isFullyUnavailable = unavailableSlotIds.length >= 4;
-                                    const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes));
+                                    const isFullyUnavailable = unavailableSlotIds.length >= appState.timeSlots.length;
+                                    const isTimeUnavailable = (startMinutes: number) => unavailableSlotIds.includes(mapMinutesToSlotId(startMinutes, appState.timeSlots));
                                     const isClosestRep = !activeSearch || proximityResults.closestRepNames.has(group.repName);
                                     const leftSection = group.leftSection;
                                     const isCsrColumn = group.departmentGroup === 'CSR';
@@ -1354,7 +1365,7 @@ const TodayBoard: React.FC = () => {
                                     // that haven't passed; when we HAVE the rep's sheet availability, also skip the
                                     // windows they're off for (reps not on the sheet are assumed available so they
                                     // still get blocks — e.g. William Ludewig, who isn't on the SRA rota).
-                                    const openWindows = (leftSection || isRosterManager) ? [] : FILL_WINDOWS.filter(win => (
+                                    const openWindows = (leftSection || isRosterManager) ? [] : fillWindows.filter(win => (
                                         win.endMin > nowCutoffMinutes &&
                                         (!matchedRep || !unavailableSlotIds.includes(win.id)) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))

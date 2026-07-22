@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { DisplayJob, Rep } from '../../types';
 import { useAppContext } from '../../context/AppContext';
-import { TAG_KEYWORDS, TIME_SLOTS } from '../../constants';
+import { TAG_KEYWORDS } from '../../constants';
+import { mapTimeframeToSlotId } from '../../services/geminiService';
 import { XIcon, SaveIcon, TrashIcon, MapPinIcon, ExternalLinkIcon, UserIcon } from '../icons';
 import { resolveRoofrJobId } from '../../services/roofrApiService';
 import { getEffectiveUnavailableSlots } from '../../utils/repUtils';
@@ -58,12 +59,10 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
       setNotes(job.notes);
       setSelectedRepId(currentRepId || null);
       // Find current slot from job's timeframe or default to first slot
-      const currentSlot = TIME_SLOTS.find(slot =>
-        job.originalTimeframe?.toLowerCase().includes(slot.label.toLowerCase().split(' - ')[0])
-      );
-      setSelectedSlotId(currentSlot?.id || 'ts-1');
+      const currentSlotId = mapTimeframeToSlotId(job.originalTimeframe || '', appState.timeSlots);
+      setSelectedSlotId(currentSlotId || appState.timeSlots[0]?.id || 'ts-1');
     }
-  }, [job, currentRepId]);
+  }, [job, currentRepId, appState.timeSlots]);
 
   // Parse tags from notes
   const allTags = useMemo(() => {
@@ -89,8 +88,7 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
   // Check if a rep has at least one open slot on the selected day.
   const isRepAvailable = (rep: Rep): boolean => {
     const unavailableSlots = getEffectiveUnavailableSlots(rep, dayName);
-    // Rep is unavailable if all 4 slots are marked unavailable
-    return unavailableSlots.length < 4;
+    return unavailableSlots.length < appState.timeSlots.length;
   };
 
   // Get reps sorted: available first (by name), then unavailable (by name)
@@ -300,7 +298,7 @@ const JobEditModal: React.FC<JobEditModalProps> = ({ job, isOpen, onClose, curre
                   className="w-full p-2 text-sm border border-border-primary bg-bg-primary rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none"
                   disabled={!selectedRepId}
                 >
-                  {TIME_SLOTS.map(slot => (
+                  {appState.timeSlots.map(slot => (
                     <option
                       key={slot.id}
                       value={slot.id}

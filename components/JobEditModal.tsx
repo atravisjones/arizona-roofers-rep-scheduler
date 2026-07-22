@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Job, DisplayJob, Rep } from '../types';
-import { TAG_KEYWORDS, TIME_SLOTS } from '../constants';
+import { TAG_KEYWORDS } from '../constants';
 import { MapPinIcon, UserIcon, TrashIcon, SaveIcon, UnassignJobIcon, ExternalLinkIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 
@@ -47,15 +47,15 @@ export const JobEditModal: React.FC<JobEditModalProps> = ({
     const [address, setAddress] = useState(job.address);
     const [notes, setNotes] = useState(job.notes);
     const [selectedRepId, setSelectedRepId] = useState(currentRepId || '');
-    const [selectedSlotId, setSelectedSlotId] = useState(currentSlotId || 'ts-2');
+    const [selectedSlotId, setSelectedSlotId] = useState(currentSlotId || appState.timeSlots[1]?.id || appState.timeSlots[0]?.id || 'ts-1');
 
     useEffect(() => {
         setCustomerName(job.customerName);
         setAddress(job.address);
         setNotes(job.notes);
         setSelectedRepId(currentRepId || '');
-        setSelectedSlotId(currentSlotId || 'ts-2');
-    }, [job, currentRepId, currentSlotId]);
+        setSelectedSlotId(currentSlotId || appState.timeSlots[1]?.id || appState.timeSlots[0]?.id || 'ts-1');
+    }, [job, currentRepId, currentSlotId, appState.timeSlots]);
 
     const allTags = useMemo(() => {
         if (!job.notes) return [];
@@ -251,7 +251,7 @@ export const JobEditModal: React.FC<JobEditModalProps> = ({
                                         onChange={e => setSelectedSlotId(e.target.value)}
                                         className="w-full p-2 border border-border-primary rounded-md text-sm bg-bg-primary text-text-primary focus:ring-2 focus:ring-brand-primary focus:outline-none"
                                     >
-                                        {TIME_SLOTS.map(slot => (
+                                        {appState.timeSlots.map(slot => (
                                             <option key={slot.id} value={slot.id}>{slot.label}</option>
                                         ))}
                                     </select>

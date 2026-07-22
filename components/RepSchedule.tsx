@@ -3,11 +3,12 @@ import { Rep, Job, DisplayJob, InstallJob } from '../types';
 import { ChevronDownIcon, ChevronUpIcon, PinIcon, ClipboardIcon, LockIcon, UnlockIcon, AutoAssignIcon, SwapIcon, OptimizeIcon, UndoIcon, SettingsIcon, TrophyIcon, XIcon, MenuIcon, MessageIcon, HardHatIcon } from './icons';
 import { JobCard } from './JobCard';
 import { SwapScheduleModal } from './SwapScheduleModal';
-import { TAG_KEYWORDS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
+import { TAG_KEYWORDS } from '../constants';
 import { useAppContext } from '../context/AppContext';
 import { mapTimeframeToSlotId } from '../services/geminiService';
 import { parseTimeRange, doTimesOverlap } from '../utils/timeUtils';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 
 interface RepScheduleProps {
     rep: Rep;
@@ -66,8 +67,9 @@ const checkTimeMismatch = (originalTimeframe: string | undefined, slotLabel: str
 
 const DropZone: React.FC<DropZoneProps> = ({ repId, slotId, onJobDrop, label, isUnavailable, onJobDragStart, onJobDragEnd, draggedJob, jobs, onUnassign, onUpdateJob, onRemoveJob, isOptimized }) => {
     const [isOver, setIsOver] = React.useState(false);
+    const { appState } = useAppContext();
     // Use display label (shorter time range) for UI
-    const displayLabel = TIME_SLOT_DISPLAY_LABELS[slotId] || label;
+    const displayLabel = getTimeSlotDisplayLabel({ id: slotId, label }, appState.timeSlots);
 
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
@@ -420,7 +422,7 @@ const RepSchedule: React.FC<RepScheduleProps> = ({ rep, onJobDrop, onUnassign, o
         let targetSlotId = rep.schedule[0].id;
 
         if (draggedJob.originalTimeframe) {
-            const mapped = mapTimeframeToSlotId(draggedJob.originalTimeframe);
+            const mapped = mapTimeframeToSlotId(draggedJob.originalTimeframe, appState.timeSlots);
             if (mapped) targetSlotId = mapped;
         } else {
             const openSlot = rep.schedule.find(s => !unavailableSlotIdsForToday.has(s.id) && s.jobs.length === 0);

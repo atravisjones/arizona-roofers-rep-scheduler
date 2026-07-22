@@ -4,7 +4,7 @@ import RepSchedule from './RepSchedule';
 import { DayViewPanel } from './DayView';
 import { LoadingIcon, ErrorIcon, SearchIcon, ExpandAllIcon, CollapseAllIcon, UnassignAllIcon, LockIcon, UnlockIcon, XIcon, TrophyIcon, ListIcon, GridIcon } from './icons';
 import { SortKey, Job, Rep, DisplayJob } from '../types';
-import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
+import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 import { fetchClosingRateDetails, ClosingRateDetail } from '../services/googleSheetsService';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
 
@@ -154,8 +154,8 @@ const SchedulesPanel: React.FC = () => {
             const aUnavailableSlots = getEffectiveUnavailableSlots(a, selectedDay);
             const bUnavailableSlots = getEffectiveUnavailableSlots(b, selectedDay);
 
-            const aIsFullyUnavailable = aUnavailableSlots.length >= 4 && !a.isOptimized;
-            const bIsFullyUnavailable = bUnavailableSlots.length >= 4 && !b.isOptimized;
+            const aIsFullyUnavailable = aUnavailableSlots.length >= appState.timeSlots.length && !a.isOptimized;
+            const bIsFullyUnavailable = bUnavailableSlots.length >= appState.timeSlots.length && !b.isOptimized;
 
             // Primary sort: available reps before unavailable reps
             if (aIsFullyUnavailable !== bIsFullyUnavailable) {
@@ -167,7 +167,7 @@ const SchedulesPanel: React.FC = () => {
         });
 
         return reps;
-    }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, selectedSlotFilter, selectedDay, repSearchTerm]);
+    }, [filteredReps, cityFilters, lockFilter, selectedRepFilters, selectedSlotFilter, selectedDay, repSearchTerm, appState.timeSlots.length]);
 
     // Helper to check if rep is unavailable for the selected time slot
     const isRepUnavailableForSlot = (rep: Rep): boolean => {
@@ -281,7 +281,7 @@ const SchedulesPanel: React.FC = () => {
                     )}
                 </div>
                 <div className="flex gap-1.5">
-                    {TIME_SLOTS.map(slot => (
+                    {appState.timeSlots.map(slot => (
                         <button
                             key={slot.id}
                             onClick={() => setSelectedSlotFilter(selectedSlotFilter === slot.id ? null : slot.id)}
@@ -291,7 +291,7 @@ const SchedulesPanel: React.FC = () => {
                                     : chipInactiveClass
                             }`}
                         >
-                            {TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}
+                            {getTimeSlotDisplayLabel(slot, appState.timeSlots)}
                         </button>
                     ))}
                 </div>
@@ -318,7 +318,7 @@ const SchedulesPanel: React.FC = () => {
                             .filter(rep => {
                                 // Hide reps that are fully unavailable for this day (0 available slots, 0 jobs)
                                 const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDay);
-                                const availableSlots = 4 - unavailableSlotsToday.length;
+                                const availableSlots = appState.timeSlots.length - unavailableSlotsToday.length;
                                 const jobCount = rep.schedule.flatMap(s => s.jobs).length;
                                 if (availableSlots === 0 && jobCount === 0) return false;
 
@@ -376,7 +376,7 @@ const SchedulesPanel: React.FC = () => {
 
                                 // Calculate availability for this day
                                 const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDay);
-                                const availableSlots = 4 - unavailableSlotsToday.length;
+                                const availableSlots = appState.timeSlots.length - unavailableSlotsToday.length;
                                 const isChipUnavailable = availableSlots === 0 && jobCount === 0;
 
                                 // Desaturate unavailable reps (but keep them visible for auto-assignment)

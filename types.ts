@@ -128,7 +128,7 @@ export interface Rep {
   isMock?: boolean; // Flag to indicate if this is sample data
   unavailableSlots?: Record<string, string[]>; // e.g. { "Monday": ["ts-3", "ts-4"] }
   skills?: Record<string, number>; // e.g. { "Tile": 3, "Shingle": 2 }
-  region?: 'PHX' | 'NORTH' | 'SOUTH' | 'UNKNOWN';
+  region?: 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'UNKNOWN';
   zipCodes?: string[];
   isLocked?: boolean;
   isOptimized?: boolean;
@@ -195,6 +195,7 @@ export interface AppState {
   reps: Rep[];
   unassignedJobs: Job[];
   settings: Settings;
+  timeSlots: TimeSlot[];
 }
 
 // ============================================================================

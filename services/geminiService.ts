@@ -1,9 +1,10 @@
 
-import { Job, Rep, ParsedJobsResult, DisplayJob, Settings } from '../types';
+import { Job, Rep, ParsedJobsResult, DisplayJob, Settings, TimeSlot } from '../types';
 import { GoogleGenAI, Type } from '@google/genai';
 import { TIME_SLOTS, TAG_KEYWORDS } from '../constants';
 import { ALL_KNOWN_CITIES } from './geography';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { parseTimeSlotWindow } from '../utils/timeSlotUtils';
 
 /**
  * Helper to get the 24-hour start hour from a time string (e.g., "7:30am", "1pm").
@@ -33,16 +34,33 @@ const getStartHour24 = (timeString: string): number | null => {
  * @param timeframe The timeframe string (e.g., "7:30am-9am").
  * @returns The matching slot ID ('ts-1', 'ts-2', etc.) or null.
  */
-export const mapTimeframeToSlotId = (timeframe: string): string | null => {
+export const mapTimeframeToSlotId = (timeframe: string, timeSlots: TimeSlot[] = TIME_SLOTS): string | null => {
     const jobStartHour = getStartHour24(timeframe);
     if (jobStartHour === null) return null;
 
+    // Preserve the established four-slot mapping exactly.
+    if (timeSlots.length !== 5) {
     if (jobStartHour >= 7 && jobStartHour < 10) return 'ts-1'; // 7:30am - 10am
     if (jobStartHour >= 10 && jobStartHour < 13) return 'ts-2'; // 10am - 1pm
     if (jobStartHour >= 13 && jobStartHour < 16) return 'ts-3'; // 1pm - 4pm
     if (jobStartHour >= 16 && jobStartHour < 19) return 'ts-4'; // 4pm - 7pm
+        return null;
+    }
 
-    return null;
+    const jobStart = jobStartHour * 60;
+    const jobWindow = parseTimeSlotWindow(timeframe);
+    const candidates = timeSlots
+        .map(slot => ({ slot, window: parseTimeSlotWindow(slot.label) }))
+        .filter((entry): entry is { slot: TimeSlot; window: { start: number; end: number } } => entry.window !== null);
+    const containing = candidates.find(({ window }) => jobStart >= window.start && jobStart < window.end);
+    if (containing) return containing.slot.id;
+    if (jobWindow) {
+        const overlapping = candidates
+            .map(entry => ({ ...entry, overlap: Math.max(0, Math.min(entry.window.end, jobWindow.end) - Math.max(entry.window.start, jobWindow.start)) }))
+            .sort((a, b) => b.overlap - a.overlap || Math.abs(a.window.start - jobStart) - Math.abs(b.window.start - jobStart))[0];
+        if (overlapping?.overlap) return overlapping.slot.id;
+    }
+    return candidates.sort((a, b) => Math.abs(a.window.start - jobStart) - Math.abs(b.window.start - jobStart))[0]?.slot.id || null;
 };
 
 /**
@@ -190,7 +208,8 @@ export function splitTextByDays(text: string): Array<{ dateString: string; text:
  */
 export async function parseJobsFromText(
     text: string,
-    reps: Rep[]
+    reps: Rep[],
+    timeSlots: TimeSlot[] = TIME_SLOTS
 ): Promise<ParsedJobsResult & { assignments: { jobId: string, repId: string, slotId: string }[] }> {
     const jobs: Job[] = [];
     const assignments: { jobId: string, repId: string, slotId: string }[] = [];
@@ -479,7 +498,7 @@ export async function parseJobsFromText(
         jobs.push(newJob);
 
         if (assignedRep && effectiveTimeframe) {
-            const slotId = mapTimeframeToSlotId(effectiveTimeframe);
+            const slotId = mapTimeframeToSlotId(effectiveTimeframe, timeSlots);
             if (slotId) {
                 assignments.push({ jobId: newJob.id, repId: assignedRep.id, slotId });
             }
@@ -495,6 +514,7 @@ export async function assignJobsWithAi(
     unassignedJobs: Job[],
     selectedDay: string,
     settings: Settings,
+    timeSlots: TimeSlot[],
     onThought: (thought: string) => void
 ): Promise<{ assignments: { jobId: string; repId: string; slotId: string }[] }> {
     if (!process.env.API_KEY) {
@@ -560,13 +580,13 @@ You are an expert dispatcher for a roofing company. Your task is to create the m
     - ${settings.allowAssignOutsideAvailability ? "You are PERMITTED to assign jobs to unavailable slots if no other option exists, but prioritize available slots." : "You are STRICTLY FORBIDDEN from assigning jobs to unavailable slots."}
 3.  **Slot Capacity:** ${slotCapacityDescription}
 4.  **Regional Constraints:**
-    - Reps have a 'region' (PHX, NORTH, SOUTH).
+    - Reps have a 'region' (PHX, NORTH, SOUTH, COMMERCIAL).
     - Reps with 'NORTH' region should primarily be assigned jobs in Northern Arizona (Flagstaff, Prescott, Sedona, etc).
     - Reps with 'SOUTH' region should primarily be assigned jobs in Southern Arizona (Tucson, Marana, Vail, etc).
     - Reps with 'PHX' region should primarily be assigned jobs in the Phoenix Metro area.
     - 'UNKNOWN' region reps can be assigned anywhere, but try to keep them clustered.
     - ${settings.allowRegionalRepsInPhoenix ? "Regional reps (North/South) ARE allowed to take jobs in Phoenix if needed." : "Regional reps (North/South) are NOT allowed to take jobs in Phoenix."}
-5.  **London Smith — Commercial ONLY:** London Smith must NEVER be assigned a job unless its notes include 'Commercial'. Do not assign him ANY residential job. Commercial jobs are not exclusive to him — assign commercial to other commercial-skilled reps when they fit better; do not funnel every commercial job to London.
+5.  **Commercial-only reps:** London Smith and every rep whose region is 'COMMERCIAL' must NEVER be assigned a job unless its notes include 'Commercial'. Do not assign them ANY residential job. Commercial jobs are not exclusive to them.
 
 **--- Optimization Guidelines (Follow these to improve score) ---**
 1.  **Cluster Jobs:** Group jobs by City and Zip Code. A rep should ideally stay in 1 or 2 adjacent cities for the entire day.
@@ -577,7 +597,7 @@ You are an expert dispatcher for a roofing company. Your task is to create the m
     - Reps with 'Insurance' skill should get insurance jobs. 'Commercial' skill should get commercial jobs.
 3.  **Time Slot Matching:**
     - Jobs have an 'originalTimeframe' (e.g., '7:30am - 10am').
-    - Try to assign the job to the matching slot ID (ts-1: 7:30-10, ts-2: 10-1, ts-3: 1-4, ts-4: 4-7).
+    - Try to assign the job to the matching slot ID (${timeSlots.map(slot => `${slot.id}: ${slot.label}`).join(', ')}).
     - ${settings.strictTimeSlotMatching ? "You MUST match the time slot exactly." : "You should try to match the time slot, but can shift it if needed for efficiency."}
 
 **Input Data:**

@@ -1,4 +1,4 @@
-import { Rep } from '../types';
+import { Rep, TimeSlot } from '../types';
 import { SPREADSHEET_ID, SHEET_TITLE_PREFIX, DATA_RANGE, USE_MOCK_DATA_ON_FAILURE, TIME_SLOTS, SKILLS_SHEET_TITLE, SKILLS_DATA_RANGE, ROOFR_JOBS_SPREADSHEET_ID, ROOFR_JOBS_SHEET_TITLE, ROOFR_JOBS_DATA_RANGE, APT_OUTCOME_SPREADSHEET_ID, APT_OUTCOME_SHEET_TITLE, APT_OUTCOME_DATA_RANGE, SUPABASE_URL, SUPABASE_ANON_KEY } from '../constants';
 
 // All Sheets API reads go through /api/sheets (Vercel function) so the API key stays server-side.
@@ -760,7 +760,7 @@ export async function fetchRoofrJobIds(): Promise<Map<string, string>> {
  * This requires the spreadsheet to be public ("Anyone with the link can view").
  * @param date The date for which to fetch availability. Defaults to today.
  */
-export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string }> {
+export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: Omit<Rep, 'schedule'>[], sheetName: string, timeSlots: TimeSlot[] }> {
     let sheetName = '';
     try {
         // 0. Fetch skills, routing config, and sales rankings data in parallel
@@ -793,8 +793,8 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         const values = data.values;
         if (!values || values.length < 2) { // Need at least header and one data row
             console.warn("Sheet has no data or only a header row.");
-            if (USE_MOCK_DATA_ON_FAILURE) return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data' };
-            return { reps: [], sheetName };
+            if (USE_MOCK_DATA_ON_FAILURE) return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data', timeSlots: TIME_SLOTS };
+            return { reps: [], sheetName, timeSlots: TIME_SLOTS };
         }
 
         // 3. Parse header row to dynamically find day columns
@@ -819,18 +819,30 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         }
 
         // 4. Parse data rows into Rep structure
-        const repsMap = new Map<string, { name: string; unavailableSlots: Record<string, Set<string>>; firstRowIndex: number }>();
+        const repsMap = new Map<string, { name: string; unavailableSlots: Record<string, Set<string>>; firstRowIndex: number; region: Rep['region'] }>();
         // Dynamic time range detection — matches any "Xam - Ypm" pattern regardless of specific times
         const timeRangeRegex = /(\d{1,2}(?::\d{2})?\s*[ap]m\s*-\s*\d{1,2}(?::\d{2})?\s*[ap]m)\s*$/i;
         // Auto-assign slot IDs (ts-1, ts-2, ...) in order of first appearance
-        const timeSlotLabelsToIds = new Map<string, string>();
+        const timeSlotLabelsToIds = new Map<string, { id: string; label: string }>();
         let nextSlotNum = 1;
         const dataRows = values.slice(1);
 
         let currentRepContext: string | null = null;
+        let currentRegion: Rep['region'] | null = null;
 
         for (const [rowIndex, row] of dataRows.entries()) {
             const firstCol = String(row?.[0] || '').trim();
+            const sectionBanner = String(row?.[1] || '').trim().toUpperCase();
+            if (sectionBanner.includes('PHOENIX')) currentRegion = 'PHX';
+            else if (sectionBanner.includes('NORTHERN')) currentRegion = 'NORTH';
+            else if (sectionBanner.includes('TUCSON')) currentRegion = 'SOUTH';
+            else if (sectionBanner.includes('COMMERCIAL')) currentRegion = 'COMMERCIAL';
+            else if (sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO')) currentRegion = null;
+            if (sectionBanner.includes('PHOENIX') || sectionBanner.includes('NORTHERN') || sectionBanner.includes('TUCSON') ||
+                sectionBanner.includes('COMMERCIAL') || sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO')) {
+                currentRepContext = null;
+                continue;
+            }
             if (!firstCol) {
                 currentRepContext = null;
                 continue;
@@ -845,11 +857,15 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
 
             const timeMatch = firstCol.match(timeRangeRegex);
             if (timeMatch) {
+                    if (currentRegion === null) {
+                        wasRowProcessed = true;
+                        continue;
+                    }
                     const matchedLabel = timeMatch[1].toLowerCase().replace(/\s+/g, ' ');
                     if (!timeSlotLabelsToIds.has(matchedLabel)) {
-                        timeSlotLabelsToIds.set(matchedLabel, `ts-${nextSlotNum++}`);
+                        timeSlotLabelsToIds.set(matchedLabel, { id: `ts-${nextSlotNum++}`, label: timeMatch[1].trim().replace(/\s+/g, ' ') });
                     }
-                    const slotId = timeSlotLabelsToIds.get(matchedLabel)!;
+                    const slotId = timeSlotLabelsToIds.get(matchedLabel)!.id;
                     let repName = firstCol.replace(timeRangeRegex, '').trim().replace(/:$/, '').trim();
 
                     if (!repName && currentRepContext) {
@@ -866,7 +882,8 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
                         repsMap.set(repName, {
                             name: repName,
                             unavailableSlots: Object.fromEntries(days.map(d => [d.name, new Set()])),
-                            firstRowIndex: rowIndex + 2 // Sheet rows are 1-based, and we sliced the header.
+                            firstRowIndex: rowIndex + 3, // DATA_RANGE begins at row 2; dataRows begins at row 3.
+                            region: currentRegion,
                         });
                     }
 
@@ -900,13 +917,15 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         const skillsMap = await skillsPromise;
         await routingConfigPromise;
         const rankingsMap = await ranksPromise;
+        const discoveredTimeSlots = Array.from(timeSlotLabelsToIds.values()).map(({ id, label }) => ({ id, label }));
+        const timeSlots = discoveredTimeSlots.length === 5 ? discoveredTimeSlots : TIME_SLOTS;
 
         // 5. Convert the map into the final array of Rep objects and merge skills
         const reps: Omit<Rep, 'schedule'>[] = Array.from(repsMap.values()).map((repData, index) => {
             const availableDaysSummary: string[] = [];
             days.forEach(day => {
                 const unavailableCount = repData.unavailableSlots[day.name]?.size || 0;
-                if (unavailableCount < TIME_SLOTS.length) {
+                if (unavailableCount < timeSlots.length) {
                     availableDaysSummary.push(day.name.substring(0, 3));
                 }
             });
@@ -926,15 +945,7 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
             const zipCodes = repInfo?.zipCodes;
             const salesRank = rankingsMap.get(normalizedName);
 
-            const { firstRowIndex } = repData;
-            let region: Rep['region'] = 'UNKNOWN';
-            if (firstRowIndex >= 2 && firstRowIndex <= 118) {
-                region = 'PHX';
-            } else if (firstRowIndex >= 119 && firstRowIndex <= 135) {
-                region = 'NORTH';
-            } else if (firstRowIndex >= 136 && firstRowIndex <= 152) {
-                region = 'SOUTH';
-            }
+            const { firstRowIndex, region } = repData;
 
             return {
                 id: `rep-${index + 1}-${displayName.replace(/\s+/g, '-')}`,
@@ -952,17 +963,17 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
         if (reps.length === 0) {
             console.warn("Successfully connected and data was found, but no valid rep data could be parsed. Check the sheet format.");
             if (USE_MOCK_DATA_ON_FAILURE) {
-                return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data' };
+                return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data', timeSlots: TIME_SLOTS };
             }
         }
 
-        return { reps, sheetName };
+        return { reps, sheetName, timeSlots };
 
     } catch (error) {
         console.error("Error fetching from Google Sheets API:", error);
         if (USE_MOCK_DATA_ON_FAILURE) {
             console.warn("Google Sheets fetch failed. Falling back to mock data.");
-            return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data' };
+            return { reps: MOCK_REPS_DATA.map(rep => ({ ...rep, isMock: true })), sheetName: 'Mock Data', timeSlots: TIME_SLOTS };
         } else {
             throw error;
         }

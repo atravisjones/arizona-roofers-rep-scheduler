@@ -13,7 +13,7 @@ interface DayViewPanelProps {
 
 const DayViewPanel: React.FC<DayViewPanelProps> = ({ reps, hideEmptyReps = true }) => {
   const {
-    selectedDate,
+    selectedDate, appState,
     handleJobDrop,
     setDraggedJob,
     handleJobDragEnd,
@@ -67,9 +67,9 @@ const DayViewPanel: React.FC<DayViewPanelProps> = ({ reps, hideEmptyReps = true 
   // Handle job drop from the grid
   const handleGridJobDrop = useCallback((jobId: string, repId: string, startMinutes: number) => {
     // Map the drop time to a traditional slot ID for the data model
-    const slotId = mapMinutesToSlotId(startMinutes);
+    const slotId = mapMinutesToSlotId(startMinutes, appState.timeSlots);
     handleJobDrop(jobId, { repId, slotId }, undefined);
-  }, [handleJobDrop]);
+  }, [handleJobDrop, appState.timeSlots]);
 
   // Handle drag start
   const handleDragStart = useCallback((job: DisplayJob) => {

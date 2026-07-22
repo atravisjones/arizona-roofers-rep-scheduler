@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS } from '../constants';
+import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 import { ClipboardIcon, XIcon, ClockIcon, MapPinIcon } from './icons';
 import { getEffectiveUnavailableSlots, getNorthZone, isRepEligibleForNorthZone } from '../utils/repUtils';
 
@@ -142,7 +142,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
     const repsByTimeSlot = useMemo(() => {
         const data: Record<string, { name: string, activeCities: string[], isFree: boolean, region: string }[]> = {};
         
-        TIME_SLOTS.forEach(slot => {
+        appState.timeSlots.forEach(slot => {
             data[slot.label] = [];
         });
 
@@ -184,7 +184,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
         });
 
         return data;
-    }, [appState.reps, selectedDayString]);
+    }, [appState.reps, appState.timeSlots, selectedDayString]);
 
 
     const handleSelectAll = () => {
@@ -247,12 +247,12 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                         
                         {viewMode === 'by-time' && (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {TIME_SLOTS.map(slot => {
+                                {appState.timeSlots.map(slot => {
                                     const availableReps = repsByTimeSlot[slot.label];
                                     if (!availableReps || availableReps.length === 0) {
                                         return (
                                             <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg p-4 opacity-60">
-                                                <h3 className="text-lg font-bold text-text-quaternary mb-2">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</h3>
+                                                <h3 className="text-lg font-bold text-text-quaternary mb-2">{getTimeSlotDisplayLabel(slot, appState.timeSlots)}</h3>
                                                 <p className="text-sm text-text-quaternary italic">No representatives available.</p>
                                             </div>
                                         );
@@ -261,7 +261,7 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                     return (
                                         <div key={slot.id} className="bg-bg-primary border border-border-primary rounded-lg shadow-sm overflow-hidden">
                                             <div className="bg-brand-bg-light px-4 py-3 border-b border-brand-primary/20 flex justify-between items-center">
-                                                <h3 className="text-lg font-bold text-brand-text-light">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</h3>
+                                                <h3 className="text-lg font-bold text-brand-text-light">{getTimeSlotDisplayLabel(slot, appState.timeSlots)}</h3>
                                                 <span className="text-xs font-semibold bg-bg-primary text-brand-primary px-2 py-0.5 rounded-full border border-brand-primary/20">
                                                     {availableReps.length} Available
                                                 </span>
@@ -317,12 +317,12 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
                                                         <div key={city} className="border rounded-md p-3 hover:shadow-md transition-shadow bg-bg-primary">
                                                             <h4 className="font-bold text-text-primary border-b pb-1 mb-2">{city}</h4>
                                                             <div className="space-y-2">
-                                                                {TIME_SLOTS.map(slot => {
+                                                                {appState.timeSlots.map(slot => {
                                                                     const reps = slots[slot.label];
                                                                     if (!reps || reps.length === 0) return null;
                                                                     return (
                                                                         <div key={slot.id} className="text-sm">
-                                                                            <span className="font-semibold text-brand-primary block text-xs">{TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label}</span>
+                                                                            <span className="font-semibold text-brand-primary block text-xs">{getTimeSlotDisplayLabel(slot, appState.timeSlots)}</span>
                                                                             <span className="text-text-secondary leading-tight block">{reps.join(', ')}</span>
                                                                         </div>
                                                                     );

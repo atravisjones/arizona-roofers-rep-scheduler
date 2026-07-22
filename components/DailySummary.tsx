@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { DisplayJob, Job } from '../types';
-import { TAG_KEYWORDS, TIME_SLOTS } from '../constants';
+import { TAG_KEYWORDS } from '../constants';
 import { ClipboardIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTH_OUTER_RING_CITIES } from '../services/geography';
@@ -217,7 +217,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
             if (!isFieldSalesRep(rep)) return;
 
             const unavailableSlots = getEffectiveUnavailableSlots(rep, dayName);
-            const isFullyUnavailable = unavailableSlots.length >= TIME_SLOTS.length;
+            const isFullyUnavailable = unavailableSlots.length >= appState.timeSlots.length;
             const jobCount = rep.schedule.flatMap(s => s.jobs).length;
 
             if (isFullyUnavailable) {
@@ -232,7 +232,7 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
         availableNoJobs.sort((a, b) => a.localeCompare(b));
 
         return { repsOff: off, repsAvailableNoJobs: availableNoJobs };
-    }, [appState.reps, dayName]);
+    }, [appState.reps, appState.timeSlots.length, dayName]);
 
 
     const handleSelectAll = () => {

@@ -11,7 +11,7 @@ export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // Google Sheets API connection details
 export const SPREADSHEET_ID = "1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g";
 export const SHEET_TITLE_PREFIX = "SRA";
-export const DATA_RANGE = 'A2:H175'; // Fetch data starting from row 2, stop at row 175 to exclude inactive reps below
+export const DATA_RANGE = 'A2:H'; // Section banners determine where active rep data starts and stops.
 export const MAX_REP_ROW = 175; // Reps below this row in the sheet are excluded (inactive, etc.)
 
 // Rep skillsets sheet details

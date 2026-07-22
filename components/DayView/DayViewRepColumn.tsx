@@ -36,14 +36,14 @@ const DayViewRepColumn: React.FC<DayViewRepColumnProps> = ({
 
   // Check if a time slot is unavailable based on the rep's unavailable slots
   const isTimeUnavailable = (startMinutes: number): boolean => {
-    const slotId = mapMinutesToSlotId(startMinutes);
+    const slotId = mapMinutesToSlotId(startMinutes, rep.schedule);
     return unavailableSlotIds.includes(slotId);
   };
 
-  // Check if rep is fully unavailable (all 4 slots marked unavailable)
+  // Check if rep is fully unavailable for the active layout.
   const isFullyUnavailable = useMemo(() => {
-    return unavailableSlotIds.length >= 4;
-  }, [unavailableSlotIds]);
+    return unavailableSlotIds.length >= rep.schedule.length;
+  }, [unavailableSlotIds, rep.schedule.length]);
 
   // Get all jobs for this rep across all time slots
   const allJobs = useMemo(() => {

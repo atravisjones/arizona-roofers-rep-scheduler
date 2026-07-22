@@ -1,5 +1,33 @@
 import { supabase } from './supabaseClient';
-import { AppState, BackupVersion, BackupListItem, BackupSnapshot, SaveType, BACKUP_CONFIG } from '../types';
+import { AppState, BackupVersion, BackupListItem, BackupSnapshot, SaveType, BACKUP_CONFIG, Job, TimeSlot } from '../types';
+
+export function normalizeAppStateTimeSlots(state: AppState, timeSlots: TimeSlot[]): AppState {
+  const activeIds = new Set(timeSlots.map(slot => slot.id));
+  const movedJobs: Job[] = [];
+  const reps = state.reps.map(rep => {
+    const jobsBySlot = new Map(rep.schedule.map(slot => [slot.id, slot.jobs]));
+    rep.schedule.forEach(slot => {
+      if (!activeIds.has(slot.id) && slot.jobs.length > 0) {
+        console.warn(`[Schedule restore] Moving ${slot.jobs.length} job(s) from inactive slot ${slot.id} to unassigned.`);
+        movedJobs.push(...slot.jobs);
+      }
+    });
+    return {
+      ...rep,
+      schedule: timeSlots.map(slot => ({ ...slot, jobs: jobsBySlot.get(slot.id) || [] })),
+    };
+  });
+  const existingUnassignedIds = new Set(state.unassignedJobs.map(job => job.id));
+  return {
+    ...state,
+    reps,
+    timeSlots,
+    unassignedJobs: [
+      ...state.unassignedJobs,
+      ...movedJobs.filter(job => !existingUnassignedIds.has(job.id)),
+    ],
+  };
+}
 
 // ============================================================================
 // Manual Save Functions

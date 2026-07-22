@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { DisplayJob, RouteInfo } from '../types';
+import { DisplayJob, RouteInfo, TimeSlot } from '../types';
 import LeafletMap from './LeafletMap';
 import { LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon, HomeIcon, HardHatIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
-import { TIME_SLOTS, TIME_SLOT_DISPLAY_LABELS, TAG_KEYWORDS } from '../constants';
+import { TAG_KEYWORDS } from '../constants';
+import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 
 interface RouteMapPanelProps {
     routeData: {
@@ -104,12 +105,13 @@ const checkJobMatch = (
         priorityLevels: Set<number>;
         ages: Set<string>;
     },
-    selectedTimeSlotId: string | null
+    selectedTimeSlotId: string | null,
+    timeSlots: TimeSlot[]
 ) => {
     // Time Check
     if (selectedTimeSlotId) {
         const jobRange = parseTimeRange(job.timeSlotLabel);
-        const selectedSlot = TIME_SLOTS.find(ts => ts.id === selectedTimeSlotId);
+        const selectedSlot = timeSlots.find(ts => ts.id === selectedTimeSlotId);
         if (selectedSlot) {
             const filterRange = parseTimeRange(selectedSlot.label);
             // If job has no time but filter is active? Assuming filter is exclusionary.
@@ -192,7 +194,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             const tags = jobTagsMap.get(job.id);
             if (!tags) return;
 
-            if (checkJobMatch(job, tags, tagFilters, selectedTimeSlotId)) {
+            if (checkJobMatch(job, tags, tagFilters, selectedTimeSlotId, appState.timeSlots)) {
                 // Add to sets
                 tags.roofTypes.forEach(r => roofs.add(r));
                 tags.stories.forEach(s => stories.add(s));
@@ -211,7 +213,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             },
             availablePriorityLevels: Array.from(priorities).sort(),
         };
-    }, [routeData, tagFilters, selectedTimeSlotId, jobTagsMap]);
+    }, [routeData, tagFilters, selectedTimeSlotId, jobTagsMap, appState.timeSlots]);
 
     const handleCopyUnplotted = () => {
         if (!routeData || routeData.unmappableJobs.length === 0) return;
@@ -252,7 +254,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         return routeData.mappableJobs.map(job => {
             const tags = jobTagsMap.get(job.id);
             // Default to matching if tags parsing failed (unlikely)
-            const isMatch = tags ? checkJobMatch(job, tags, tagFilters, selectedTimeSlotId) : true;
+            const isMatch = tags ? checkJobMatch(job, tags, tagFilters, selectedTimeSlotId, appState.timeSlots) : true;
 
             // Saturation Filter: Dim if not belonging to the current rep (when in Rep View)
             // OR if reps are selected and this job doesn't belong to any of them
@@ -270,7 +272,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
 
             return { ...job, isDimmed };
         });
-    }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepFilters, appState.reps]);
+    }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepFilters, appState.reps, appState.timeSlots]);
 
     const routeInfoForMap = routeData?.routeInfo || null;
     const mapType = (routeData?.repName === 'Unassigned Jobs' || routeData?.repName === 'Job Map' || routeData?.repName === 'All Rep Locations' || routeData?.repName?.startsWith('Zip:')) ? 'unassigned' : 'route';
@@ -336,7 +338,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             </button>
 
                             <span className="text-[10px] font-bold text-text-quaternary uppercase mr-1">Time:</span>
-                            {TIME_SLOTS.map(slot => {
+                            {appState.timeSlots.map(slot => {
                                 const isActive = selectedTimeSlotId === slot.id;
                                 return (
                                     <button
@@ -347,7 +349,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                             : 'bg-bg-primary text-text-tertiary border-border-primary hover:border-brand-primary/50 hover:text-brand-primary'
                                             }`}
                                     >
-                                        {(TIME_SLOT_DISPLAY_LABELS[slot.id] || slot.label).replace(/AM|PM|am|pm/gi, '').replace(/\s/g, '')}
+                                        {getTimeSlotDisplayLabel(slot, appState.timeSlots).replace(/AM|PM|am|pm/gi, '').replace(/\s/g, '')}
                                     </button>
                                 );
                             })}

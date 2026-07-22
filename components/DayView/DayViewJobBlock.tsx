@@ -43,14 +43,14 @@ const DayViewJobBlock: React.FC<DayViewJobBlockProps> = ({
   const {
     setHoveredJobId,
     handleUnassignJob,
-    roofrJobIdMap,
+    roofrJobIdMap, appState,
   } = useAppContext();
 
   const [isHovered, setIsHovered] = useState(false);
 
   const position = useMemo(() =>
-    calculateJobPosition(job.originalTimeframe, slotId, cellHeight),
-    [job.originalTimeframe, slotId, cellHeight]
+    calculateJobPosition(job.originalTimeframe, slotId, cellHeight, appState.timeSlots),
+    [job.originalTimeframe, slotId, cellHeight, appState.timeSlots]
   );
 
   // Parse all tags including roof type, stories, sqft, and age

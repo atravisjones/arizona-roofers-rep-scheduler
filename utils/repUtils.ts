@@ -78,7 +78,16 @@ export const canReserveNorthTravelSlot = (rep: Rep, job: Job, slotId: string): b
 // Tucson Run: same-day round trip down I-10 and back. Each slot has a target latitude
 // tracing the route — 8-10am upper corridor (Casa Grande ~32.9), 11-1 lower corridor
 // (Marana ~32.4), 2-4 Tucson (~32.2), 5-7 back up the corridor heading home.
-const TUCSON_RUN_SLOT_TARGET_LATS = [33.00, 32.45, 32.25, 32.90];
+const getTucsonRunSlotTargetLats = (slotCount: number): number[] => {
+    if (slotCount === 4) return [33.00, 32.45, 32.25, 32.90];
+    if (slotCount === 5) return [33.00, 32.60, 32.25, 32.55, 32.90];
+    if (slotCount <= 1) return [33.00];
+    const bottomIndex = Math.floor((slotCount - 1) / 2);
+    return Array.from({ length: slotCount }, (_, index) => {
+        if (index <= bottomIndex) return 33.00 + (32.25 - 33.00) * (index / bottomIndex);
+        return 32.25 + (32.90 - 32.25) * ((index - bottomIndex) / (slotCount - 1 - bottomIndex));
+    });
+};
 
 /**
  * Scores how well a job fits a given slot on a Tucson-run day (0-100), by latitude
@@ -86,8 +95,8 @@ const TUCSON_RUN_SLOT_TARGET_LATS = [33.00, 32.45, 32.25, 32.90];
  * latitude is unknown and its city isn't in any southbound set (neutral — caller
  * keeps normal distance scoring).
  */
-export const getTucsonRunRouteFit = (job: Job, slotIndex: number, coord: { lat: number } | null | undefined): number | null => {
-    const targetLat = TUCSON_RUN_SLOT_TARGET_LATS[slotIndex];
+export const getTucsonRunRouteFit = (job: Job, slotIndex: number, coord: { lat: number } | null | undefined, slotCount: number = 4): number | null => {
+    const targetLat = getTucsonRunSlotTargetLats(slotCount)[slotIndex];
     if (targetLat === undefined) return null;
 
     let lat = coord?.lat;

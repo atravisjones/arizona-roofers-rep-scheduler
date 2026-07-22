@@ -1,9 +1,9 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
-import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, MAX_REP_ROW } from '../constants';
+import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS } from '../constants';
 import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching, normalizeName } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
@@ -12,7 +12,7 @@ import { ARIZONA_CITY_ADJACENCY, GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOU
 import { geocodeAddresses, geocodeJobs, fetchRoute, Coordinates, GeocodeResult } from '../services/osmService';
 import { detectJobChanges, findMatchingJob, compareJobs, getJobIdentifier } from '../utils/changeTracking';
 import { saveStateToCloud, loadStateFromCloud, saveAllStatesToCloud, loadAllStatesFromCloud } from '../services/cloudStorageServiceSheets';
-import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate } from '../services/backupService';
+import { createManualBackup, upsertAutoBackup, fetchBackupList, loadBackup, loadBackupForDate, normalizeAppStateTimeSlots } from '../services/backupService';
 // saveLoadService (Google Apps Script) removed — all save/load now via Supabase backupService
 import { doTimesOverlap } from '../utils/timeUtils';
 import { canReserveNorthTravelSlot, getEffectiveUnavailableSlots, getNorthZone, getTravelBlockedSlots, getTucsonRunRouteFit, isLondon, isRepEligibleForNorthZone } from '../utils/repUtils';
@@ -23,17 +23,8 @@ const norm = (city: string | null | undefined): string => (city || '').toLowerCa
 const isJoseph = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('joseph simms');
 const isRichard = (rep: Rep) => rep.name.trim().toLowerCase().startsWith('richard hadsall');
 
-// Filter out reps from rows beyond MAX_REP_ROW (inactive reps at bottom of sheet)
 const filterExcludedReps = (state: AppState): AppState => {
-    return {
-        ...state,
-        reps: state.reps.filter(rep => {
-            // If no sourceRow, keep the rep (legacy data or mock data)
-            if (rep.sourceRow === undefined) return true;
-            // Only keep reps from rows at or before MAX_REP_ROW
-            return rep.sourceRow <= MAX_REP_ROW;
-        })
-    };
+    return state;
 };
 
 const formatDateToKey = (date: Date): string => {
@@ -113,7 +104,7 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
     collapsedColumns: [],
 };
 
-const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS };
+const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_SETTINGS, timeSlots: TIME_SLOTS };
 
 
 
@@ -566,7 +557,7 @@ export const useAppLogic = () => {
     const isJobValidForRepRegion = useCallback((job: Job, rep: Rep): boolean => {
         // London Smith runs commercial ONLY — never auto-assign him residential, any region (incl. Flagstaff).
         // Commercial is NOT exclusive to him: other commercial-skilled reps compete on normal scoring.
-        if (isLondon(rep)) return /\bcommercial\b/i.test(job.notes || '');
+        if (isLondon(rep) || rep.region === 'COMMERCIAL') return /\bcommercial\b/i.test(job.notes || '');
 
         const jobCity = norm(job.city);
         if (!jobCity) return true;
@@ -671,7 +662,7 @@ export const useAppLogic = () => {
             setIsLoadingReps(true);
             setRepsError(null);
             setUsingMockData(false);
-            const { reps: repData, sheetName } = await fetchSheetData(date);
+            const { reps: repData, sheetName, timeSlots } = await fetchSheetData(date);
 
             // Check if cloud loaded this day while we were fetching (race condition protection)
             if (cloudLoadedDaysRef.current.has(dateKey)) {
@@ -687,7 +678,7 @@ export const useAppLogic = () => {
             if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
             const repsWithSchedule = repData.map(rep => ({
                 ...rep,
-                schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
+                schedule: timeSlots.map(slot => ({ ...slot, jobs: [] })),
                 isLocked: false,
                 isOptimized: false
             }));
@@ -697,7 +688,7 @@ export const useAppLogic = () => {
                 updateGeoCache(allRepZips);
             }
 
-            const newDayState: AppState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
+            const newDayState: AppState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS, timeSlots };
 
             // Check again before committing intermediate state
             if (cloudLoadedDaysRef.current.has(dateKey)) {
@@ -743,7 +734,7 @@ export const useAppLogic = () => {
         try {
             setIsLoadingReps(true);
             log('Refreshing availability from Google Sheets...');
-            const { reps: freshReps } = await fetchSheetData(selectedDate);
+            const { reps: freshReps, timeSlots } = await fetchSheetData(selectedDate);
             // Match by name, not id: rep ids are position-based (`rep-<index>-<name>`),
             // so adding/removing a sheet row shifts ids and silently breaks id matching.
             const freshByName = new Map(freshReps.map(r => [r.name.trim(), r]));
@@ -751,7 +742,7 @@ export const useAppLogic = () => {
             recordChange(currentDailyStates => {
                 const dayState = currentDailyStates.get(dateKey);
                 if (!dayState) return currentDailyStates;
-                const newState = JSON.parse(JSON.stringify(dayState)) as AppState;
+                let newState = normalizeAppStateTimeSlots(JSON.parse(JSON.stringify(dayState)) as AppState, timeSlots);
 
                 // 1. Update reps already on the board (keeps their assigned jobs).
                 newState.reps = newState.reps.map(rep => {
@@ -775,7 +766,7 @@ export const useAppLogic = () => {
                     .filter(fresh => !existingNames.has(fresh.name.trim()))
                     .map(fresh => ({
                         ...fresh,
-                        schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })),
+                        schedule: timeSlots.map(slot => ({ ...slot, jobs: [] })),
                         isLocked: false,
                         isOptimized: false,
                     }));
@@ -1078,7 +1069,7 @@ export const useAppLogic = () => {
         // ============================================================
         if (rep.tucsonRun) {
             const slotIndex = rep.schedule.findIndex(s => s.id === slotId);
-            const routeFit = getTucsonRunRouteFit(job, slotIndex, geoCache.get(job.address));
+            const routeFit = getTucsonRunRouteFit(job, slotIndex, geoCache.get(job.address), rep.schedule.length);
             if (routeFit !== null) {
                 distanceBaseScore = routeFit;
                 distanceClusterScore = routeFit;
@@ -1662,15 +1653,15 @@ export const useAppLogic = () => {
                 let baseState = oldState;
                 if (!baseState) {
                     log(`Loading reps for ${targetDateKey}...`);
-                    const { reps: repData, sheetName } = await fetchSheetData(targetDate);
+                    const { reps: repData, sheetName, timeSlots } = await fetchSheetData(targetDate);
                     setActiveSheetName(sheetName);
                     if (repData.length > 0 && (repData[0] as Rep).isMock) setUsingMockData(true);
-                    const repsWithSchedule = repData.map(rep => ({ ...rep, schedule: TIME_SLOTS.map(slot => ({ ...slot, jobs: [] })), isLocked: false, isOptimized: false }));
-                    baseState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS };
+                    const repsWithSchedule = repData.map(rep => ({ ...rep, schedule: timeSlots.map(slot => ({ ...slot, jobs: [] })), isLocked: false, isOptimized: false }));
+                    baseState = { reps: repsWithSchedule, unassignedJobs: [], settings: DEFAULT_SETTINGS, timeSlots };
                 }
 
                 // Parse jobs for this specific day
-                const { jobs: parsedJobs, assignments } = await parseJobsFromText(dayText, baseState.reps);
+                const { jobs: parsedJobs, assignments } = await parseJobsFromText(dayText, baseState.reps, baseState.timeSlots);
                 allJobsCount += parsedJobs.length;
                 log(`Parsed ${parsedJobs.length} jobs for ${targetDateKey}`);
 
@@ -2079,12 +2070,7 @@ export const useAppLogic = () => {
                 // Map start hour to time slot
                 const startHour = extractHour(apt.start);
                 let slotId: string | null = null;
-                if (startHour !== null) {
-                    if (startHour >= 7 && startHour < 10) slotId = 'ts-1';
-                    else if (startHour >= 10 && startHour < 13) slotId = 'ts-2';
-                    else if (startHour >= 13 && startHour < 16) slotId = 'ts-3';
-                    else if (startHour >= 16 && startHour < 19) slotId = 'ts-4';
-                }
+                if (startHour !== null) slotId = mapTimeframeToSlotId(`${startHour}:00`, newDayState.timeSlots);
 
                 // Match attendees, jobOwner, or rep name in the title to reps
                 let assignedRep: Rep | null = null;
@@ -2590,7 +2576,7 @@ export const useAppLogic = () => {
                 delete job.timeSlotLabel; // Remove calculated label
                 let targetSlotId = 'ts-1'; // Default
                 if (job.originalTimeframe) {
-                    const mapped = mapTimeframeToSlotId(job.originalTimeframe);
+                    const mapped = mapTimeframeToSlotId(job.originalTimeframe, newState.timeSlots);
                     if (mapped) targetSlotId = mapped;
                 }
                 const slot = targetRep.schedule.find(s => s.id === targetSlotId) || targetRep.schedule[0];
@@ -2741,7 +2727,7 @@ export const useAppLogic = () => {
                     if (jobIndex === -1) continue;
                     const [job] = jobsToAssign.splice(jobIndex, 1);
                     let targetSlotId: string | null = null;
-                    if (job.originalTimeframe) { targetSlotId = mapTimeframeToSlotId(job.originalTimeframe); }
+                    if (job.originalTimeframe) { targetSlotId = mapTimeframeToSlotId(job.originalTimeframe, newState.timeSlots); }
                     let assigned = false;
                     const effectiveUnavailable = getEffectiveUnavailableSlots(rep, selectedDayString);
                     const availableSlots = rep.schedule.filter(s =>
@@ -2872,7 +2858,7 @@ export const useAppLogic = () => {
                             if (isUnavailable && !canOverride) continue;
 
                             if (newState.settings.strictTimeSlotMatching) {
-                                const requiredSlotId = mapTimeframeToSlotId(job.originalTimeframe || '');
+                                const requiredSlotId = mapTimeframeToSlotId(job.originalTimeframe || '', newState.timeSlots);
                                 if (requiredSlotId && requiredSlotId !== slot.id) continue;
                             }
 
@@ -3037,7 +3023,7 @@ export const useAppLogic = () => {
                         if (isUnavailable && !canAssignToUnavailableSlot) continue;
 
                         if (newState.settings.strictTimeSlotMatching) {
-                            const requiredSlotId = mapTimeframeToSlotId(job.originalTimeframe || '');
+                            const requiredSlotId = mapTimeframeToSlotId(job.originalTimeframe || '', newState.timeSlots);
                             if (requiredSlotId && requiredSlotId !== slot.id) continue;
                         }
 
@@ -3097,7 +3083,7 @@ export const useAppLogic = () => {
             };
             const assignableJobs = appState.unassignedJobs.filter(j => countTagsForAi(j) > 1);
             if (assignableJobs.length === 0) { log('- INFO: All unassigned jobs need details. Aborting.'); setIsAiAssigning(false); return; }
-            const result = await assignJobsWithAi(appState.reps, assignableJobs, selectedDayString, appState.settings, addAiThought);
+            const result = await assignJobsWithAi(appState.reps, assignableJobs, selectedDayString, appState.settings, appState.timeSlots, addAiThought);
             addAiThought("Applying assignments...");
             const dateKey = formatDateToKey(selectedDate);
             recordChange(currentDailyStates => {
@@ -3207,16 +3193,18 @@ export const useAppLogic = () => {
         log('ACTION: Load state from file.');
         try {
             if (!loadedState || !Array.isArray(loadedState.dailyStates) || !Array.isArray(loadedState.activeDayKeys)) throw new Error("Invalid file format.");
-            const isAppState = (v: any): v is { reps: Rep[], unassignedJobs: Job[], settings?: Partial<Settings> } => v && Array.isArray(v.reps) && Array.isArray(v.unassignedJobs);
+            const isAppState = (v: any): v is { reps: Rep[], unassignedJobs: Job[], settings?: Partial<Settings>, timeSlots?: TimeSlot[] } => v && Array.isArray(v.reps) && Array.isArray(v.unassignedJobs);
 
             const validEntries = loadedState.dailyStates.map((e: any): [string, AppState] => {
                 if (Array.isArray(e) && typeof e[0] === 'string' && isAppState(e[1])) {
                     const stateCandidate = e[1];
-                    const finalState: AppState = {
+                    const activeTimeSlots = dailyStates.get(e[0])?.timeSlots || stateCandidate.timeSlots || TIME_SLOTS;
+                    const finalState: AppState = normalizeAppStateTimeSlots({
                         reps: stateCandidate.reps,
                         unassignedJobs: stateCandidate.unassignedJobs,
-                        settings: { ...DEFAULT_SETTINGS, ...(stateCandidate.settings || {}) }
-                    };
+                        settings: { ...DEFAULT_SETTINGS, ...(stateCandidate.settings || {}) },
+                        timeSlots: activeTimeSlots,
+                    }, activeTimeSlots);
                     return [e[0], finalState];
                 } throw new Error("Invalid entry.");
             });
@@ -3393,7 +3381,11 @@ export const useAppLogic = () => {
 
             log(`Loading ${rollingDays.length} day(s) from cloud: ${rollingDays.join(', ')}`);
 
-            const result = await loadAllStatesFromCloud(rollingDays);
+            const timeSlotsByDate = Object.fromEntries(rollingDays.flatMap(key => {
+                const slots = dailyStatesRef.current.get(key)?.timeSlots;
+                return slots ? [[key, slots] as const] : [];
+            }));
+            const result = await loadAllStatesFromCloud(rollingDays, timeSlotsByDate);
             if (result.success && result.results) {
                 // Start fresh - don't merge with existing state, replace it entirely
                 // This ensures cloud data takes precedence over any locally initialized data
@@ -3404,7 +3396,8 @@ export const useAppLogic = () => {
                 for (const item of result.results) {
                     if (item.success && item.data) {
                         // Filter out excluded reps from loaded state
-                        newDailyStates.set(item.dateKey, filterExcludedReps(item.data));
+                        const activeSlots = timeSlotsByDate[item.dateKey] || item.data.timeSlots || TIME_SLOTS;
+                        newDailyStates.set(item.dateKey, filterExcludedReps(normalizeAppStateTimeSlots(item.data, activeSlots)));
                         loadedCount++;
                         loadedDays.push(item.dateKey);
                     }
@@ -3549,7 +3542,11 @@ export const useAppLogic = () => {
         try {
             // 1. Load from Cloud (Merge)
             log('Sync: Loading remote changes...');
-            const loadResult = await loadAllStatesFromCloud(activeDayKeys);
+            const timeSlotsByDate = Object.fromEntries(activeDayKeys.flatMap(key => {
+                const slots = dailyStates.get(key)?.timeSlots;
+                return slots ? [[key, slots] as const] : [];
+            }));
+            const loadResult = await loadAllStatesFromCloud(activeDayKeys, timeSlotsByDate);
 
             if (!loadResult.success) {
                 throw new Error(loadResult.error || 'Failed to load from cloud');
@@ -3564,7 +3561,8 @@ export const useAppLogic = () => {
                         const dateKey = item.dateKey;
                         const existingState = mergedDailyStates.get(dateKey);
                         // Filter out excluded reps from loaded data
-                        const filteredData = filterExcludedReps(item.data);
+                        const activeSlots = timeSlotsByDate[dateKey] || item.data.timeSlots || TIME_SLOTS;
+                        const filteredData = filterExcludedReps(normalizeAppStateTimeSlots(item.data, activeSlots));
 
                         if (existingState) {
                             // Merge logic
@@ -3707,7 +3705,8 @@ export const useAppLogic = () => {
             const result = await loadBackup(backupId);
             if (result.success && result.data) {
                 const { dateKey } = result.data.version;
-                const loadedState = filterExcludedReps(result.data.data);
+                const activeTimeSlots = dailyStates.get(dateKey)?.timeSlots || result.data.data.timeSlots || TIME_SLOTS;
+                const loadedState = filterExcludedReps(normalizeAppStateTimeSlots(result.data.data, activeTimeSlots));
 
                 // Update the daily states with the loaded data
                 const newDailyStates = new Map(dailyStates);
