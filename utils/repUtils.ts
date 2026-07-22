@@ -45,35 +45,12 @@ export const isRepEligibleForNorthZone = (rep: Rep, zone: NorthZone): boolean =>
     return isLondon(rep);
 };
 
-const getAdjacentTravelSlotId = (rep: Rep, slotId: string): string | null => {
-    const slotIndex = rep.schedule.findIndex(slot => slot.id === slotId);
-    if (slotIndex === -1) return null;
-    const adjacentIndex = slotIndex === rep.schedule.length - 1 ? slotIndex - 1 : slotIndex + 1;
-    return rep.schedule[adjacentIndex]?.id || null;
-};
+// 2026-07-22: North travel tax REMOVED — up-north jobs no longer consume the adjacent
+// slot or require empty neighbors, so multiple up-north jobs can stack on any rep
+// (up-north run days). Kept as no-op stubs so all call sites stay stable.
+export const getTravelBlockedSlots = (_rep: Rep): string[] => [];
 
-export const getTravelBlockedSlots = (rep: Rep): string[] => {
-    if (isLondon(rep)) return [];
-
-    const blockedSlots = new Set<string>();
-    rep.schedule.forEach(slot => {
-        if (!slot.jobs.some(job => getNorthZone(job.city) !== null)) return;
-        const adjacentSlotId = getAdjacentTravelSlotId(rep, slot.id);
-        if (adjacentSlotId) blockedSlots.add(adjacentSlotId);
-    });
-    return [...blockedSlots];
-};
-
-export const canReserveNorthTravelSlot = (rep: Rep, job: Job, slotId: string): boolean => {
-    if (isLondon(rep)) return true;
-    const targetSlot = rep.schedule.find(slot => slot.id === slotId);
-    if (targetSlot?.jobs.some(scheduledJob => getNorthZone(scheduledJob.city) !== null)) return false;
-    if (getNorthZone(job.city) === null) return true;
-    if (targetSlot && targetSlot.jobs.length > 0) return false;
-    const adjacentSlotId = getAdjacentTravelSlotId(rep, slotId);
-    if (!adjacentSlotId) return true;
-    return rep.schedule.find(slot => slot.id === adjacentSlotId)?.jobs.length === 0;
-};
+export const canReserveNorthTravelSlot = (_rep: Rep, _job: Job, _slotId: string): boolean => true;
 
 // Tucson Run: same-day round trip down I-10 and back. Each slot has a target latitude
 // tracing the route — 8-10am upper corridor (Casa Grande ~32.9), 11-1 lower corridor

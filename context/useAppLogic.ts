@@ -556,8 +556,11 @@ export const useAppLogic = () => {
 
     const isJobValidForRepRegion = useCallback((job: Job, rep: Rep): boolean => {
         // London Smith runs commercial ONLY — never auto-assign him residential, any region (incl. Flagstaff).
-        // Commercial is NOT exclusive to him: other commercial-skilled reps compete on normal scoring.
-        if (isLondon(rep) || rep.region === 'COMMERCIAL') return /\bcommercial\b/i.test(job.notes || '');
+        // Commercial is EXCLUSIVELY his: auto-assign never routes a commercial job to anyone else.
+        // Manual drag-drop bypasses this, so residential can still be placed on him by hand.
+        const isCommercialJob = /\bcommercial\b/i.test(job.notes || '');
+        if (isLondon(rep) || rep.region === 'COMMERCIAL') return isCommercialJob;
+        if (isCommercialJob) return false;
 
         const jobCity = norm(job.city);
         if (!jobCity) return true;
@@ -1189,10 +1192,6 @@ export const useAppLogic = () => {
             };
             if (getEffectiveUnavailableSlots(repWithoutMovingJob, selectedDayString).includes(target.slotId)) {
                 showToast("Cannot assign a job to an unavailable slot.", 'warning');
-                return;
-            }
-            if (!canReserveNorthTravelSlot(repWithoutMovingJob, jobToDrop, target.slotId)) {
-                showToast("This north job requires an open adjacent travel slot.", 'warning');
                 return;
             }
         }
