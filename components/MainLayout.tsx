@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, CalendarIcon } from './icons';
+import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, CalendarIcon, GridIcon } from './icons';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import TodayBoard from './TodayBoard';
@@ -126,6 +126,7 @@ const MainLayout: React.FC = () => {
   const [showReviewQueue, setShowReviewQueue] = useState(
     () => typeof window !== 'undefined' && window.location.pathname === REVIEW_PATH
   );
+  const showPlanner = !showTodayBoard && !showReviewQueue;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -165,25 +166,13 @@ const MainLayout: React.FC = () => {
     }
   }, [context, startupBackupInfo]);
 
-  // Today Board has its own URL (/today-board) so it's linkable and browser back/forward works.
-  const toggleTodayBoard = useCallback(() => {
-    setShowTodayBoard(prev => {
-      const next = !prev;
-      const url = next ? TODAY_BOARD_PATH : '/';
-      if (window.location.pathname !== url) window.history.pushState({}, '', url);
-      if (next) setShowReviewQueue(false);
-      return next;
-    });
-  }, []);
-
-  const toggleReviewQueue = useCallback(() => {
-    setShowReviewQueue(prev => {
-      const next = !prev;
-      const url = next ? REVIEW_PATH : '/';
-      if (window.location.pathname !== url) window.history.pushState({}, '', url);
-      if (next) setShowTodayBoard(false);
-      return next;
-    });
+  // Planner / Today Board / Review are separate tabs, each with its own URL, so
+  // they're linkable and browser back/forward works. Clicking a tab goes to it —
+  // it never toggles back to the planner.
+  const navigateTo = useCallback((path: string) => {
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    setShowTodayBoard(path === TODAY_BOARD_PATH);
+    setShowReviewQueue(path === REVIEW_PATH);
   }, []);
 
   useEffect(() => {
@@ -888,29 +877,44 @@ const MainLayout: React.FC = () => {
               )}
             </button>
 
-            <button
-              onClick={toggleTodayBoard}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
-                ? 'bg-brand-primary text-brand-text-on-primary'
-                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                }`}
-              title="Today's Appointments board"
-            >
-              <CalendarIcon className="h-3.5 w-3.5" />
-              <span>{showTodayBoard ? 'Back to Planner' : 'Today Board'}</span>
-            </button>
+            {/* Tabs: Planner / Today Board / Review — each its own URL */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigateTo('/')}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showPlanner
+                  ? 'bg-brand-primary text-brand-text-on-primary'
+                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                  }`}
+                title="Scheduling planner"
+              >
+                <GridIcon className="h-3.5 w-3.5" />
+                <span>Planner</span>
+              </button>
 
-            <button
-              onClick={toggleReviewQueue}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue
-                ? 'bg-brand-primary text-brand-text-on-primary'
-                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                }`}
-              title="Booking review queue"
-            >
-              <span>Review</span>
-              {reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
-            </button>
+              <button
+                onClick={() => navigateTo(TODAY_BOARD_PATH)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
+                  ? 'bg-brand-primary text-brand-text-on-primary'
+                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                  }`}
+                title="Today's Appointments board"
+              >
+                <CalendarIcon className="h-3.5 w-3.5" />
+                <span>Today Board</span>
+              </button>
+
+              <button
+                onClick={() => navigateTo(REVIEW_PATH)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue
+                  ? 'bg-brand-primary text-brand-text-on-primary'
+                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                  }`}
+                title="Booking review queue"
+              >
+                <span>Review</span>
+                {reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+              </button>
+            </div>
           </div>
 
           {/* Right: Date Navigation */}

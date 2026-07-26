@@ -76,6 +76,20 @@ const todayKey = () => {
     return `${yyyy}-${mm}-${dd}`;
 };
 
+// The board's date + Live/Tentative view live in the URL (?date=YYYY-MM-DD&view=live|tentative)
+// so a specific day/view is linkable and survives a refresh.
+type BoardView = 'live' | 'tentative';
+const readBoardUrlState = (): { date: string | null; view: BoardView | null } => {
+    if (typeof window === 'undefined') return { date: null, view: null };
+    const params = new URLSearchParams(window.location.search);
+    const rawDate = params.get('date');
+    const rawView = params.get('view');
+    return {
+        date: rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : null,
+        view: rawView === 'live' || rawView === 'tentative' ? rawView : null,
+    };
+};
+
 const parseLocalDate = (value: string) => new Date(value.replace(' ', 'T'));
 
 const getTentativeSlotStart = (label: string, slotIndex: number) => {
@@ -574,8 +588,8 @@ const AppointmentDetailModal: React.FC<{
 
 const TodayBoard: React.FC = () => {
     const { appState, getAppStateForDay, selectedDate, activeDayKeys } = useAppContext();
-    const [dateKey, setDateKey] = useState(() => todayKey());
-    const [dataSource, setDataSource] = useState<'live' | 'tentative'>('live');
+    const [dateKey, setDateKey] = useState(() => readBoardUrlState().date || todayKey());
+    const [dataSource, setDataSource] = useState<BoardView>(() => readBoardUrlState().view || 'live');
     // Days (in the workspace) that actually have tentative assignments — used to
     // auto-jump to the planned day on toggle and to guide the empty state.
     const tentativeDaysWithPlans = useMemo(
@@ -1016,6 +1030,30 @@ const TodayBoard: React.FC = () => {
         setIsLoading(true);
         setDateKey(newKey);
     }, []);
+
+    // Keep the URL in step with the day + view being shown so the address bar is
+    // always a shareable link to exactly this board (replace, not push, so the
+    // arrows/toggle don't bury the Back button under one entry per click).
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        params.set('date', dateKey);
+        params.set('view', dataSource);
+        const url = `${window.location.pathname}?${params.toString()}`;
+        if (url !== `${window.location.pathname}${window.location.search}`) {
+            window.history.replaceState(window.history.state, '', url);
+        }
+    }, [dateKey, dataSource]);
+
+    // Back/forward into a board URL (e.g. from the planner) should re-read it.
+    useEffect(() => {
+        const syncFromUrl = () => {
+            const { date, view } = readBoardUrlState();
+            if (date && date !== dateKey) goToDate(date);
+            if (view && view !== dataSource) setDataSource(view);
+        };
+        window.addEventListener('popstate', syncFromUrl);
+        return () => window.removeEventListener('popstate', syncFromUrl);
+    }, [dateKey, dataSource, goToDate]);
 
     const ensureMissingAppointmentCoordinates = useCallback(async () => {
         const missingAppointments = boardAppointments.filter(({ appointment }) => (
