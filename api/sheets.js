@@ -27,6 +27,29 @@ const ALLOWED_SHEETS = new Set([
 
 let cachedSheets = null;
 
+// In-memory response cache (per warm instance), 45s TTL, stale served on
+// upstream error. The service account's Sheets quota is 60 reads/min shared
+// across every app that uses it — on 2026-08-06 a polling storm on this
+// endpoint (~235 req/min) starved the speed-to-lead dialer endpoints and
+// blanked every rep's queue. Identical queries within the TTL now cost zero
+// quota, and a 429 serves the last good copy instead of feeding retry loops.
+const CACHE_TTL_MS = 45 * 1000;
+const _cache = new Map(); // key → { at, body }
+
+function cacheKey(q) {
+  const { spreadsheetId, range, ranges, valueRenderOption, fields, op } = q;
+  return JSON.stringify([spreadsheetId, range, ranges, valueRenderOption, fields, op]);
+}
+
+function cachePut(key, body) {
+  _cache.set(key, { at: Date.now(), body });
+  if (_cache.size > 300) {
+    // drop oldest entries so a warm instance can't grow unbounded
+    const oldest = [..._cache.entries()].sort((a, b) => a[1].at - b[1].at);
+    for (let i = 0; i < 50 && i < oldest.length; i++) _cache.delete(oldest[i][0]);
+  }
+}
+
 function getSheetsClient() {
   if (cachedSheets) return cachedSheets;
 
@@ -62,6 +85,14 @@ export default async function handler(req, res) {
   }
   if (!ALLOWED_SHEETS.has(spreadsheetId)) {
     return res.status(403).json({ error: 'spreadsheetId not allowed' });
+  }
+
+  const key = cacheKey(req.query);
+  const hit = _cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
+    res.setHeader('X-Sheets-Cache', 'hit');
+    return res.status(200).json(hit.body);
   }
 
   let sheets;
@@ -101,9 +132,17 @@ export default async function handler(req, res) {
       body = r.data;
     }
 
+    cachePut(key, body);
     res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
+    res.setHeader('X-Sheets-Cache', 'miss');
     return res.status(200).json(body);
   } catch (err) {
+    if (hit) {
+      // upstream failed (quota, transient) — stale beats an error
+      res.setHeader('Cache-Control', 'public, s-maxage=30');
+      res.setHeader('X-Sheets-Cache', 'stale');
+      return res.status(200).json(hit.body);
+    }
     const status = err.code || err.status || 502;
     const message = err.errors?.[0]?.message || err.message || 'Sheets API error';
     return res.status(status).json({ error: { code: status, message } });
