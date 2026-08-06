@@ -27,6 +27,16 @@ const readModeFromUrl = (): ReviewMode => (
 );
 type OutcomeFilter = 'unqualified' | 'lost' | 'all';
 type PeriodKind = 'day' | 'week' | 'month' | 'custom';
+// List ordering. 'recent' is the original behaviour (newest booking first, risky
+// ones floated in the bookings needs-review tab); the rest group the list so one
+// CSR / status / technician can be worked through in a block.
+type SortKey = 'recent' | 'csr' | 'stage' | 'tech';
+const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+    { key: 'recent', label: 'Newest' },
+    { key: 'csr', label: 'Booking CSR' },
+    { key: 'stage', label: 'Status' },
+    { key: 'tech', label: 'Technician' },
+];
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -76,9 +86,10 @@ interface ReviewRow {
     year_built: string | number | null;
     stories: string | number | null;
     property_type: string | null;
-    job_owner?: string | null;   // outcomes: the rep who ran/dispositioned it
+    job_owner?: string | null;   // the rep (technician) who runs the appointment
+    stage?: string | null;       // Roofr job-card status, e.g. "Proposal sent/follow-up"
     appt_date?: string | null;   // outcomes: the appointment date (YYYY-MM-DD)
-    outcome?: string | null;     // outcomes: stage_category (unqualified|lost)
+    outcome?: string | null;     // outcomes: stage_category (the coarse bucket)
     review_status: ReviewStatus;
     flag_reason: string | null;
     review_note: string | null;
@@ -157,6 +168,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     // 'all' = every appointment that hasn't reached Proposal signed, which is the
     // whole point of the view; unqualified/lost narrow it to the hard dispositions.
     const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all');
+    const [sortKey, setSortKey] = useState<SortKey>('recent');
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -301,8 +313,20 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
                 if (riskDifference) return riskDifference;
             }
+            // Group by the chosen field, then newest-first inside each group so a
+            // block stays in a sensible order. Blanks sort last rather than first.
+            if (sortKey !== 'recent') {
+                const field: keyof ReviewRow = sortKey === 'csr' ? 'appt_booker' : sortKey === 'tech' ? 'job_owner' : 'stage';
+                const aKey = (a[field] || '').toString().trim();
+                const bKey = (b[field] || '').toString().trim();
+                if (aKey !== bKey) {
+                    if (!aKey) return 1;
+                    if (!bKey) return -1;
+                    return aKey.localeCompare(bKey);
+                }
+            }
             return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
-        }), [rows, tab, bookerFilter, filterKey, mode]);
+        }), [rows, tab, bookerFilter, filterKey, mode, sortKey]);
 
     const sortedReps = useMemo(() => stats ? [...stats.by_rep].sort((a, b) => (Number(b[statsSort]) - Number(a[statsSort])) || a.rep.localeCompare(b.rep)) : [], [stats, statsSort]);
 
@@ -451,6 +475,14 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     <nav className="flex flex-wrap gap-1" aria-label="Review status">
                         {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
                     </nav>
+                    <div className="inline-flex items-center gap-1 text-[11px]">
+                        <span className="text-text-tertiary">Sort:</span>
+                        <div className="inline-flex rounded-md border border-border-primary overflow-hidden">
+                            {SORT_OPTIONS.map(option => (
+                                <button key={option.key} onClick={() => setSortKey(option.key)} title={`Group the list by ${option.label.toLowerCase()}`} className={`px-2 py-1 font-semibold transition ${sortKey === option.key ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>{option.label}</button>
+                            ))}
+                        </div>
+                    </div>
                     {stats && <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px]">
                         <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
                         <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
@@ -474,7 +506,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="flex flex-wrap items-baseline gap-x-2"><h2 className="text-sm font-bold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <><span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${row.outcome === 'lost' ? 'border-tag-red-border bg-tag-red-bg text-tag-red-text' : 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'}`}>{(row.outcome || '').toUpperCase()}</span><span className="text-[10px] text-text-tertiary whitespace-nowrap">Appt {row.appt_date || '—'}</span></> : <span className="text-[10px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
-                                <div className="flex flex-wrap items-center gap-1 text-[10px]"><span className="px-1.5 py-0.5 rounded border border-brand-primary/40 bg-brand-bg-light text-brand-text-light font-bold" title="CSR who booked this appointment">CSR: {row.appt_booker || 'Unknown'}</span>{mode === 'outcomes' && <span className="px-1.5 py-0.5 rounded border border-border-secondary text-text-secondary font-semibold" title="Rep who ran the appointment">Ran by {row.job_owner || 'Unknown'}</span>}{row.lead_source && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.lead_source}</span>}{row.workflow && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.workflow}</span>}{(row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary text-text-tertiary">{tag}</span>)}</div>
+                                <div className="flex flex-wrap items-center gap-1 text-[10px]"><span className="px-1.5 py-0.5 rounded border border-brand-primary/40 bg-brand-bg-light text-brand-text-light font-bold" title="CSR who booked this appointment">CSR: {row.appt_booker || 'Unknown'}</span>{row.job_owner && <span className="px-1.5 py-0.5 rounded border border-border-secondary text-text-secondary font-semibold" title="Technician assigned to the appointment">Tech: {row.job_owner}</span>}{row.stage && <span className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-tertiary text-text-secondary font-semibold" title="Roofr job-card status">{row.stage}</span>}{row.lead_source && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.lead_source}</span>}{row.workflow && <span className="px-1.5 py-0.5 rounded bg-bg-tertiary text-text-secondary">{row.workflow}</span>}{(row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary text-text-tertiary">{tag}</span>)}</div>
                                 <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-text-secondary">{row.address && <span>{row.address}</span>}{row.phone && (phoneDigits
                                     // stopPropagation: the card itself is clickable (sets the active
                                     // row), so opening CTM shouldn't also select the card.
