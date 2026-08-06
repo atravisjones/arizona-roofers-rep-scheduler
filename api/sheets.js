@@ -33,7 +33,7 @@ let cachedSheets = null;
 // endpoint (~235 req/min) starved the speed-to-lead dialer endpoints and
 // blanked every rep's queue. Identical queries within the TTL now cost zero
 // quota, and a 429 serves the last good copy instead of feeding retry loops.
-const CACHE_TTL_MS = 45 * 1000;
+const CACHE_TTL_MS = 150 * 1000;
 const _cache = new Map(); // key → { at, body }
 
 function cacheKey(q) {
@@ -86,6 +86,11 @@ export default async function handler(req, res) {
   if (!ALLOWED_SHEETS.has(spreadsheetId)) {
     return res.status(403).json({ error: 'spreadsheetId not allowed' });
   }
+
+  // temporary storm diagnostics (2026-08-06): who is calling, for what
+  console.log('[s]',
+    (req.headers['origin'] || req.headers['referer'] || '-').replace(/^https?:\/\//, '').slice(0, 24),
+    String(req.query.range || req.query.ranges || req.query.fields || 'meta').slice(0, 28));
 
   const key = cacheKey(req.query);
   const hit = _cache.get(key);
