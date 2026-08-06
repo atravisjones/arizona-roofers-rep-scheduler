@@ -136,13 +136,17 @@ const MainLayout: React.FC = () => {
 
   // Startup prompt: on a fresh page load, offer to load the most recent saved
   // schedule (in-memory state is empty on load) or start fresh.
+  // PLANNER ONLY — the Today Board and Review read their own live data and have no
+  // use for a saved planner schedule, so prompting there was pure noise on refresh.
+  // Keyed off showPlanner rather than mount, so arriving at the planner from another
+  // tab still offers the load; startupCheckedRef keeps it to once per session.
   const [showStartupModal, setShowStartupModal] = useState(false);
   const [startupBackupInfo, setStartupBackupInfo] = useState<BackupListItem | null>(null);
   const [isLoadingMostRecent, setIsLoadingMostRecent] = useState(false);
   const startupCheckedRef = useRef(false);
 
   useEffect(() => {
-    if (startupCheckedRef.current) return;
+    if (!showPlanner || startupCheckedRef.current) return;
     startupCheckedRef.current = true;
     (async () => {
       const info = await context.getMostRecentBackupInfo();
@@ -152,7 +156,7 @@ const MainLayout: React.FC = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showPlanner]);
 
   const handleStartupStartFresh = useCallback(() => setShowStartupModal(false), []);
   const handleStartupLoadMostRecent = useCallback(async () => {
@@ -1132,7 +1136,7 @@ const MainLayout: React.FC = () => {
       />
 
       <StartupModal
-        isOpen={showStartupModal}
+        isOpen={showStartupModal && showPlanner}
         backupInfo={startupBackupInfo}
         isLoading={isLoadingMostRecent}
         onStartFresh={handleStartupStartFresh}
