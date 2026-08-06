@@ -95,7 +95,7 @@ export default async function handler(req, res) {
   const key = cacheKey(req.query);
   const hit = _cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
-    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
+    res.setHeader('Cache-Control', 'public, s-maxage=150, stale-while-revalidate=600');
     res.setHeader('X-Sheets-Cache', 'hit');
     return res.status(200).json(hit.body);
   }
@@ -110,6 +110,7 @@ export default async function handler(req, res) {
 
   try {
     let body;
+    console.log('[m] upstream read', String(range || ranges || fields || 'meta').slice(0, 28));
 
     if (op === 'batchGet') {
       const rangeList = Array.isArray(ranges) ? ranges : (ranges ? [ranges] : []);
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
     }
 
     cachePut(key, body);
-    res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
+    res.setHeader('Cache-Control', 'public, s-maxage=150, stale-while-revalidate=600');
     res.setHeader('X-Sheets-Cache', 'miss');
     return res.status(200).json(body);
   } catch (err) {
