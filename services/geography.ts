@@ -87,7 +87,12 @@ export const GREATER_PHOENIX_CITIES = new Set([
     "tolleson", "waddell", "sun city", "sun city west", "ahwatukee", "new river", "gold canyon", "sun lakes", 
     "maricopa", "casa grande", "florence", "coolidge", "laveen", "guadalupe", "ahwatukee foothills",
     "rio verde", "fort mcdowell", "sun city festival", "sun city grand", "verrado", "estrella mountain ranch",
-    "higley", "red mountain"
+    "higley", "red mountain",
+    // Gila County copper belt — ~75 mi east of Mesa on US-60, latitude ~33.4°N. These sat
+    // in SOUTHERN_AZ_CITIES, which put them ~80 mi south of where they actually are: one
+    // Globe stop sent the rep's whole board column to Tucson and auto-assign reserved
+    // those jobs for Tucson reps. East Valley serves them.
+    "globe", "miami", "claypool"
 ]);
 
 export const WEST_VALLEY_CITIES = new Set([
@@ -130,7 +135,7 @@ export const SOUTHERN_AZ_CITIES = new Set([
     "tucson", "south tucson", "oro valley", "marana", "vail", "sahuarita", "green valley", "catalina foothills", 
     "nogales", "rio rico", "sierra vista", "benson", "oracle", "mammoth", "red rock", "saddlebrooke", "sonoita", 
     "tubac", "patagonia", "willcox", "douglas", "san manuel", "rillito", "tanque verde", "three points", "summit", 
-    "catalina", "redington", "corona de tucson", "picacho peak", "globe", "miami", "claypool",
+    "catalina", "redington", "corona de tucson", "picacho peak",
     "amado", "arivaca", "elgin", "huachuca city", "tombstone", "bisbee", "naco"
 ]);
 
