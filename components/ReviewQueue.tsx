@@ -11,6 +11,20 @@ const OUTCOME_FLAG_REASONS = ['Should be qualified', 'Wrongly unqualified', 'No-
 type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
 type ReviewMode = 'bookings' | 'outcomes';
+
+// Each mode gets its own URL so a view is linkable and back/forward works:
+// /review and /review/bookings = Bookings, /review/outcomes = Outcomes.
+// Bare /review stays on Bookings so existing links and bookmarks keep working.
+const REVIEW_BASE_PATH = '/review';
+const MODE_TO_PATH: Record<ReviewMode, string> = {
+    bookings: `${REVIEW_BASE_PATH}/bookings`,
+    outcomes: `${REVIEW_BASE_PATH}/outcomes`,
+};
+const readModeFromUrl = (): ReviewMode => (
+    typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith(MODE_TO_PATH.outcomes)
+        ? 'outcomes'
+        : 'bookings'
+);
 type OutcomeFilter = 'unqualified' | 'lost' | 'all';
 type PeriodKind = 'day' | 'week' | 'month' | 'custom';
 
@@ -137,10 +151,12 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [periodKind, setPeriodKind] = useState<PeriodKind>('day');
     const [periodOffset, setPeriodOffset] = useState(0);
     const [bookerFilter, setBookerFilter] = useState('');
-    const [mode, setMode] = useState<ReviewMode>('bookings');
+    const [mode, setMode] = useState<ReviewMode>(readModeFromUrl);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
-    const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('unqualified');
+    // 'all' = every appointment that hasn't reached Proposal signed, which is the
+    // whole point of the view; unqualified/lost narrow it to the hard dispositions.
+    const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all');
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -221,11 +237,41 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const filterLabel = mode === 'outcomes' ? 'Rep' : 'CSR';
     const activeFlagReasons: readonly string[] = mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS;
 
+    // Clicking a mode pushes its URL; browser back/forward pulls the mode back out.
+    const selectMode = useCallback((next: ReviewMode) => {
+        setMode(next);
+        if (typeof window !== 'undefined' && window.location.pathname !== MODE_TO_PATH[next]) {
+            window.history.pushState({}, '', MODE_TO_PATH[next]);
+        }
+    }, []);
+
+    useEffect(() => {
+        const syncModeFromUrl = () => setMode(readModeFromUrl());
+        window.addEventListener('popstate', syncModeFromUrl);
+        return () => window.removeEventListener('popstate', syncModeFromUrl);
+    }, []);
+
+    // Normalize a bare /review to its canonical mode path, without adding a history
+    // entry — otherwise Back from Bookings lands on the same view it just left.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (window.location.pathname !== MODE_TO_PATH[mode]) {
+            window.history.replaceState({}, '', MODE_TO_PATH[mode]);
+        }
+        // Runs once on mount; mode changes go through selectMode/popstate above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // Reset view state when switching between Bookings and Outcomes.
+    // Outcomes opens on YESTERDAY: it reviews appointments that already ran, and
+    // today's aren't finished yet. Bookings stays on today -- it's the live queue
+    // whose badge and new-booking chime depend on showing bookings as they land.
     useEffect(() => {
         setTab('needs_review'); setBookerFilter(''); setFlaggingJobId(null); setActiveJobId(null);
         setUndoStack([]); setRedoStack([]);
         setFlagReason((mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS)[0]);
+        setPeriodKind('day');
+        setPeriodOffset(mode === 'outcomes' ? -1 : 0);
     }, [mode]);
 
     const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row[filterKey] || '').toString().trim()).filter(Boolean))).sort(), [rows, filterKey]);
@@ -356,13 +402,13 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     <div className="flex items-center gap-3">
                         <div className="inline-flex rounded-md border border-border-primary overflow-hidden">
                             {(['bookings', 'outcomes'] as const).map(m => (
-                                <button key={m} onClick={() => setMode(m)} className={`px-2.5 py-1 text-[11px] font-bold transition ${mode === m ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>
+                                <button key={m} onClick={() => selectMode(m)} className={`px-2.5 py-1 text-[11px] font-bold transition ${mode === m ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>
                                     {m === 'bookings' ? 'Bookings' : 'Outcomes'}
                                 </button>
                             ))}
                         </div>
                         <p className="text-[11px] text-text-tertiary">{mode === 'outcomes'
-                            ? `Turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter} · booked ${rangeText} · future appts count`
+                            ? `${outcomeFilter === 'all' ? 'Not proposal-signed' : `Turned ${outcomeFilter}`} · appointments ${rangeText} · rescheduled excluded`
                             : `Bookings made ${rangeText}`}</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -417,7 +463,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
             <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()} have turned ${outcomeFilter === 'all' ? 'unqualified / lost' : outcomeFilter}. Use ◀ to check earlier periods.` : `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}. Use ◀ to check earlier periods.`}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
+                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? `No appointments ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}${outcomeFilter === 'all' ? ' are still unsigned' : ` turned ${outcomeFilter}`}. Use ◀ to check earlier periods.` : `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}. Use ◀ to check earlier periods.`}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
                     const risks = getRiskReasons(row);
                     const isRisky = mode === 'bookings' && row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;

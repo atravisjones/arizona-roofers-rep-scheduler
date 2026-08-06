@@ -56,6 +56,9 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
 
 const TODAY_BOARD_PATH = '/today-board';
 const REVIEW_PATH = '/review';
+// Review has a per-mode URL (/review/bookings, /review/outcomes), so match the
+// prefix — a bare /review still counts and ReviewQueue normalizes it on mount.
+const isReviewPath = (path: string) => path === REVIEW_PATH || path.startsWith(`${REVIEW_PATH}/`);
 
 const MainLayout: React.FC = () => {
   const context = useAppContext();
@@ -124,7 +127,7 @@ const MainLayout: React.FC = () => {
     () => typeof window !== 'undefined' && window.location.pathname === TODAY_BOARD_PATH
   );
   const [showReviewQueue, setShowReviewQueue] = useState(
-    () => typeof window !== 'undefined' && window.location.pathname === REVIEW_PATH
+    () => typeof window !== 'undefined' && isReviewPath(window.location.pathname)
   );
   const showPlanner = !showTodayBoard && !showReviewQueue;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
@@ -172,13 +175,13 @@ const MainLayout: React.FC = () => {
   const navigateTo = useCallback((path: string) => {
     if (window.location.pathname !== path) window.history.pushState({}, '', path);
     setShowTodayBoard(path === TODAY_BOARD_PATH);
-    setShowReviewQueue(path === REVIEW_PATH);
+    setShowReviewQueue(isReviewPath(path));
   }, []);
 
   useEffect(() => {
     const syncFromUrl = () => {
       setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
-      setShowReviewQueue(window.location.pathname === REVIEW_PATH);
+      setShowReviewQueue(isReviewPath(window.location.pathname));
     };
     window.addEventListener('popstate', syncFromUrl);
     return () => window.removeEventListener('popstate', syncFromUrl);
