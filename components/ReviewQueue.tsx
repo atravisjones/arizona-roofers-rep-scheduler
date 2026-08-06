@@ -31,11 +31,17 @@ type PeriodKind = 'day' | 'week' | 'month' | 'custom';
 // ones floated in the bookings needs-review tab); the rest group the list so one
 // CSR / status / technician can be worked through in a block.
 type SortKey = 'recent' | 'csr' | 'stage' | 'tech';
+type FilterField = 'appt_booker' | 'stage' | 'job_owner';
+// The groupable fields are also the filterable ones, so sort and filter stay in
+// lockstep — one entry here yields both a Sort button and a filter dropdown.
+const FILTER_FIELDS: Array<{ key: Exclude<SortKey, 'recent'>; field: FilterField; label: string }> = [
+    { key: 'csr', field: 'appt_booker', label: 'Booking CSR' },
+    { key: 'stage', field: 'stage', label: 'Status' },
+    { key: 'tech', field: 'job_owner', label: 'Technician' },
+];
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
     { key: 'recent', label: 'Newest' },
-    { key: 'csr', label: 'Booking CSR' },
-    { key: 'stage', label: 'Status' },
-    { key: 'tech', label: 'Technician' },
+    ...FILTER_FIELDS.map(entry => ({ key: entry.key as SortKey, label: entry.label })),
 ];
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -161,7 +167,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
     const [periodKind, setPeriodKind] = useState<PeriodKind>('day');
     const [periodOffset, setPeriodOffset] = useState(0);
-    const [bookerFilter, setBookerFilter] = useState('');
+    const [fieldFilters, setFieldFilters] = useState<Partial<Record<FilterField, string>>>({});
     const [mode, setMode] = useState<ReviewMode>(readModeFromUrl);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
@@ -245,8 +251,6 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     useEffect(() => { onCountChange(needsReviewCount); }, [needsReviewCount, onCountChange]);
 
     // Bookings filter by the CSR who booked; Outcomes by the rep who dispositioned it.
-    const filterKey: 'appt_booker' | 'job_owner' = mode === 'outcomes' ? 'job_owner' : 'appt_booker';
-    const filterLabel = mode === 'outcomes' ? 'Rep' : 'CSR';
     const activeFlagReasons: readonly string[] = mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS;
 
     // Clicking a mode pushes its URL; browser back/forward pulls the mode back out.
@@ -279,14 +283,26 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     // today's aren't finished yet. Bookings stays on today -- it's the live queue
     // whose badge and new-booking chime depend on showing bookings as they land.
     useEffect(() => {
-        setTab('needs_review'); setBookerFilter(''); setFlaggingJobId(null); setActiveJobId(null);
+        setTab('needs_review'); setFieldFilters({}); setFlaggingJobId(null); setActiveJobId(null);
         setUndoStack([]); setRedoStack([]);
         setFlagReason((mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS)[0]);
         setPeriodKind('day');
         setPeriodOffset(mode === 'outcomes' ? -1 : 0);
     }, [mode]);
 
-    const bookers = useMemo(() => Array.from(new Set(rows.map(row => (row[filterKey] || '').toString().trim()).filter(Boolean))).sort(), [rows, filterKey]);
+    // Dropdown choices come from the rows actually loaded, so they always reflect the
+    // current period rather than offering values that would return nothing.
+    const filterOptions = useMemo(() => {
+        const options = {} as Record<FilterField, string[]>;
+        FILTER_FIELDS.forEach(({ field }) => {
+            const values: string[] = rows
+                .map(row => String(row[field] ?? '').trim())
+                .filter(value => value.length > 0);
+            options[field] = Array.from(new Set(values)).sort();
+        });
+        return options;
+    }, [rows]);
+    const activeFilterCount = FILTER_FIELDS.filter(({ field }) => fieldFilters[field]).length;
 
     // Switching into Custom pre-fills From/To with the currently shown range.
     const selectPeriod = (kind: PeriodKind) => {
@@ -307,7 +323,11 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         : 'pick dates';
 
     const visibleRows = useMemo(() => rows
-        .filter(row => (tab === 'all' || row.review_status === tab) && (!bookerFilter || (row[filterKey] || '').toString().trim() === bookerFilter))
+        // Filters compose: picking a CSR and a status narrows to rows matching both.
+        .filter(row => (tab === 'all' || row.review_status === tab) && FILTER_FIELDS.every(({ field }) => {
+            const wanted = fieldFilters[field];
+            return !wanted || (row[field] || '').toString().trim() === wanted;
+        }))
         .sort((a, b) => {
             if (mode === 'bookings' && tab === 'needs_review') {
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
@@ -315,10 +335,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             }
             // Group by the chosen field, then newest-first inside each group so a
             // block stays in a sensible order. Blanks sort last rather than first.
-            if (sortKey !== 'recent') {
-                const field: keyof ReviewRow = sortKey === 'csr' ? 'appt_booker' : sortKey === 'tech' ? 'job_owner' : 'stage';
-                const aKey = (a[field] || '').toString().trim();
-                const bKey = (b[field] || '').toString().trim();
+            const sortField = FILTER_FIELDS.find(entry => entry.key === sortKey)?.field;
+            if (sortField) {
+                const aKey = (a[sortField] || '').toString().trim();
+                const bKey = (b[sortField] || '').toString().trim();
                 if (aKey !== bKey) {
                     if (!aKey) return 1;
                     if (!bKey) return -1;
@@ -326,7 +346,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 }
             }
             return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
-        }), [rows, tab, bookerFilter, filterKey, mode, sortKey]);
+        }), [rows, tab, fieldFilters, mode, sortKey]);
 
     const sortedReps = useMemo(() => stats ? [...stats.by_rep].sort((a, b) => (Number(b[statsSort]) - Number(a[statsSort])) || a.rep.localeCompare(b.rep)) : [], [stats, statsSort]);
 
@@ -467,9 +487,20 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             <button key={o} onClick={() => setOutcomeFilter(o)} className={`px-2.5 py-1 font-semibold capitalize transition ${outcomeFilter === o ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>{o}</button>
                         ))}
                     </div>}
-                    <span className="text-text-tertiary ml-auto">{filterLabel}:</span>
-                    <select value={bookerFilter} onChange={event => setBookerFilter(event.target.value)} className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary max-w-[180px] outline-none focus:border-brand-primary"><option value="">All {filterLabel}s</option>{bookers.map(booker => <option key={booker} value={booker}>{booker}</option>)}</select>
-                    {bookerFilter && <button onClick={() => setBookerFilter('')} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title={`Clear ${filterLabel} filter`}>✕ {bookerFilter} · {visibleRows.length}</button>}
+                    <span className="text-text-tertiary ml-auto">Filter:</span>
+                    {FILTER_FIELDS.map(({ field, label }) => (
+                        <select
+                            key={field}
+                            value={fieldFilters[field] || ''}
+                            onChange={event => setFieldFilters(prev => ({ ...prev, [field]: event.target.value }))}
+                            title={`Filter by ${label.toLowerCase()}`}
+                            className={`px-2 py-0.5 rounded border bg-bg-primary text-text-primary max-w-[170px] outline-none focus:border-brand-primary ${fieldFilters[field] ? 'border-brand-primary text-brand-primary font-semibold' : 'border-border-secondary'}`}
+                        >
+                            <option value="">All {label}s</option>
+                            {filterOptions[field].map(value => <option key={value} value={value}>{value}</option>)}
+                        </select>
+                    ))}
+                    {activeFilterCount > 0 && <button onClick={() => setFieldFilters({})} className="px-2 py-0.5 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear all filters">✕ Clear {activeFilterCount} · {visibleRows.length} shown</button>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <nav className="flex flex-wrap gap-1" aria-label="Review status">
@@ -490,7 +521,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         <button onClick={() => setShowStats(value => !value)} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
                     </div>}
                 </div>
-                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setBookerFilter(rep.rep); setTab('flagged'); setPeriodKind('month'); setPeriodOffset(0); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
+                {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setFieldFilters({ appt_booker: rep.rep }); setTab('flagged'); setPeriodKind('month'); setPeriodOffset(0); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
             </header>
             {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
             {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
