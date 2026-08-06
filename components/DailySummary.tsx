@@ -4,7 +4,7 @@ import { TAG_KEYWORDS } from '../constants';
 import { ClipboardIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import { GREATER_PHOENIX_CITIES, NORTHERN_AZ_CITIES, SOUTHERN_AZ_CITIES, SOUTH_OUTER_RING_CITIES } from '../services/geography';
-import { getEffectiveUnavailableSlots, isFieldSalesRep } from '../utils/repUtils';
+import { getEffectiveUnavailableSlots, isCommercialOnlyRep, isFieldSalesRep } from '../utils/repUtils';
 
 // Helper to extract job type and clean up notes for display
 const getJobDisplayDetails = (job: Job | DisplayJob) => {
@@ -222,7 +222,9 @@ const DailySummaryModal: React.FC<DailySummaryModalProps> = ({ isOpen, onClose }
 
             if (isFullyUnavailable) {
                 off.push(rep.name);
-            } else if (jobCount === 0) {
+            } else if (jobCount === 0 && !isCommercialOnlyRep(rep)) {
+                // Commercial-only reps sit empty on the residential board by design —
+                // listing them as "available" every day is noise, not an opening.
                 availableNoJobs.push(rep.name);
             }
         });

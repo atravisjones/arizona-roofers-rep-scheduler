@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 import { ClipboardIcon, XIcon, ClockIcon, MapPinIcon } from './icons';
-import { getEffectiveUnavailableSlots, getNorthZone, isRepEligibleForNorthZone } from '../utils/repUtils';
+import { getEffectiveUnavailableSlots, getNorthZone, isCommercialOnlyRep, isRepEligibleForNorthZone } from '../utils/repUtils';
 
 interface CitySection {
     title: string;
@@ -75,8 +75,11 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
         const otherCitiesFound = new Set<string>();
 
         appState.reps.forEach(rep => {
+            // Commercial-only reps aren't candidates for residential work — don't offer them.
+            if (isCommercialOnlyRep(rep)) return;
+
             const unavailableSlotIds = new Set(getEffectiveUnavailableSlots(rep, selectedDayString));
-            
+
             const openSlots = rep.schedule
                 .filter(slot => !unavailableSlotIds.has(slot.id) && slot.jobs.length === 0)
                 .map(slot => slot.label);
@@ -147,6 +150,9 @@ const AvailabilitySummaryModal: React.FC<AvailabilitySummaryModalProps> = ({ isO
         });
 
         appState.reps.forEach(rep => {
+            // Commercial-only reps aren't candidates for residential work — don't offer them.
+            if (isCommercialOnlyRep(rep)) return;
+
             const unavailableSlotIds = new Set(getEffectiveUnavailableSlots(rep, selectedDayString));
             const jobsToday = rep.schedule.flatMap(s => s.jobs);
             const isFree = jobsToday.length === 0;

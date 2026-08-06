@@ -8,6 +8,14 @@ import { northRoutingEligibility } from '../services/northRoutingConfig';
 export const isLondon = (rep: Rep): boolean =>
     rep.name.trim().toLowerCase().startsWith('london smith');
 
+/**
+ * Commercial-only reps — anyone under the sheet's COMMERCIAL banner (plus London,
+ * who predates that banner). They never get recommended for residential availability,
+ * so keep them out of the "who's open" readouts. Manual placement still works.
+ */
+export const isCommercialOnlyRep = (rep: Rep): boolean =>
+    rep.region === 'COMMERCIAL' || isLondon(rep);
+
 export const isI17CorridorRep = (rep: Rep): boolean => {
     const name = rep.name.trim().toLowerCase();
     return [...northRoutingEligibility.I17.repNamePrefixes].some(prefix => name.startsWith(prefix));
