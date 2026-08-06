@@ -4,7 +4,7 @@ import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
 import type { AppState, Rep, TimeSlot } from '../types';
-import { getEffectiveUnavailableSlots, isLondon } from '../utils/repUtils';
+import { getEffectiveUnavailableSlots, isCommercialOnlyRep, isLondon } from '../utils/repUtils';
 import { normalizeName, fetchTimeSlotsForDate } from '../services/googleSheetsService';
 import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../services/osmService';
 import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
@@ -47,6 +47,14 @@ type BoardAppointment = RoofrAppointment & {
 type AppointmentCoordinateMap = Record<string, Coordinates | null>;
 type DepartmentGroup = 'Retail' | 'D2D' | 'CSR' | 'Management' | 'Other';
 type AppointmentProximity = { distanceMiles: number | null; hasCoordinate: boolean };
+// A nearby-rep hit. `appointment` is the rep's closest stop today; when it's null the
+// rep has nothing booked and was ranked from their home zip instead.
+type ClosestRep = {
+    repName: string;
+    distanceMiles: number;
+    appointment: BoardAppointment | null;
+    homeZip?: string;
+};
 
 const REFRESH_MS = 120000;
 const NEW_FLASH_MS = 60000;
@@ -620,6 +628,7 @@ const TodayBoard: React.FC = () => {
     const [searchError, setSearchError] = useState<string | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
+    const [repHomeCoordinates, setRepHomeCoordinates] = useState<Record<string, Coordinates | null>>({});
     const [showPool, setShowPool] = useState(false);
     const [poolCount, setPoolCount] = useState(0);
     const [poolAnchor, setPoolAnchor] = useState<PoolAnchor | null>(null);
@@ -978,6 +987,33 @@ const TodayBoard: React.FC = () => {
         ))
     ), [groupedAppointments]);
 
+    // Bookable reps with NOTHING on the board today. They have no stop to measure from,
+    // so a proximity search would never surface them even when they're the closest option
+    // available — rank them off their home zip instead. Same eligibility rule as the
+    // empty-column list above (no CSR/Management/D2D, no managers, no commercial, not off).
+    const freeRepCandidates = useMemo(() => {
+        // A day that's already over has no bookable capacity, so nobody is "open" on it.
+        // fillWindows keeps the day's configured slots regardless of date — only the
+        // render-time nowCutoffMinutes hides passed windows — so gate on the date here.
+        if (dateKey < todayKey()) return [];
+
+        const booked = new Set<string>();
+        boardAppointments.forEach(({ repName }) => {
+            booked.add(normalizeRepName(repName));
+            booked.add(normalizeName(repName));
+        });
+        return appState.reps.filter(rep => {
+            const norm = normalizeRepName(rep.name);
+            if (booked.has(norm) || booked.has(normalizeName(rep.name))) return false;
+            const grp = getRepGroup(rep.name);
+            if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
+            if (rosterManagers.has(norm)) return false;
+            if (isCommercialOnlyRep(rep)) return false;
+            if (getEffectiveUnavailableSlots(rep, dayName).length >= fillWindows.length) return false;
+            return !!rep.zipCodes?.[0];
+        });
+    }, [appState.reps, boardAppointments, getRepGroup, rosterManagers, dayName, dateKey, fillWindows.length]);
+
     // Double bookings: same rep with overlapping active appointments, or the same
     // job carrying two active events today (e.g. moved up without deleting the old one).
     const doubleBookedIds = useMemo(() => {
@@ -1086,6 +1122,21 @@ const TodayBoard: React.FC = () => {
         });
     }, [appointmentCoordinates, boardAppointments]);
 
+    // Geocode home zips for the free reps, same convention the planner uses ("<zip>, Arizona, USA").
+    const ensureRepHomeCoordinates = useCallback(async () => {
+        const missing = freeRepCandidates.filter(rep => !(rep.name in repHomeCoordinates));
+        if (missing.length === 0) return;
+
+        const results = await geocodeAddresses(missing.map(rep => `${rep.zipCodes![0]}, Arizona, USA`));
+        setRepHomeCoordinates(prev => {
+            const next = { ...prev };
+            missing.forEach((rep, index) => {
+                next[rep.name] = results[index]?.coordinates || null;
+            });
+            return next;
+        });
+    }, [freeRepCandidates, repHomeCoordinates]);
+
     const handleSearch = useCallback(async (event?: React.FormEvent) => {
         event?.preventDefault();
         const query = searchInput.trim();
@@ -1118,8 +1169,12 @@ const TodayBoard: React.FC = () => {
 
         let isCancelled = false;
         setIsLocating(true);
-        ensureMissingAppointmentCoordinates()
-            .catch(err => console.warn('Failed to resolve appointment coordinates', err))
+        Promise.all([
+            ensureMissingAppointmentCoordinates()
+                .catch(err => console.warn('Failed to resolve appointment coordinates', err)),
+            ensureRepHomeCoordinates()
+                .catch(err => console.warn('Failed to resolve rep home coordinates', err)),
+        ])
             .finally(() => {
                 if (!isCancelled) setIsLocating(false);
             });
@@ -1127,7 +1182,7 @@ const TodayBoard: React.FC = () => {
         return () => {
             isCancelled = true;
         };
-    }, [activeSearch, ensureMissingAppointmentCoordinates]);
+    }, [activeSearch, ensureMissingAppointmentCoordinates, ensureRepHomeCoordinates]);
 
     const handleFindReplacements = useCallback(async (appointment: BoardAppointment) => {
         setSelectedAppointment(null);
@@ -1177,9 +1232,9 @@ const TodayBoard: React.FC = () => {
 
     const proximityResults = useMemo(() => {
         const byAppointmentKey: Record<string, AppointmentProximity> = {};
-        const closestByRep = new Map<string, { appointment: BoardAppointment; repName: string; distanceMiles: number }>();
+        const closestByRep = new Map<string, ClosestRep>();
 
-        if (!activeSearch) return { byAppointmentKey, closestRepNames: new Set<string>(), closestAppointmentEventIds: new Set<string>(), closestReps: [] };
+        if (!activeSearch) return { byAppointmentKey, closestRepNames: new Set<string>(), closestAppointmentEventIds: new Set<string>(), closestReps: [] as ClosestRep[] };
 
         boardAppointments.forEach(({ appointment, repName }) => {
             const key = `${appointment.status}-${appointment.eventId}`;
@@ -1193,10 +1248,28 @@ const TodayBoard: React.FC = () => {
             const distanceMiles = getDistanceMiles(activeSearch.coordinates, coordinates);
             byAppointmentKey[key] = { distanceMiles, hasCoordinate: true };
 
+            // CSRs book from the office — an appointment on their column says nothing about
+            // where they physically are, so they never rank as a nearby rep. The distance
+            // chip on the card still shows.
+            if (getRepGroup(repName) === 'CSR') return;
+
             const currentClosest = closestByRep.get(repName);
             if (!currentClosest || distanceMiles < currentClosest.distanceMiles) {
                 closestByRep.set(repName, { appointment, repName, distanceMiles });
             }
+        });
+
+        // Reps who are available but have an empty day rank off their home zip, so an open
+        // rep living nearby isn't invisible just because they have no stop to measure from.
+        freeRepCandidates.forEach(rep => {
+            const homeCoordinates = repHomeCoordinates[rep.name];
+            if (!homeCoordinates) return;
+            closestByRep.set(rep.name, {
+                repName: rep.name,
+                distanceMiles: getDistanceMiles(activeSearch.coordinates, homeCoordinates),
+                appointment: null,
+                homeZip: rep.zipCodes?.[0],
+            });
         });
 
         const closestReps = Array.from(closestByRep.values())
@@ -1205,10 +1278,12 @@ const TodayBoard: React.FC = () => {
         return {
             byAppointmentKey,
             closestRepNames: new Set(closestReps.map(result => result.repName)),
-            closestAppointmentEventIds: new Set(closestReps.map(result => result.appointment.eventId)),
+            closestAppointmentEventIds: new Set(
+                closestReps.map(result => result.appointment?.eventId).filter((id): id is string => !!id)
+            ),
             closestReps,
         };
-    }, [activeSearch, appointmentCoordinates, boardAppointments]);
+    }, [activeSearch, appointmentCoordinates, boardAppointments, freeRepCandidates, getRepGroup, repHomeCoordinates]);
 
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
@@ -1689,24 +1764,37 @@ const TodayBoard: React.FC = () => {
                             <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
                                 {proximityResults.closestReps.length === 0 ? (
                                     <div className="text-xs text-text-tertiary italic px-2 py-3">
-                                        No reps have geocodable appointments for this day.
+                                        No reps with a geocodable stop or home zip for this day.
                                     </div>
-                                ) : proximityResults.closestReps.map(({ appointment, repName, distanceMiles }) => (
+                                ) : proximityResults.closestReps.map(({ appointment, repName, distanceMiles, homeZip }) => (
                                     <button
-                                        key={`nearest-${appointment.eventId}`}
-                                        onClick={() => setSelectedAppointment({ appointment, repName })}
-                                        className="w-full text-left rounded-md border border-brand-primary/60 bg-bg-primary hover:border-brand-primary hover:shadow-sm transition p-2"
+                                        key={`nearest-${appointment?.eventId || repName}`}
+                                        onClick={() => appointment && setSelectedAppointment({ appointment, repName })}
+                                        disabled={!appointment}
+                                        className={`w-full text-left rounded-md border bg-bg-primary transition p-2 ${appointment ? 'border-brand-primary/60 hover:border-brand-primary hover:shadow-sm' : 'border-dashed border-tag-green-border cursor-default'}`}
                                     >
                                         <div className="flex items-center justify-between gap-2">
                                             <span className="text-[11px] font-bold text-text-primary truncate">{repName}</span>
                                             <span className="text-[11px] font-bold text-brand-primary flex-shrink-0">{distanceMiles.toFixed(1)} mi</span>
                                         </div>
-                                        <div className="flex items-center gap-1 min-w-0">
-                                            <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
-                                            <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-brand-primary bg-bg-primary text-brand-primary">Closest</span>
-                                        </div>
-                                        <div className="text-xs text-text-secondary truncate">{appointment.customerName || 'Unknown customer'}</div>
-                                        <div className="text-[10px] text-text-tertiary truncate">{getShortAddress(appointment)}</div>
+                                        {appointment ? (
+                                            <>
+                                                <div className="flex items-center gap-1 min-w-0">
+                                                    <div className="text-[10px] text-text-tertiary truncate">{formatTimeRange(appointment)}</div>
+                                                    <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-brand-primary bg-bg-primary text-brand-primary">Closest</span>
+                                                </div>
+                                                <div className="text-xs text-text-secondary truncate">{appointment.customerName || 'Unknown customer'}</div>
+                                                <div className="text-[10px] text-text-tertiary truncate">{getShortAddress(appointment)}</div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="flex items-center gap-1 min-w-0">
+                                                    <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text">Open day</span>
+                                                </div>
+                                                <div className="text-xs text-text-secondary truncate">No jobs booked today</div>
+                                                <div className="text-[10px] text-text-tertiary truncate">Distance from home zip {homeZip}</div>
+                                            </>
+                                        )}
                                     </button>
                                 ))}
                             </div>
