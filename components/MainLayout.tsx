@@ -704,10 +704,91 @@ const MainLayout: React.FC = () => {
     );
   };
 
+  // Shared between the full planner header and the compact review header.
+  const navTabs = (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => navigateTo('/')}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showPlanner
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Scheduling planner"
+      >
+        <GridIcon className="h-3.5 w-3.5" />
+        <span>Planner</span>
+      </button>
+
+      <button
+        onClick={() => navigateTo(TODAY_BOARD_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Today's Appointments board"
+      >
+        <CalendarIcon className="h-3.5 w-3.5" />
+        <span>Today Board</span>
+      </button>
+
+      <button
+        onClick={() => navigateTo(REVIEW_BOOKINGS_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Booking review queue"
+      >
+        <span>Review</span>
+        {!showReviewOutcomes && reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+      </button>
+
+      <button
+        onClick={() => navigateTo(REVIEW_OUTCOMES_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewOutcomes
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Appointment outcomes QA — appointments that never reached Proposal signed"
+      >
+        <span>Outcomes</span>
+        {showReviewOutcomes && reviewNeedsCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-bg-primary text-brand-primary">{reviewNeedsCount}</span>}
+      </button>
+    </div>
+  );
+
+  const settingsControl = (
+    <div ref={settingsRef} className="relative">
+      <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
+        <SettingsIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
+      </button>
+      {isSettingsPanelOpen && (
+        <SettingsPanel
+          onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }}
+          onOpenTrainingData={() => { setIsTrainingDataOpen(true); setIsSettingsPanelOpen(false); }}
+          onOpenDebugLog={() => { setIsDebugLogOpen(true); setIsSettingsPanelOpen(false); }}
+          onOpenAssignmentSettings={() => { setIsAssignmentSettingsOpen(true); setIsSettingsPanelOpen(false); }}
+        />
+      )}
+    </div>
+  );
+
   return (
     <div className="h-screen flex flex-col bg-bg-secondary text-text-primary font-sans overflow-hidden">
       {/* Two-Level Header */}
       <header className="bg-bg-primary border-b border-border-primary flex-shrink-0 z-30 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+        {showReviewQueue ? (
+          /* Review / Outcomes: the planner chrome (paste/load/auto-assign, alerts,
+             reports, file/cloud state, planner undo, day tabs) does nothing on
+             these pages — show one compact bar: brand, tabs, settings. */
+          <div className="h-12 px-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
+              {navTabs}
+            </div>
+            {settingsControl}
+          </div>
+        ) : (<>
         {/* Top Bar: Reports, Alerts, Data Controls */}
         <div className="h-10 px-4 flex items-center justify-between border-b border-border-secondary/50 bg-bg-secondary/30">
           {/* Left: Branding + Paste/Auto Assign */}
@@ -845,19 +926,7 @@ const MainLayout: React.FC = () => {
               </span>
             ) : null}
             <div className="w-px h-4 bg-border-secondary mx-1"></div>
-            <div ref={settingsRef} className="relative">
-              <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
-                <SettingsIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
-              </button>
-              {isSettingsPanelOpen && (
-                <SettingsPanel
-                  onOpenThemeEditor={() => { setIsThemeEditorOpen(true); setIsSettingsPanelOpen(false); }}
-                  onOpenTrainingData={() => { setIsTrainingDataOpen(true); setIsSettingsPanelOpen(false); }}
-                  onOpenDebugLog={() => { setIsDebugLogOpen(true); setIsSettingsPanelOpen(false); }}
-                  onOpenAssignmentSettings={() => { setIsAssignmentSettingsOpen(true); setIsSettingsPanelOpen(false); }}
-                />
-              )}
-            </div>
+            {settingsControl}
           </div>
         </div>
 
@@ -899,56 +968,8 @@ const MainLayout: React.FC = () => {
               )}
             </button>
 
-            {/* Tabs: Planner / Today Board / Review — each its own URL */}
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => navigateTo('/')}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showPlanner
-                  ? 'bg-brand-primary text-brand-text-on-primary'
-                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                  }`}
-                title="Scheduling planner"
-              >
-                <GridIcon className="h-3.5 w-3.5" />
-                <span>Planner</span>
-              </button>
-
-              <button
-                onClick={() => navigateTo(TODAY_BOARD_PATH)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
-                  ? 'bg-brand-primary text-brand-text-on-primary'
-                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                  }`}
-                title="Today's Appointments board"
-              >
-                <CalendarIcon className="h-3.5 w-3.5" />
-                <span>Today Board</span>
-              </button>
-
-              <button
-                onClick={() => navigateTo(REVIEW_BOOKINGS_PATH)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes
-                  ? 'bg-brand-primary text-brand-text-on-primary'
-                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                  }`}
-                title="Booking review queue"
-              >
-                <span>Review</span>
-                {!showReviewOutcomes && reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
-              </button>
-
-              <button
-                onClick={() => navigateTo(REVIEW_OUTCOMES_PATH)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewOutcomes
-                  ? 'bg-brand-primary text-brand-text-on-primary'
-                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                  }`}
-                title="Appointment outcomes QA — appointments that never reached Proposal signed"
-              >
-                <span>Outcomes</span>
-                {showReviewOutcomes && reviewNeedsCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-bg-primary text-brand-primary">{reviewNeedsCount}</span>}
-              </button>
-            </div>
+            {/* Tabs: Planner / Today Board / Review / Outcomes — each its own URL */}
+            {navTabs}
           </div>
 
           {/* Right: Date Navigation */}
@@ -956,6 +977,7 @@ const MainLayout: React.FC = () => {
             <DayTabs />
           </div>
         </div>
+        </>)}
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 

@@ -19,6 +19,23 @@
   animation: slide-in 0.3s ease-out forwards;
 }
 
+/* Outcomes urgency pulse — applied to status chips only, never whole cards,
+   so the queue stays calm enough to scan all day. */
+@keyframes outcome-attention {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--red-text) / 0); }
+  50% { box-shadow: 0 0 0 4px rgb(var(--red-text) / 0.28); }
+}
+
+.animate-outcome-attention {
+  animation: outcome-attention 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-outcome-attention {
+    animation: none;
+  }
+}
+
 /* Day View Styles */
 .day-view-unavailable {
   background-image: repeating-linear-gradient(
