@@ -199,7 +199,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [showStats, setShowStats] = useState(false);
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
     const [periodKind, setPeriodKind] = useState<PeriodKind>('day');
-    const [periodOffset, setPeriodOffset] = useState(0);
+    // Outcomes opens on yesterday (today's appointments haven't finished), so the
+    // initial value must already match the mode — otherwise mount fires a today
+    // fetch AND a yesterday refetch, and whichever response lands last wins.
+    const [periodOffset, setPeriodOffset] = useState(() => (readModeFromUrl() === 'outcomes' ? -1 : 0));
     const [fieldFilters, setFieldFilters] = useState<Partial<Record<FilterField, string>>>({});
     const [mode, setMode] = useState<ReviewMode>(readModeFromUrl);
     const [dateFrom, setDateFrom] = useState('');
@@ -214,6 +217,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [flagNote, setFlagNote] = useState('');
     const priorNeedsIdsRef = useRef<Set<string> | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
+    // Monotonic fetch id — a response only lands if no newer fetch has started,
+    // so a slow older request can never overwrite a newer period's rows.
+    const fetchSeqRef = useRef(0);
 
     const flashNotice = useCallback((message: string) => {
         setNotice(message);
@@ -222,6 +228,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     }, []);
 
     const fetchQueue = useCallback(async (checkForNewBooking = false) => {
+        const seq = ++fetchSeqRef.current;
         setIsRefreshing(true);
         try {
             // Range resolved at call time so the midnight rollover is picked up by the poll.
@@ -239,6 +246,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     ? { p_days: 7, p_start: range.start, p_end: range.end }
                     : { p_days: 7 });
             if (resp.error) throw new Error(resp.error.message);
+            if (seq !== fetchSeqRef.current) return; // a newer fetch superseded this one
             const next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
             if (checkForNewBooking && priorNeedsIdsRef.current) {
@@ -262,7 +270,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             setError(null);
             if (mode === 'bookings') {
                 const { data: statsData } = await supabase.rpc('get_review_stats');
-                if (statsData) setStats(statsData as ReviewStats);
+                if (statsData && seq === fetchSeqRef.current) setStats(statsData as ReviewStats);
             } else {
                 setStats(null);
             }
