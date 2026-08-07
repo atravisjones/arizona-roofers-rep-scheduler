@@ -56,9 +56,12 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
 
 const TODAY_BOARD_PATH = '/today-board';
 const REVIEW_PATH = '/review';
+const REVIEW_BOOKINGS_PATH = `${REVIEW_PATH}/bookings`;
+const REVIEW_OUTCOMES_PATH = `${REVIEW_PATH}/outcomes`;
 // Review has a per-mode URL (/review/bookings, /review/outcomes), so match the
 // prefix — a bare /review still counts and ReviewQueue normalizes it on mount.
 const isReviewPath = (path: string) => path === REVIEW_PATH || path.startsWith(`${REVIEW_PATH}/`);
+const isOutcomesPath = (path: string) => path.toLowerCase().startsWith(REVIEW_OUTCOMES_PATH);
 
 const MainLayout: React.FC = () => {
   const context = useAppContext();
@@ -129,6 +132,10 @@ const MainLayout: React.FC = () => {
   const [showReviewQueue, setShowReviewQueue] = useState(
     () => typeof window !== 'undefined' && isReviewPath(window.location.pathname)
   );
+  // Which review-family top tab is lit: Review (bookings) vs Outcomes.
+  const [showReviewOutcomes, setShowReviewOutcomes] = useState(
+    () => typeof window !== 'undefined' && isOutcomesPath(window.location.pathname)
+  );
   const showPlanner = !showTodayBoard && !showReviewQueue;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -177,15 +184,23 @@ const MainLayout: React.FC = () => {
   // they're linkable and browser back/forward works. Clicking a tab goes to it —
   // it never toggles back to the planner.
   const navigateTo = useCallback((path: string) => {
-    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+      // pushState fires no popstate, but a mounted ReviewQueue reads its
+      // Bookings/Outcomes mode from the URL via popstate — nudge it so
+      // Review ⇄ Outcomes top-tab clicks actually switch the view.
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
     setShowTodayBoard(path === TODAY_BOARD_PATH);
     setShowReviewQueue(isReviewPath(path));
+    setShowReviewOutcomes(isOutcomesPath(path));
   }, []);
 
   useEffect(() => {
     const syncFromUrl = () => {
       setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
       setShowReviewQueue(isReviewPath(window.location.pathname));
+      setShowReviewOutcomes(isOutcomesPath(window.location.pathname));
     };
     window.addEventListener('popstate', syncFromUrl);
     return () => window.removeEventListener('popstate', syncFromUrl);
@@ -911,15 +926,27 @@ const MainLayout: React.FC = () => {
               </button>
 
               <button
-                onClick={() => navigateTo(REVIEW_PATH)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue
+                onClick={() => navigateTo(REVIEW_BOOKINGS_PATH)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes
                   ? 'bg-brand-primary text-brand-text-on-primary'
                   : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
                   }`}
                 title="Booking review queue"
               >
                 <span>Review</span>
-                {reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+                {!showReviewOutcomes && reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+              </button>
+
+              <button
+                onClick={() => navigateTo(REVIEW_OUTCOMES_PATH)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewOutcomes
+                  ? 'bg-brand-primary text-brand-text-on-primary'
+                  : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+                  }`}
+                title="Appointment outcomes QA — appointments that never reached Proposal signed"
+              >
+                <span>Outcomes</span>
+                {showReviewOutcomes && reviewNeedsCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-bg-primary text-brand-primary">{reviewNeedsCount}</span>}
               </button>
             </div>
           </div>

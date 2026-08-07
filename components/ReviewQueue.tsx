@@ -258,6 +258,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         setMode(next);
         if (typeof window !== 'undefined' && window.location.pathname !== MODE_TO_PATH[next]) {
             window.history.pushState({}, '', MODE_TO_PATH[next]);
+            // pushState fires no popstate; MainLayout's Review/Outcomes top tabs
+            // sync their highlight off popstate, so nudge them.
+            window.dispatchEvent(new PopStateEvent('popstate'));
         }
     }, []);
 
