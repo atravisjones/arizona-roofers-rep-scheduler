@@ -36,6 +36,13 @@
   }
 }
 
+/* Keyboard focus: one visible ring vocabulary everywhere. :where() keeps
+   specificity at zero so any component-level focus style still wins. */
+:where(button, select, input, a, [tabindex]):focus-visible {
+  outline: 2px solid rgb(var(--brand-primary) / 0.55);
+  outline-offset: 1px;
+}
+
 /* Day View Styles */
 .day-view-unavailable {
   background-image: repeating-linear-gradient(

@@ -122,14 +122,20 @@ const getOutcomeUrgency = (row: ReviewRow): OutcomeUrgency => {
 };
 const getInitials = (name: string) => name.trim().split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase() || '?';
 
-// Summary-strip filter buttons for Outcomes: red family for the three urgency
-// states, neutral for the rest. Counts are filled in from the loaded rows.
-const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; cls: string }> = [
-    { key: 'all', label: 'All', cls: 'border-border-secondary text-text-secondary' },
-    { key: 'overdue', label: 'Overdue', cls: 'border-tag-red-border bg-tag-red-text text-bg-primary' },
-    { key: 'unqualified', label: 'Unqualified', cls: 'border-tag-red-border bg-tag-red-bg text-tag-red-text' },
-    { key: 'lost', label: 'Lost', cls: 'border-tag-red-border text-tag-red-text' },
-    { key: 'working', label: 'Working', cls: 'border-border-secondary bg-bg-tertiary text-text-secondary' },
+// One segmented-control vocabulary for every grouped choice in the header:
+// same height, radius, and active treatment, so controls read as one system.
+const SEG_WRAP = 'inline-flex items-center rounded-md border border-border-secondary bg-bg-primary p-0.5 gap-0.5';
+const SEG_BTN = 'inline-flex items-center gap-1.5 px-2.5 h-6 rounded text-[11px] font-semibold transition-colors duration-150';
+const SEG_ON = 'bg-brand-primary text-brand-text-on-primary';
+const SEG_OFF = 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary';
+
+// Outcomes summary strip: stat segments with a severity dot; active = filled.
+const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on: string }> = [
+    { key: 'all', label: 'All', dot: '', on: SEG_ON },
+    { key: 'overdue', label: 'Overdue', dot: 'bg-tag-red-text', on: 'bg-tag-red-text text-bg-primary' },
+    { key: 'unqualified', label: 'Unqualified', dot: 'bg-tag-red-text/60', on: 'bg-tag-red-bg text-tag-red-text' },
+    { key: 'lost', label: 'Lost', dot: 'bg-tag-red-border', on: 'bg-tag-red-bg text-tag-red-text' },
+    { key: 'working', label: 'Working', dot: 'bg-tag-blue-text', on: 'bg-bg-tertiary text-text-primary' },
 ];
 const OUTCOME_FILTER_PHRASE: Record<OutcomeFilter, string> = {
     all: 'Not proposal-signed', overdue: 'Overdue · no outcome', unqualified: 'Turned unqualified', lost: 'Turned lost', working: 'Still working',
@@ -210,7 +216,7 @@ const FilterDropdown: React.FC<{
 
     return <>
         <button ref={btnRef} onClick={toggleOpen} title={`Filter by ${label.toLowerCase()}`}
-            className={`inline-flex items-center gap-1.5 px-2 py-1 font-semibold rounded border transition ${selected.length > 0 ? 'border-brand-primary bg-brand-bg-light text-brand-text-light' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'} ${open ? 'ring-2 ring-brand-primary/30' : ''}`}>
+            className={`inline-flex items-center gap-1.5 px-2.5 h-7 text-[11px] font-semibold rounded-md border transition-colors duration-150 ${selected.length > 0 ? 'border-brand-primary bg-brand-bg-light text-brand-text-light' : 'border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'} ${open ? 'ring-2 ring-brand-primary/30' : ''}`}>
             <span className="max-w-[140px] truncate">{selected.length === 1 ? selected[0] : label}</span>
             {selected.length > 1 && <span className="px-1 rounded-full bg-brand-primary text-brand-text-on-primary text-[9px] font-bold">{selected.length}</span>}
             <span className={`text-[8px] transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
@@ -563,48 +569,49 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     ];
 
     return (
-        <main className="h-full min-h-0 flex flex-col rounded-lg border border-border-primary bg-bg-primary shadow-lg overflow-hidden">
-            <header className="flex-shrink-0 px-4 py-3 bg-bg-secondary border-b border-border-primary space-y-2">
+        <main className="h-full min-h-0 flex flex-col overflow-hidden">
+            <header className="flex-shrink-0 px-1 pb-3 space-y-2 border-b border-border-secondary/60">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-baseline gap-2.5">
-                        <h2 className="text-sm font-bold text-text-primary">{mode === 'outcomes' ? 'Outcomes' : 'Bookings'}</h2>
-                        <p className="text-[11px] text-text-tertiary">{mode === 'outcomes'
+                        <h2 className="text-[15px] font-semibold text-text-primary">{mode === 'outcomes' ? 'Outcomes' : 'Bookings'}</h2>
+                        <p className="text-[11.5px] text-text-tertiary">{mode === 'outcomes'
                             ? `${OUTCOME_FILTER_PHRASE[outcomeFilter]} · appointments ${rangeText} · rescheduled excluded`
                             : `Bookings made ${rangeText}`}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-semibold uppercase text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
-                        <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="w-32 px-2 py-1 text-xs rounded-md border border-border-primary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
-                        <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="px-2 py-1 text-[11px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
-                        <button onClick={redo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)" className="px-2 py-1 text-[11px] font-semibold rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition">Forward ▶</button>
-                        <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="p-1.5 rounded text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
+                        <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="h-7 w-32 px-2 text-xs rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary transition-colors duration-150" />
+                        <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="h-7 px-2 text-[11px] font-semibold tabular-nums rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
+                        <button onClick={redo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)" className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">Forward ▶</button>
+                        <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="h-7 w-7 grid place-items-center rounded-md text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <div className="inline-flex rounded-md border border-border-primary overflow-hidden">
+                    <div className={SEG_WRAP}>
                         {(['day', 'week', 'month', 'custom'] as const).map(k => (
-                            <button key={k} onClick={() => selectPeriod(k)} className={`px-2.5 py-1 font-semibold capitalize transition ${periodKind === k ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary'}`}>{k}</button>
+                            <button key={k} onClick={() => selectPeriod(k)} className={`${SEG_BTN} capitalize ${periodKind === k ? SEG_ON : SEG_OFF}`}>{k}</button>
                         ))}
                     </div>
                     {periodKind !== 'custom' ? (
-                        <div className="inline-flex items-center rounded-md border border-border-primary overflow-hidden">
-                            <button onClick={() => setPeriodOffset(o => o - 1)} title={`Previous ${periodKind}`} className="px-2 py-1 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary transition">◀</button>
-                            <span className="px-2 py-1 min-w-[96px] text-center font-semibold text-text-primary border-x border-border-primary">{period.label}</span>
-                            <button onClick={() => setPeriodOffset(o => o + 1)} disabled={periodOffset === 0} title={`Next ${periodKind}`} className="px-2 py-1 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-30 transition">▶</button>
+                        <div className="inline-flex items-center h-7 rounded-md border border-border-secondary bg-bg-primary overflow-hidden">
+                            <button onClick={() => setPeriodOffset(o => o - 1)} title={`Previous ${periodKind}`} className="h-full px-2 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary transition-colors duration-150">◀</button>
+                            <span className="px-2 min-w-[96px] text-center font-semibold text-text-primary">{period.label}</span>
+                            <button onClick={() => setPeriodOffset(o => o + 1)} disabled={periodOffset === 0} title={`Next ${periodKind}`} className="h-full px-2 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-30 transition-colors duration-150">▶</button>
                         </div>
                     ) : (
                         <div className="inline-flex items-center gap-1.5">
-                            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="h-7 px-1.5 rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
                             <span className="text-text-tertiary">→</span>
-                            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-1.5 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="h-7 px-1.5 rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
                         </div>
                     )}
-                    {mode === 'outcomes' && <div className="inline-flex flex-wrap items-center gap-1 ml-1">
-                        {OUTCOME_STRIP.map(({ key, label, cls }) => (
+                    {mode === 'outcomes' && <div className={`${SEG_WRAP} ml-1`}>
+                        {OUTCOME_STRIP.map(({ key, label, dot, on }) => (
                             <button key={key} onClick={() => setOutcomeFilter(key)} title={OUTCOME_FILTER_PHRASE[key]}
-                                className={`inline-flex items-center gap-1.5 px-2 py-1 font-bold rounded-md border transition ${cls} ${outcomeFilter === key ? 'ring-2 ring-brand-primary' : 'opacity-85 hover:opacity-100'}`}>
+                                className={`${SEG_BTN} ${outcomeFilter === key ? on : SEG_OFF}`}>
+                                {dot && <span className={`h-1.5 w-1.5 rounded-full ${outcomeFilter === key && key === 'overdue' ? 'bg-bg-primary' : dot}`} />}
                                 {label}
-                                <span className="min-w-4 px-1 rounded bg-bg-primary/85 text-text-primary text-center font-bold">{outcomeCounts[key]}</span>
+                                <span className="tabular-nums font-bold">{outcomeCounts[key]}</span>
                             </button>
                         ))}
                     </div>}
@@ -619,30 +626,57 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 onClear={() => setFieldFilters(prev => { const copy = { ...prev }; delete copy[field]; return copy; })}
                             />
                         ))}
-                        {activeFilterCount > 0 && <button onClick={() => setFieldFilters({})} className="px-2 py-1 rounded bg-bg-tertiary text-brand-primary font-semibold hover:opacity-80 transition" title="Clear all filters">✕ {visibleRows.length} shown</button>}
+                        {activeFilterCount > 0 && <button onClick={() => setFieldFilters({})} className="h-7 px-2 rounded-md bg-bg-tertiary text-brand-primary font-semibold tabular-nums hover:opacity-80 transition-opacity duration-150" title="Clear all filters">✕ {visibleRows.length} shown</button>}
                         <span className="text-text-tertiary ml-1.5">Group:</span>
-                        <select value={sortKey} onChange={event => setSortKey(event.target.value as SortKey)} title="Group the list" className="px-2 py-0.5 rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary">
+                        <select value={sortKey} onChange={event => setSortKey(event.target.value as SortKey)} title="Group the list" className="h-7 px-2 rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary">
                             {SORT_OPTIONS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
                         </select>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <nav className="flex flex-wrap gap-1" aria-label="Review status">
-                        {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`px-2 py-1 text-[11px] font-semibold rounded border transition ${tab === item.key ? 'bg-brand-primary border-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{item.label}{item.count != null ? ` (${item.count})` : ''}</button>)}
+                    <nav className={SEG_WRAP} aria-label="Review status">
+                        {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`${SEG_BTN} ${tab === item.key ? SEG_ON : SEG_OFF}`}>{item.label}{item.count != null && <span className="tabular-nums font-bold">{item.count}</span>}</button>)}
                     </nav>
-                    {stats && <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px]">
+                    {stats && <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px] tabular-nums">
                         <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
                         <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
                         <span className="px-2 py-0.5 rounded bg-tag-red-bg text-tag-red-text"><b>{stats.today.flagged}</b> flagged</span>
-                        <button onClick={() => setShowStats(value => !value)} className="px-2 py-0.5 rounded border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
+                        <button onClick={() => setShowStats(value => !value)} className="px-2 py-0.5 rounded-md border border-border-secondary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150">{showStats ? 'Hide' : 'Show'} CSR scorecard</button>
                     </div>}
                 </div>
                 {showStats && stats && <div className="overflow-x-auto rounded border border-border-secondary/60 max-h-48 overflow-y-auto"><div className="px-2 py-1 text-[9px] text-text-quaternary bg-bg-tertiary/30">Click a column to sort. Flagged / Reviewed = # of that CSR's bookings you flagged / reviewed in each window.</div><table className="w-full text-[11px]"><thead className="sticky top-0 bg-bg-secondary text-text-tertiary"><tr><th rowSpan={2} onClick={() => setStatsSort('rep')} className={`py-1 px-2 text-left cursor-pointer ${statsSort === 'rep' ? 'text-brand-primary' : 'hover:text-brand-primary'}`}>CSR{statsSort === 'rep' ? ' ▾' : ''}</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-red-text border-l border-border-secondary/40">Flagged</th><th colSpan={3} className="px-1.5 py-0.5 text-center font-bold text-tag-green-text border-l border-border-secondary/40">Reviewed</th></tr><tr>{FLAG_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}{REV_COLS.map((col, i) => <th key={col.key} onClick={() => setStatsSort(col.key)} className={`px-1.5 pb-1 text-center cursor-pointer hover:text-brand-primary ${i === 0 ? 'border-l border-border-secondary/40' : ''} ${statsSort === col.key ? 'text-brand-primary font-bold' : ''}`}>{col.w}{statsSort === col.key ? ' ▾' : ''}</th>)}</tr></thead><tbody>{sortedReps.length === 0 ? <tr><td colSpan={7} className="py-2 px-2 text-text-tertiary italic">No reviews in the last 30 days.</td></tr> : sortedReps.map(rep => <tr key={rep.rep} className="border-t border-border-secondary/40"><td onClick={() => { setFieldFilters({ appt_booker: [rep.rep] }); setTab('flagged'); setPeriodKind('month'); setPeriodOffset(0); setShowStats(false); }} className="py-1 px-2 font-semibold text-text-primary whitespace-nowrap cursor-pointer hover:text-brand-primary hover:underline" title="Show this CSR's flagged jobs">{rep.rep}</td><td className={`px-1.5 text-center border-l border-border-secondary/40 ${rep.flagged_day > 0 ? 'font-bold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_day}</td><td className={`px-1.5 text-center ${rep.flagged_week > 0 ? 'text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_week}</td><td className={`px-1.5 text-center ${rep.flagged_month > 0 ? 'font-semibold text-tag-red-text' : 'text-text-tertiary'}`}>{rep.flagged_month}</td><td className="px-1.5 text-center border-l border-border-secondary/40 text-text-secondary">{rep.reviewed_day}</td><td className="px-1.5 text-center text-text-secondary">{rep.reviewed_week}</td><td className="px-1.5 text-center pr-2 text-text-secondary">{rep.reviewed_month}</td></tr>)}</tbody></table></div>}
             </header>
-            {notice && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
-            {error && <div className="mx-4 mt-3 px-2 py-1.5 text-[11px] rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
-            <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4">
-                {isLoading ? <div className="text-sm text-text-tertiary">Loading…</div> : rows.length === 0 ? <div className="text-sm text-text-tertiary">{mode === 'outcomes' ? `No appointments ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}${{ all: ' are still unsigned', overdue: ' are overdue without an outcome', unqualified: ' turned unqualified', lost: ' turned lost', working: ' are still in progress' }[outcomeFilter]}. Use ◀ to check earlier periods.` : `No bookings made ${period.label === 'Custom' ? 'in this range' : period.label.toLowerCase()}. Use ◀ to check earlier periods.`}</div> : visibleRows.length === 0 ? <div className="text-sm text-text-tertiary">{tab === 'needs_review' ? 'Nothing needs review.' : 'Nothing in this view.'}</div> : <div className="flex flex-col">{visibleRows.map(row => {
+            {notice && <div className="mx-1 mt-3 px-2 py-1.5 text-[11px] rounded-md border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">{notice}</div>}
+            {error && <div className="mx-1 mt-3 px-2 py-1.5 text-[11px] rounded-md border border-tag-red-border bg-tag-red-bg text-tag-red-text">{error}</div>}
+            <section className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-1 py-3">
+                {isLoading ? <div className="space-y-2">{[0, 1, 2, 3].map(i => (
+                    <div key={i} className="rounded-md border border-border-secondary bg-bg-primary px-3.5 py-3 animate-pulse" style={{ animationDelay: `${i * 120}ms` }}>
+                        <div className="flex items-center gap-3">
+                            <div className="h-4 w-44 rounded bg-bg-tertiary" />
+                            <div className="h-3 w-24 rounded bg-bg-tertiary" />
+                            <div className="ml-auto h-6 w-40 rounded bg-bg-tertiary" />
+                        </div>
+                        <div className="mt-2.5 flex items-center gap-3">
+                            <div className="h-5 w-5 rounded-full bg-bg-tertiary" />
+                            <div className="h-3 w-28 rounded bg-bg-tertiary" />
+                            <div className="h-3 w-56 rounded bg-bg-tertiary" />
+                        </div>
+                    </div>
+                ))}</div> : rows.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <p className="text-[15px] font-semibold text-text-secondary">{mode === 'outcomes'
+                            ? (outcomeFilter === 'all' ? `No unsigned appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}` : `No ${outcomeFilter} appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`)
+                            : `No bookings ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`}</p>
+                        <p className="mt-1.5 text-[11.5px] text-text-tertiary">{mode === 'outcomes' ? 'Use ◀ to step back through earlier periods.' : 'New bookings land here in real time. Use ◀ to check earlier periods.'}</p>
+                    </div>
+                ) : visibleRows.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <p className="text-[15px] font-semibold text-text-secondary">{tab === 'needs_review' ? 'Review queue clear' : 'Nothing in this view'}</p>
+                        <p className="mt-1.5 text-[11.5px] text-text-tertiary tabular-nums">{mode === 'outcomes'
+                            ? `In this range: ${outcomeCounts.overdue} overdue · ${outcomeCounts.unqualified} unqualified · ${outcomeCounts.lost} lost · ${outcomeCounts.working} working. Adjust the tabs or filters above to see them.`
+                            : 'Adjust the status tabs or filters above to see more.'}</p>
+                    </div>
+                ) : <div className="flex flex-col">{visibleRows.map(row => {
                     const risks = getRiskReasons(row);
                     const isRisky = mode === 'bookings' && row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;
@@ -655,24 +689,25 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     // Same person booking and running the appt: one identity is enough.
                     const showTech = techName !== '' && techName.toLowerCase() !== csrName.toLowerCase();
                     const tags = (row.tags || '').split(',').map(tag => tag.trim()).filter(Boolean);
-                    // Card-level urgency treatment (Outcomes): red left rail + tint scaled
-                    // to severity. Each branch carries its own bg so utilities never clash.
-                    const urgencyCardClass = urgency === 'overdue' ? 'bg-tag-red-bg border-tag-red-border border-l-4 border-l-tag-red-text hover:border-tag-red-text'
-                        : urgency === 'unqualified' ? 'bg-tag-red-bg/60 border-tag-red-border border-l-4 border-l-tag-red-border hover:border-tag-red-text'
-                            : urgency === 'lost' ? 'bg-bg-primary border-tag-red-border border-l-4 border-l-tag-red-text hover:border-tag-red-text'
+                    // Card-level urgency treatment (Outcomes): full-perimeter red border +
+                    // background tint graded to severity; the chip stays the loudest element.
+                    // Each branch carries its own bg so utilities never clash.
+                    const urgencyCardClass = urgency === 'overdue' ? 'bg-tag-red-bg border-tag-red-text'
+                        : urgency === 'unqualified' ? 'bg-tag-red-bg/60 border-tag-red-border'
+                            : urgency === 'lost' ? 'bg-bg-primary border-tag-red-border'
                                 : '';
-                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3 py-2 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : urgencyCardClass || 'bg-bg-primary border-border-primary hover:border-border-secondary'} ${isRisky ? 'border-l-4 border-l-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
+                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><h2 className="text-sm font-bold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <>
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><h2 className="text-[15px] font-semibold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <>
                                     {urgency === 'overdue' && <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border border-tag-red-text bg-tag-red-text text-bg-primary animate-outcome-attention" title="The appointment ran but the job is still in Appointment scheduled — the rep never entered an outcome">OVERDUE · NOT DISPOSITIONED</span>}
                                     {urgency === 'unqualified' && <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text animate-outcome-attention">UNQUALIFIED</span>}
                                     {urgency === 'lost' && <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border border-tag-red-text bg-tag-red-text text-bg-primary">LOST</span>}
                                     {urgency === 'working' && <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-border-secondary bg-bg-tertiary text-text-secondary" title="Roofr job-card status">{row.stage || row.outcome || 'In progress'}</span>}
-                                    <span className="text-[10px] text-text-tertiary whitespace-nowrap">Appt {row.appt_date || '—'}</span>
-                                </> : <span className="text-[10px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px]">
-                                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-brand-text-light" title="CSR who booked this appointment">
+                                    <span className="text-[11px] tabular-nums text-text-tertiary whitespace-nowrap">Appt {row.appt_date || '—'}</span>
+                                </> : <span className="text-[11px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+                                    <span className="inline-flex items-center gap-1.5 font-bold text-brand-text-light" title="CSR who booked this appointment">
                                         <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-primary text-[9px] font-bold text-brand-text-on-primary">{getInitials(csrName || '?')}</span>
                                         {csrName || 'Unknown CSR'}
                                     </span>
@@ -682,11 +717,11 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     {tags.slice(0, 2).map(tag => <span key={tag} className="px-1.5 py-0.5 rounded border border-border-secondary/60 text-text-tertiary">{tag}</span>)}
                                     {tags.length > 2 && <span className="text-text-quaternary" title={tags.join(', ')}>+{tags.length - 2} more</span>}
                                 </div>
-                                <div className="flex flex-wrap items-center gap-x-3 text-[11px] text-text-secondary">{row.address && <span>{row.address}</span>}{row.phone && (phoneDigits
+                                <div className="flex flex-wrap items-center gap-x-3 text-[11.5px] text-text-secondary">{row.address && <span>{row.address}</span>}{row.phone && (phoneDigits
                                     // stopPropagation: the card itself is clickable (sets the active
                                     // row), so opening CTM shouldn't also select the card.
                                     ? <a href={`https://app.calltrackingmetrics.com/calls#filter=${phoneDigits}`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()} title="Open this number's calls in CTM" className="font-semibold text-brand-primary hover:underline">{row.phone}</a>
-                                    : <span>{row.phone}</span>)}{row.value != null && <span className="font-semibold text-text-primary">${row.value.toLocaleString()}</span>}{propertyFields.map(([label, value]) => <span key={label} className="text-[10px] text-text-tertiary">{label}: <span className="font-semibold text-text-secondary">{String(value)}</span></span>)}</div>
+                                    : <span>{row.phone}</span>)}{row.value != null && <span className="font-semibold tabular-nums text-text-primary">${row.value.toLocaleString()}</span>}{propertyFields.map(([label, value]) => <span key={label} className="text-[10px] text-text-tertiary">{label}: <span className="font-semibold text-text-secondary">{String(value)}</span></span>)}</div>
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1">
                                 <div className="flex flex-wrap justify-end gap-1">{row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" />}{phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}{row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}</div>
