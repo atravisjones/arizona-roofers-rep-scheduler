@@ -28,7 +28,7 @@ const StartupModal: React.FC<StartupModalProps> = ({ isOpen, backupInfo, isLoadi
         <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[70]">
             <div className="popup-surface w-full max-w-md flex flex-col animate-fade-in shadow-2xl rounded-xl overflow-hidden ring-1 ring-border-primary">
                 <header className="px-6 py-4 border-b border-border-primary bg-bg-secondary/50">
-                    <h2 className="text-lg font-bold text-text-primary">Welcome back</h2>
+                    <h2 className="text-[15px] font-semibold text-text-primary">Welcome back</h2>
                 </header>
 
                 <div className="p-6">
@@ -48,14 +48,14 @@ const StartupModal: React.FC<StartupModalProps> = ({ isOpen, backupInfo, isLoadi
                     <button
                         onClick={onStartFresh}
                         disabled={isLoading}
-                        className="px-4 py-2 text-sm font-medium text-text-secondary hover:text-primary hover:bg-bg-tertiary rounded-lg transition-colors border border-transparent hover:border-border-secondary disabled:opacity-40"
+                        className="px-4 py-2 text-sm font-semibold text-text-secondary bg-bg-primary border border-border-secondary hover:bg-bg-tertiary hover:text-text-primary rounded-md transition-colors duration-150 disabled:opacity-40"
                     >
                         Start Fresh
                     </button>
                     <button
                         onClick={onLoadMostRecent}
                         disabled={isLoading}
-                        className="px-6 py-2 text-sm font-bold text-white rounded-lg shadow-md transition-all active:scale-95 bg-brand-primary hover:bg-brand-secondary shadow-brand-primary/20 disabled:opacity-60 flex items-center gap-2"
+                        className="px-5 py-2 text-sm font-semibold text-brand-text-on-primary bg-brand-primary hover:bg-brand-secondary rounded-md shadow-sm transition-colors duration-150 active:scale-95 disabled:opacity-60 flex items-center gap-2"
                     >
                         {isLoading && <LoadingIcon className="h-4 w-4" />}
                         {isLoading ? 'Loading…' : 'Load Most Recent'}

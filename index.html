@@ -155,20 +155,23 @@
     [data-theme="light"],
     [data-theme="custom"] {
       color-scheme: light;
-      --bg-primary: 255 255 255;
-      --bg-secondary: 248 250 252;
-      --bg-tertiary: 241 245 249;
-      --bg-quaternary: 226 232 240;
+      /* Neutrals tinted a few points toward the indigo brand hue (~250deg,
+         near-zero chroma) so the default theme coheres instead of reading
+         as generic gray. Other theme blocks are intentionally untouched. */
+      --bg-primary: 253 252 255;
+      --bg-secondary: 248 247 252;
+      --bg-tertiary: 240 239 245;
+      --bg-quaternary: 225 223 231;
 
-      --text-primary: 17 24 39;
-      --text-secondary: 55 65 81;
-      --text-tertiary: 107 114 128;
-      --text-quaternary: 156 163 175;
+      --text-primary: 17 15 25;
+      --text-secondary: 63 59 78;
+      --text-tertiary: 110 106 126;
+      --text-quaternary: 158 153 175;
       --text-inverted: 255 255 255;
 
-      --border-primary: 226 232 240;
-      --border-secondary: 203 213 225;
-      --border-tertiary: 148 163 184;
+      --border-primary: 225 223 231;
+      --border-secondary: 202 199 211;
+      --border-tertiary: 160 156 174;
 
       --brand-primary: 79 70 229;
       --brand-secondary: 67 56 202;

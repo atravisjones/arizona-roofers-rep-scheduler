@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLinkIcon, LoadingIcon, RefreshIcon } from './icons';
 import { supabase } from '../services/supabaseClient';
+import { SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF } from './ui';
 
 const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
 const POLL_MS = 60000;
@@ -121,13 +122,6 @@ const getOutcomeUrgency = (row: ReviewRow): OutcomeUrgency => {
     return 'working';
 };
 const getInitials = (name: string) => name.trim().split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase() || '?';
-
-// One segmented-control vocabulary for every grouped choice in the header:
-// same height, radius, and active treatment, so controls read as one system.
-const SEG_WRAP = 'inline-flex items-center rounded-md border border-border-secondary bg-bg-primary p-0.5 gap-0.5';
-const SEG_BTN = 'inline-flex items-center gap-1.5 px-2.5 h-6 rounded text-[11px] font-semibold transition-colors duration-150';
-const SEG_ON = 'bg-brand-primary text-brand-text-on-primary';
-const SEG_OFF = 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary';
 
 // Outcomes summary strip: stat segments with a severity dot; active = filled.
 const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on: string }> = [

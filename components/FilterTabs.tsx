@@ -3,6 +3,7 @@ import { Job } from '../types';
 import { TAG_KEYWORDS } from '../constants';
 import { MapPinIcon, XIcon, TagIcon, StarIcon, ClockIcon } from './icons';
 import { EAST_TO_WEST_CITIES } from '../services/geography';
+import { SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF } from './ui';
 
 type ActiveTab = 'city' | 'tags' | 'time';
 
@@ -32,9 +33,9 @@ const TabButton: React.FC<{
     </button>
 );
 
-const chipBaseClass = "px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all duration-200 flex items-center gap-1 select-none cursor-pointer hover:shadow-sm";
-const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm ring-1 ring-brand-primary/20";
-const chipInactiveClass = "bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50 hover:bg-brand-bg-light hover:text-brand-primary";
+const chipBaseClass = "px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors duration-150 flex items-center gap-1 select-none cursor-pointer";
+const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary";
+const chipInactiveClass = "bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary";
 const chipDisabledClass = "bg-bg-tertiary text-text-quaternary border-border-secondary opacity-50 cursor-not-allowed";
 
 // Helper functions for tag extraction
@@ -280,7 +281,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                                 {city}
                             </button>
                         )) : (
-                            <span className="text-xs text-text-quaternary italic">No cities match current filters</span>
+                            <span className="text-[11px] text-text-tertiary">No cities match. Clear filters or paste jobs to add options.</span>
                         )}
                     </div>
                 );
@@ -303,7 +304,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                                 {slot}
                             </button>
                         )) : (
-                            <span className="text-xs text-text-quaternary italic">No time slots match current filters</span>
+                            <span className="text-[11px] text-text-tertiary">No time slots match. Clear filters or paste jobs to add options.</span>
                         )}
                     </div>
                 );
@@ -312,7 +313,7 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
                     availableTags.stories.length > 0 || availableTags.ages.length > 0 || availableTags.sizes.length > 0;
 
                 if (!hasAnyTags) {
-                    return <span className="text-xs text-text-quaternary italic">No tags match current filters</span>;
+                    return <span className="text-[11px] text-text-tertiary">No tags match. Clear filters or paste jobs to add options.</span>;
                 }
 
                 return (
@@ -387,44 +388,35 @@ const FilterTabs: React.FC<FilterTabsProps> = ({ unassignedJobs, onFilterChange 
 
     return (
         <div className="mb-2">
-            <div className="flex p-1 bg-bg-tertiary rounded-lg mb-3 gap-1 select-none">
+            <div className={`${SEG_WRAP} mb-3 w-full`}>
                 <button
                     onClick={() => setActiveTab('city')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 ${activeTab === 'city'
-                        ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
-                        : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                        }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeTab === 'city' ? SEG_ON : SEG_OFF}`}
                 >
-                    <MapPinIcon className={`h-3.5 w-3.5 ${activeTab === 'city' ? 'text-brand-primary' : 'text-text-quaternary'}`} />
+                    <MapPinIcon className="h-3.5 w-3.5" />
                     <span>By City</span>
                     {cityFilterCount > 0 && (
-                        <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-brand-primary text-brand-text-on-primary">{cityFilterCount}</span>
+                        <span className="tabular-nums text-[10px] font-bold">{cityFilterCount}</span>
                     )}
                 </button>
                 <button
                     onClick={() => setActiveTab('time')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 ${activeTab === 'time'
-                        ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
-                        : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                        }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeTab === 'time' ? SEG_ON : SEG_OFF}`}
                 >
-                    <ClockIcon className={`h-3.5 w-3.5 ${activeTab === 'time' ? 'text-brand-primary' : 'text-text-quaternary'}`} />
+                    <ClockIcon className="h-3.5 w-3.5" />
                     <span>By Time</span>
                     {timeFilterCount > 0 && (
-                        <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-brand-primary text-brand-text-on-primary">{timeFilterCount}</span>
+                        <span className="tabular-nums text-[10px] font-bold">{timeFilterCount}</span>
                     )}
                 </button>
                 <button
                     onClick={() => setActiveTab('tags')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 ${activeTab === 'tags'
-                        ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
-                        : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                        }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeTab === 'tags' ? SEG_ON : SEG_OFF}`}
                 >
-                    <TagIcon className={`h-3.5 w-3.5 ${activeTab === 'tags' ? 'text-brand-primary' : 'text-text-quaternary'}`} />
+                    <TagIcon className="h-3.5 w-3.5" />
                     <span>By Tags</span>
                     {tagFilterCount > 0 && (
-                        <span className="px-1.5 py-0.5 text-[9px] rounded-full bg-brand-primary text-brand-text-on-primary">{tagFilterCount}</span>
+                        <span className="tabular-nums text-[10px] font-bold">{tagFilterCount}</span>
                     )}
                 </button>
             </div>

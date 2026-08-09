@@ -7,6 +7,7 @@ import { SortKey, Job, Rep, DisplayJob } from '../types';
 import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
 import { fetchClosingRateDetails, ClosingRateDetail } from '../services/googleSheetsService';
 import { getEffectiveUnavailableSlots } from '../utils/repUtils';
+import { SEG_WRAP, SEG_ON, SEG_OFF } from './ui';
 
 // Helper function to format rep names for the filter tags
 const formatRepNameForFilter = (fullName: string): string => {
@@ -25,9 +26,9 @@ const formatRepNameForFilter = (fullName: string): string => {
     return `${firstName} ${lastName.charAt(0).toUpperCase()}`;
 };
 
-const chipBaseClass = "px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all duration-200 flex items-center gap-1 select-none cursor-pointer hover:shadow-sm";
-const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm ring-1 ring-brand-primary/20";
-const chipInactiveClass = "bg-bg-tertiary text-secondary border-border-primary hover:border-brand-primary/50 hover:bg-brand-bg-light hover:text-brand-primary";
+const chipBaseClass = "px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors duration-150 flex items-center gap-1 select-none cursor-pointer";
+const chipActiveClass = "bg-brand-primary text-brand-text-on-primary border-brand-primary";
+const chipInactiveClass = "bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary";
 
 // Optimized Rep Styles (Teal)
 const chipOptimizedActiveClass = "bg-tag-teal-bg text-tag-teal-text border-tag-teal-border shadow-sm ring-1 ring-tag-teal-border";
@@ -207,20 +208,18 @@ const SchedulesPanel: React.FC = () => {
         <div className="flex flex-col h-full min-h-0 overflow-hidden">
             <div className="flex justify-between items-center mb-3 flex-shrink-0">
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center px-2 py-0.5 bg-tag-amber-bg text-tag-amber-text rounded-full border border-tag-amber-border text-xs font-medium" title="Assigned Jobs">
+                    <div className="inline-flex h-7 items-center rounded-md border border-tag-amber-border bg-tag-amber-bg px-2 text-[11px] font-semibold tabular-nums text-tag-amber-text" title="Assigned Jobs">
                         {assignedJobsCount} Assigned
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                     {/* View Toggle Buttons */}
-                    <div className="flex bg-bg-tertiary rounded-md p-0.5 border border-border-primary">
+                    <div className={SEG_WRAP}>
                         <button
                             onClick={() => updateUiSettings({ schedulesViewMode: 'list' })}
-                            className={`p-1.5 rounded transition-all ${
-                                viewMode === 'list'
-                                    ? 'bg-brand-primary text-brand-text-on-primary shadow-sm'
-                                    : 'text-text-tertiary hover:text-secondary hover:bg-bg-secondary'
+                            className={`inline-flex h-6 items-center rounded px-1.5 transition-colors duration-150 ${
+                                viewMode === 'list' ? SEG_ON : SEG_OFF
                             }`}
                             title="List View"
                         >
@@ -228,10 +227,8 @@ const SchedulesPanel: React.FC = () => {
                         </button>
                         <button
                             onClick={() => updateUiSettings({ schedulesViewMode: 'day' })}
-                            className={`p-1.5 rounded transition-all ${
-                                viewMode === 'day'
-                                    ? 'bg-brand-primary text-brand-text-on-primary shadow-sm'
-                                    : 'text-text-tertiary hover:text-secondary hover:bg-bg-secondary'
+                            className={`inline-flex h-6 items-center rounded px-1.5 transition-colors duration-150 ${
+                                viewMode === 'day' ? SEG_ON : SEG_OFF
                             }`}
                             title="Day View"
                         >
@@ -243,9 +240,8 @@ const SchedulesPanel: React.FC = () => {
                         <input
                             type="text"
                             className={`
-                        pl-8 pr-7 py-1.5 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary
-                        rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary
-                        transition-all w-32 focus:w-48
+                        h-7 w-32 rounded-md border border-border-secondary bg-bg-primary pl-8 pr-7 text-[11px] text-text-primary placeholder:text-text-tertiary
+                        outline-none transition-colors duration-150 hover:border-brand-primary focus:border-brand-primary focus:w-48
                         ${repSearchTerm ? 'w-48' : ''}
                     `}
                             placeholder="Search reps..."
@@ -266,9 +262,9 @@ const SchedulesPanel: React.FC = () => {
             </div>
 
             {/* Time Slot Filter Buttons */}
-            <div className="bg-secondary rounded-lg p-2 mb-2 border border-border-primary flex-shrink-0">
+            <div className="mb-2 flex-shrink-0 rounded-md border border-border-secondary bg-bg-secondary p-2">
                 <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
                         Filter by Time Slot
                     </span>
                     {selectedSlotFilter && (
@@ -298,10 +294,10 @@ const SchedulesPanel: React.FC = () => {
             </div>
 
             {/* Rep Filter Buttons */}
-            <div className="bg-secondary rounded-lg p-2 mb-3 border border-border-primary flex-shrink-0">
+            <div className="mb-3 flex-shrink-0 rounded-md border border-border-secondary bg-bg-secondary p-2">
                 <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider">
-                        Filter by Rep (Click to Select)
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
+                        Filter by Rep
                     </span>
                     {(selectedRepFilters.size > 0 || repSearchTerm) && (
                         <button
@@ -312,7 +308,7 @@ const SchedulesPanel: React.FC = () => {
                         </button>
                     )}
                 </div>
-                <div className="max-h-[100px] overflow-y-auto p-2 bg-primary rounded border border-border-primary custom-scrollbar">
+                <div className="max-h-[100px] overflow-y-auto rounded-md border border-border-secondary bg-bg-primary p-2 custom-scrollbar">
                     <div className="flex flex-wrap gap-1.5 items-center">
                         {appState.reps
                             .filter(rep => {
@@ -434,7 +430,7 @@ const SchedulesPanel: React.FC = () => {
                                         />
                                         {formatRepNameForFilter(rep.name)}
                                         {/* Assigned/Available indicator - red if no jobs, green if 1+ */}
-                                        <span className={`ml-1 text-[8px] font-medium ${
+                                        <span className={`ml-1 text-[8px] font-medium tabular-nums ${
                                             isSelected
                                                 ? 'text-white'
                                                 : jobCount === 0
@@ -452,16 +448,16 @@ const SchedulesPanel: React.FC = () => {
 
             {/* Lead Tier legend — heat ladder (cool low tier -> hot high tier) */}
             <div className="flex items-center gap-1 mb-3 px-1 flex-shrink-0 flex-wrap">
-                <span className="text-[10px] font-bold text-text-quaternary uppercase tracking-wider mr-0.5">Tier</span>
+                <span className="mr-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary">Tier</span>
                 {[
-                    { label: '0', cls: 'from-white to-slate-100 border-slate-300', txt: 'text-slate-500' },
-                    { label: '#', cls: 'from-yellow-100 to-yellow-300 border-yellow-400', txt: 'text-yellow-950' },
-                    { label: '##', cls: 'from-orange-200 to-orange-400 border-orange-500', txt: 'text-orange-950' },
-                    { label: '###', cls: 'from-amber-400 to-yellow-600 border-amber-700', txt: 'text-amber-950' },
-                    { label: '####', cls: 'from-rose-400 via-pink-300 to-amber-300 border-rose-400', txt: 'text-rose-950' },
-                    { label: '#####', cls: 'from-purple-800 via-purple-600 to-amber-400 border-purple-800', txt: 'text-white' },
+                    { label: '0', cls: 'border-border-secondary bg-bg-primary text-text-tertiary' },
+                    { label: '#', cls: 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text' },
+                    { label: '##', cls: 'border-tag-green-border bg-tag-green-bg text-tag-green-text' },
+                    { label: '###', cls: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text' },
+                    { label: '####', cls: 'border-tag-red-border bg-tag-red-bg text-tag-red-text' },
+                    { label: '#####', cls: 'border-tag-red-border bg-tag-red-text text-bg-primary' },
                 ].map(t => (
-                    <span key={t.label} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border bg-gradient-to-br ${t.cls} ${t.txt} shadow-sm leading-none`}>
+                    <span key={t.label} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-bold leading-none ${t.cls}`}>
                         {t.label}
                     </span>
                 ))}
@@ -472,7 +468,7 @@ const SchedulesPanel: React.FC = () => {
             {viewMode === 'list' ? (
                 <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                     {/* List View Controls */}
-                    <div className="flex flex-wrap gap-2 mb-3 items-center justify-between bg-primary p-1 rounded border border-border-primary flex-shrink-0">
+                    <div className="mb-3 flex flex-shrink-0 flex-wrap items-center justify-between gap-2 rounded-md border border-border-secondary bg-bg-primary p-1">
                         <div className="flex items-center space-x-1">
                             <button
                                 onClick={() => handleToggleAllReps(visibleReps)}
@@ -513,7 +509,7 @@ const SchedulesPanel: React.FC = () => {
                             <label htmlFor="sort-select" className="text-xs font-semibold text-text-tertiary">Sort:</label>
                             <select
                                 id="sort-select"
-                                className="text-xs border border-primary rounded p-1 focus:ring-2 focus:ring-brand-primary focus:outline-none bg-secondary text-primary hover:bg-tertiary"
+                                className="h-7 rounded-md border border-border-secondary bg-bg-primary px-2 text-[11px] text-text-primary transition-colors duration-150 hover:border-brand-primary focus:outline-none focus:border-brand-primary"
                                 value={sortConfig.key === 'Tile' || sortConfig.key === 'Shingle' || sortConfig.key === 'Flat' ? `skill-${sortConfig.key}` : sortConfig.key}
                                 onChange={handleSortChange}
                             >

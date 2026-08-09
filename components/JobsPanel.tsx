@@ -8,6 +8,7 @@ import FilterTabs from './FilterTabs';
 import { JobCard } from './JobCard';
 import { Job, DisplayJob, InstallJob } from '../types';
 import { DaySchedule } from '../services/weekScheduleParser';
+import { SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF } from './ui';
 
 type JobsViewTab = 'unassigned' | 'all' | 'installs';
 
@@ -101,7 +102,7 @@ const JobsPanel: React.FC = () => {
     return (
         <>
             <div className="flex justify-between items-center mb-1">
-                <span className="px-2 py-0.5 bg-tertiary text-secondary rounded-full text-xs font-medium">
+                <span className="text-[11.5px] text-text-tertiary tabular-nums">
                     {activeViewTab === 'unassigned' ? unassignedCount : allJobsCount} jobs
                 </span>
 
@@ -110,9 +111,8 @@ const JobsPanel: React.FC = () => {
                         <input
                             type="text"
                             className={`
-                                pl-8 pr-7 py-1 text-xs border border-primary bg-secondary text-primary placeholder:text-secondary
-                                rounded-md focus:ring-2 focus:ring-brand-primary focus:outline-none hover:bg-tertiary
-                                transition-all w-28 focus:w-48
+                                h-7 w-28 rounded-md border border-border-secondary bg-bg-primary pl-8 pr-7 text-[11px] text-text-primary placeholder:text-text-tertiary
+                                outline-none transition-colors duration-150 hover:border-brand-primary focus:border-brand-primary focus:w-48
                                 ${jobSearchTerm ? 'w-48' : ''}
                             `}
                             placeholder="Search jobs..."
@@ -133,54 +133,36 @@ const JobsPanel: React.FC = () => {
             </div>
 
             {/* Unassigned / All Jobs Tabs */}
-            <div className="flex p-1 bg-bg-tertiary rounded-lg mb-2 gap-1 select-none">
+            <div className={`${SEG_WRAP} mb-2 w-full`}>
                 <button
                     onClick={() => setActiveViewTab('unassigned')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
-                        activeViewTab === 'unassigned'
-                            ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
-                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                    }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeViewTab === 'unassigned' ? SEG_ON : SEG_OFF}`}
                 >
                     Unassigned
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
-                        activeViewTab === 'unassigned'
-                            ? 'bg-brand-primary text-brand-text-on-primary'
-                            : 'bg-bg-quaternary text-text-tertiary'
+                    <span className={`tabular-nums text-[10px] font-bold ${
+                        activeViewTab === 'unassigned' ? 'text-brand-text-on-primary' : 'text-text-tertiary'
                     }`}>
                         {unassignedCount}
                     </span>
                 </button>
                 <button
                     onClick={() => setActiveViewTab('all')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
-                        activeViewTab === 'all'
-                            ? 'bg-bg-primary text-brand-primary shadow-sm ring-1 ring-border-primary'
-                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                    }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeViewTab === 'all' ? SEG_ON : SEG_OFF}`}
                 >
                     All Jobs
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
-                        activeViewTab === 'all'
-                            ? 'bg-brand-primary text-brand-text-on-primary'
-                            : 'bg-bg-quaternary text-text-tertiary'
+                    <span className={`tabular-nums text-[10px] font-bold ${
+                        activeViewTab === 'all' ? 'text-brand-text-on-primary' : 'text-text-tertiary'
                     }`}>
                         {allJobsCount}
                     </span>
                 </button>
                 <button
                     onClick={() => setActiveViewTab('installs')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 ${
-                        activeViewTab === 'installs'
-                            ? 'bg-orange-100 text-orange-800 shadow-sm ring-1 ring-orange-300'
-                            : 'text-text-tertiary hover:text-text-secondary hover:bg-bg-quaternary/50'
-                    }`}
+                    className={`${SEG_BTN} flex-1 justify-center ${activeViewTab === 'installs' ? 'bg-tag-amber-bg text-tag-amber-text' : SEG_OFF}`}
                 >
                     Installs
-                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full ${
-                        activeViewTab === 'installs'
-                            ? 'bg-orange-600 text-white'
-                            : 'bg-bg-quaternary text-text-tertiary'
+                    <span className={`tabular-nums text-[10px] font-bold ${
+                        activeViewTab === 'installs' ? 'text-tag-amber-text' : 'text-text-tertiary'
                     }`}>
                         {installsCount}
                     </span>
@@ -232,7 +214,7 @@ const JobsPanel: React.FC = () => {
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-full">
-                                <p className="text-text-tertiary">No active installs found.</p>
+                                <p className="max-w-[220px] text-center text-[11.5px] text-text-tertiary">No active installs. Paste jobs or hit Load to pull from the sheet.</p>
                             </div>
                         )}
                     </div>
@@ -264,7 +246,7 @@ const JobsPanel: React.FC = () => {
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-full">
-                                <p className="text-text-tertiary">No jobs found.</p>
+                                <p className="max-w-[220px] text-center text-[11.5px] text-text-tertiary">No jobs match these filters. Paste jobs or hit Load to pull from the sheet.</p>
                             </div>
                         )}
                     </div>

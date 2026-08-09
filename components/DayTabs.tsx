@@ -155,7 +155,7 @@ const DayTab: React.FC<{
             onClick={onSelect}
             title={`${fullDate}${total > 0 ? ` • ${assigned}/${total} jobs assigned` : ''}`}
             className={`
-                relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-all duration-150 group
+                relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors duration-150 group
                 ${isSelected
                     ? 'bg-brand-primary text-brand-text-on-primary shadow-md'
                     : isWeekendDay
@@ -180,7 +180,7 @@ const DayTab: React.FC<{
 
             {/* Job count with progress dot */}
             {total > 0 && (
-                <div className={`flex items-center gap-1 text-[10px] font-medium ${isSelected ? 'opacity-80' : 'text-text-tertiary'}`}>
+                <div className={`flex items-center gap-1 text-[10px] font-medium tabular-nums ${isSelected ? 'opacity-80' : 'text-text-tertiary'}`}>
                     <ProgressDot assigned={assigned} total={total} isSelected={isSelected} />
                     <span>{assigned}/{total}</span>
                 </div>
@@ -339,14 +339,14 @@ const DayTabs: React.FC = () => {
     return (
         <div className="flex items-center gap-1.5">
             {/* Summary badge - compact */}
-            <div className="hidden xl:flex items-center gap-1.5 px-2 py-1 bg-bg-tertiary/50 rounded-md">
-                <span className="text-[10px] font-semibold text-text-tertiary">
+            <div className="hidden h-7 items-center gap-1.5 rounded-md border border-border-secondary bg-bg-primary px-2 xl:flex">
+                <span className="text-[10px] font-semibold tabular-nums text-text-tertiary">
                     {activeDayKeys.length}d
                 </span>
                 {totalStats.totalJobs > 0 && (
                     <>
                         <div className="w-px h-3 bg-border-secondary" />
-                        <span className="text-[10px] font-semibold text-text-secondary">
+                        <span className="text-[10px] font-semibold tabular-nums text-text-secondary">
                             {totalStats.totalAssigned}/{totalStats.totalJobs}
                         </span>
                     </>
@@ -419,7 +419,7 @@ const DayTabs: React.FC = () => {
             <div className="relative" ref={calendarRef}>
                 <button
                     onClick={() => setIsCalendarOpen(prev => !prev)}
-                    className="flex items-center gap-1 px-2 py-1.5 text-xs font-semibold bg-tag-green-bg text-tag-green-text rounded-lg hover:bg-tag-green-bg/80 transition-all"
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-tag-green-border bg-tag-green-bg px-2 text-[11px] font-semibold text-tag-green-text transition-colors duration-150 hover:bg-tag-green-bg/80"
                     title="Add a new day to your workspace"
                 >
                     <CalendarIcon className="h-3.5 w-3.5" />

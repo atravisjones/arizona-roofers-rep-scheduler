@@ -3,6 +3,7 @@ import { COMPANY_ROSTER_DATA_RANGE, COMPANY_ROSTER_SHEET_TITLE, COMPANY_ROSTER_S
 import { DAY_VIEW_SLOTS, mapMinutesToSlotId } from './DayView/dayViewUtils';
 import { ChevronLeftIcon, ChevronRightIcon, ErrorIcon, ExternalLinkIcon, LoadingIcon, RefreshIcon, XIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
+import { CTRL_BTN, SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF } from './ui';
 import type { AppState, Rep, TimeSlot } from '../types';
 import { getEffectiveUnavailableSlots, isCommercialOnlyRep, isLondon } from '../utils/repUtils';
 import { normalizeName, fetchTimeSlotsForDate } from '../services/googleSheetsService';
@@ -1304,27 +1305,27 @@ const TodayBoard: React.FC = () => {
         <div className="flex flex-col h-full min-h-0 overflow-hidden bg-bg-primary">
             <div className="flex-shrink-0 px-3 py-2 bg-bg-secondary border-b border-border-primary flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                    <h2 className="text-sm font-bold text-text-primary truncate">
+                    <h2 className="text-[15px] font-semibold text-text-primary truncate">
                         {relativeLabel ? `${relativeLabel} Appointments` : 'Appointments'} - {formatDateHeading(dateKey)}
                     </h2>
-                    <div className="text-[11px] text-text-tertiary flex items-center gap-x-3 gap-y-0.5 flex-wrap">
-                        <span>
-                            {activeCount} active{cancelledCount > 0 ? `, ${cancelledCount} cancelled` : ''}{source ? ` - ${source}` : ''}
+                    <div className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+                        <span className="text-[11.5px] text-text-tertiary">
+                            {activeCount} active{cancelledCount > 0 ? `, ${cancelledCount} cancelled` : ''}{source ? ` · ${source}` : ''}
                         </span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-indigo-400 inline-block" />Adjuster</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400 inline-block" />Self-gen</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400 inline-block" />Follow-up</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm border-2 border-orange-500 inline-block" />Double-booked</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-100 border border-dashed border-emerald-400 inline-block" />Open slot (reserve / fill)</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-100 border border-amber-400 inline-block" />Reserved</span>
-                        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-red-200 border border-red-400 inline-block" />CSR-owned job</span>
-                        {error && <span className="text-tag-red-text" title={error}>⚠ refresh failed — showing last update</span>}
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-blue-text" />Adjuster</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-green-text" />Self-gen</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-amber-text" />Follow-up</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full border border-tag-red-border" />Double-booked</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-green-bg border border-tag-green-border" />Open slot</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-amber-bg border border-tag-amber-border" />Reserved</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-red-bg border border-tag-red-border" />CSR-owned</span>
+                        {error && <span className="text-[10px] font-bold uppercase tracking-wider text-tag-red-text" title={error}>⚠ refresh failed · showing last update</span>}
                     </div>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                         onClick={() => goToDate(addDays(dateKey, -1))}
-                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary transition"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150"
                         title="Previous day"
                     >
                         <ChevronLeftIcon className="h-4 w-4" />
@@ -1332,19 +1333,19 @@ const TodayBoard: React.FC = () => {
                     <button
                         onClick={() => goToDate(todayKey())}
                         disabled={dateKey === todayKey()}
-                        className="px-2 py-1 text-[11px] font-semibold rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition"
+                        className="inline-flex h-7 items-center rounded-md border border-border-secondary bg-bg-primary px-2.5 text-[11px] font-semibold text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150"
                         title="Jump to today"
                     >
                         Today
                     </button>
                     <button
                         onClick={() => goToDate(addDays(dateKey, 1))}
-                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary transition"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150"
                         title="Next day"
                     >
                         <ChevronRightIcon className="h-4 w-4" />
                     </button>
-                    <div className="ml-1 inline-flex rounded border border-border-primary overflow-hidden">
+                    <div className={`${SEG_WRAP} ml-1`}>
                         {(['live', 'tentative'] as const).map(value => (
                             <button
                                 key={value}
@@ -1362,11 +1363,7 @@ const TodayBoard: React.FC = () => {
                                     }
                                     setDataSource(value);
                                 }}
-                                className={`px-2 py-1 text-[11px] font-semibold transition ${
-                                    dataSource === value
-                                        ? 'bg-brand-primary text-brand-text-on-primary'
-                                        : 'text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
-                                }`}
+                                className={`${SEG_BTN} ${dataSource === value ? SEG_ON : SEG_OFF}`}
                             >
                                 {value === 'live' ? 'Live' : 'Tentative'}
                             </button>
@@ -1375,24 +1372,24 @@ const TodayBoard: React.FC = () => {
                     <button
                         onClick={fetchAppointments}
                         disabled={isRefreshing || dataSource !== 'live'}
-                        className="p-1.5 rounded hover:bg-bg-tertiary text-text-tertiary hover:text-brand-primary disabled:opacity-40 transition ml-1"
+                        className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150"
                         title="Refresh appointments"
                     >
                         {isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}
                     </button>
                     <button
                         onClick={() => { const n = (window.prompt('Your name — used when you reserve open slots:', reserverName) || '').trim(); if (n) setReserverPersisted(n); }}
-                        className="ml-1 px-2 py-1 text-[11px] font-semibold rounded-md border border-border-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition truncate max-w-[130px]"
+                        className={`${CTRL_BTN} ml-1 truncate max-w-[130px]`}
                         title="Set your name — shown on slots you reserve so others don't double-book"
                     >
                         {reserverName ? `You: ${reserverName}` : 'Set name'}
                     </button>
                     <button
                         onClick={() => setShowPool(v => !v)}
-                        className={`ml-1 px-2 py-1 text-[11px] font-bold rounded-md border transition ${
+                        className={`ml-1 inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition-colors duration-150 tabular-nums ${
                             showPool
-                                ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
-                                : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary hover:text-brand-primary'
+                                ? 'border-brand-primary bg-brand-primary text-brand-text-on-primary'
+                                : 'border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'
                         }`}
                         title="Future quality appointments available to pull into cancelled slots"
                     >
@@ -1406,12 +1403,12 @@ const TodayBoard: React.FC = () => {
                     value={searchInput}
                     onChange={event => setSearchInput(event.target.value)}
                     placeholder="Search address, city, or lat,lon"
-                    className="min-w-[220px] flex-1 px-2.5 py-1.5 text-xs text-text-primary bg-bg-secondary border border-border-primary rounded-md outline-none focus:border-brand-primary"
+                    className="h-8 min-w-[220px] flex-1 rounded-md border border-border-secondary bg-bg-primary px-2.5 text-[11px] text-text-primary outline-none transition-colors duration-150 placeholder:text-text-tertiary focus:border-brand-primary"
                 />
                 <button
                     type="submit"
                     disabled={isLocating || !searchInput.trim()}
-                    className="px-3 py-1.5 text-xs font-bold rounded-md bg-brand-primary text-brand-text-on-primary border border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-8 rounded-md border border-brand-primary bg-brand-primary px-3 text-[11px] font-semibold text-brand-text-on-primary transition-colors duration-150 hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Search
                 </button>
@@ -1553,7 +1550,7 @@ const TodayBoard: React.FC = () => {
                                                 style={{ height: HEADER_HEIGHT }}
                                             >
                                                 <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                                    <div className="text-[10px] font-bold text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0" title={group.repName}>{group.repName}</div>
+                                                    <div className="text-[10px] font-bold uppercase tracking-wide text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0" title={group.repName}>{group.repName}</div>
                                                     <div className="flex items-center gap-1 flex-shrink-0">
                                                         {isFullyUnavailable && (
                                                             <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
@@ -1575,7 +1572,7 @@ const TodayBoard: React.FC = () => {
                                                                 MGR
                                                             </span>
                                                         )}
-                                                        <span className="text-[10px] text-text-secondary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
+                                                        <span className="tabular-nums rounded-md border border-border-secondary bg-bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-text-secondary">
                                                             {group.appointments.length}
                                                         </span>
                                                     </div>
@@ -1729,14 +1726,14 @@ const TodayBoard: React.FC = () => {
                                                             <div className="flex flex-col items-stretch gap-1 w-full px-1">
                                                                 <button
                                                                     onClick={() => handleReserveSlot(group.repName, win.id)}
-                                                                    className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 transition"
+                                                                    className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-green-text bg-tag-green-text text-bg-primary hover:opacity-90 transition-colors duration-150"
                                                                     title="Reserve this slot so no one else books it"
                                                                 >
                                                                     🔒 Reserve
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleFillGap(anchorAppt, `${group.repName}'s open ${win.label}`)}
-                                                                    className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-100 transition"
+                                                                    className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-tag-green-border text-tag-green-text hover:bg-tag-green-bg transition-colors duration-150"
                                                                     title="Find the closest future appointments to pull in"
                                                                 >
                                                                     🔥 Fill nearby

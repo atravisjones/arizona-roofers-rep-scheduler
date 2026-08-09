@@ -6,6 +6,7 @@ import { useAppContext } from '../context/AppContext';
 import { JobCard } from './JobCard';
 import { TAG_KEYWORDS } from '../constants';
 import { getTimeSlotDisplayLabel } from '../utils/timeSlotUtils';
+import { SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF, MICRO_LABEL } from './ui';
 
 interface RouteMapPanelProps {
     routeData: {
@@ -281,11 +282,11 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         <div className="w-full h-full flex flex-col bg-bg-secondary rounded-lg overflow-hidden">
             <header className="p-3 border-b border-border-primary bg-bg-primary flex-shrink-0">
                 <div className="bg-bg-secondary p-2 rounded-lg flex flex-col gap-2 w-auto border border-border-primary">
-                    <div className="flex items-center gap-2">
+                    <div className={SEG_WRAP}>
                         <button
                             onClick={handleShowAllJobsOnMap}
                             disabled={isLoading}
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            className={`${SEG_BTN} ${isLoading ? 'opacity-40 cursor-not-allowed' : SEG_OFF}`}
                             title="Show all assigned and unassigned jobs on the map"
                         >
                             <MapPinIcon />
@@ -294,7 +295,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         <button
                             onClick={handleRefreshRoute}
                             disabled={isLoading}
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${isLoading ? 'bg-bg-tertiary text-text-quaternary cursor-not-allowed' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            className={`${SEG_BTN} ${isLoading ? 'opacity-40 cursor-not-allowed' : SEG_OFF}`}
                             title="Refresh map view to update rep colors and routes"
                         >
                             <RefreshIcon />
@@ -302,9 +303,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         </button>
                         <button
                             onClick={() => setShowRepHomes(!showRepHomes)}
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${showRepHomes
-                                ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm'
-                                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            className={`${SEG_BTN} ${showRepHomes ? SEG_ON : SEG_OFF}`}
                             title="Toggle rep home locations on/off"
                         >
                             <HomeIcon className="h-3.5 w-3.5" />
@@ -312,9 +311,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         </button>
                         <button
                             onClick={() => setShowInstalls(!showInstalls)}
-                            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${showInstalls
-                                ? 'bg-orange-600 text-white shadow-sm'
-                                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-quaternary'}`}
+                            className={`${SEG_BTN} ${showInstalls ? 'bg-tag-amber-bg text-tag-amber-text' : SEG_OFF}`}
                             title="Toggle active install locations on/off"
                         >
                             <HardHatIcon className="h-3.5 w-3.5" />
@@ -328,25 +325,25 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                         <div className="flex flex-wrap items-center gap-1 select-none">
                             <button
                                 onClick={() => setShowTagFilters(!showTagFilters)}
-                                className={`px-2 py-0.5 text-[10px] font-bold rounded-md border transition-all flex items-center gap-1 mr-2 ${showTagFilters
-                                    ? 'bg-bg-primary text-brand-primary border-brand-primary shadow-sm'
-                                    : 'bg-bg-primary text-text-quaternary border-border-primary hover:text-text-secondary hover:bg-bg-secondary'
+                                className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors flex items-center gap-1 mr-2 ${showTagFilters
+                                    ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                    : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'
                                     }`}
                             >
                                 <TagIcon className="h-3 w-3" />
                                 <span>Tags</span>
                             </button>
 
-                            <span className="text-[10px] font-bold text-text-quaternary uppercase mr-1">Time:</span>
+                            <span className={`${MICRO_LABEL} mr-1`}>Time:</span>
                             {appState.timeSlots.map(slot => {
                                 const isActive = selectedTimeSlotId === slot.id;
                                 return (
                                     <button
                                         key={slot.id}
                                         onClick={() => toggleTimeSlot(slot.id)}
-                                        className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${isActive
-                                            ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary shadow-sm'
-                                            : 'bg-bg-primary text-text-tertiary border-border-primary hover:border-brand-primary/50 hover:text-brand-primary'
+                                        className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${isActive
+                                            ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary'
+                                            : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'
                                             }`}
                                     >
                                         {getTimeSlotDisplayLabel(slot, appState.timeSlots).replace(/AM|PM|am|pm/gi, '').replace(/\s/g, '')}
@@ -354,17 +351,17 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 );
                             })}
                             {(selectedTimeSlotId !== null || Object.values(tagFilters).some((s: any) => s.size > 0)) && (
-                                <button onClick={() => { setSelectedTimeSlotId(null); setTagFilters({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() }); }} className="text-[10px] text-brand-primary underline ml-1 hover:text-brand-secondary">
+                                <button onClick={() => { setSelectedTimeSlotId(null); setTagFilters({ roofTypes: new Set(), stories: new Set(), sizes: new Set(), priorityLevels: new Set(), ages: new Set() }); }} className="text-[10px] font-semibold text-brand-primary hover:underline ml-1">
                                     Clear
                                 </button>
                             )}
                         </div>
 
                         {showTagFilters && (
-                            <div className="p-2 bg-bg-primary rounded-md border border-border-primary space-y-2">
+                            <div className="p-2 bg-bg-primary rounded-md border border-border-secondary space-y-2">
                                 {availablePriorityLevels.length > 0 && (
                                     <div className="flex items-start gap-2">
-                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Status</span>
+                                        <span className="w-10 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary text-right flex-shrink-0">Status</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availablePriorityLevels.map(level => (
                                                 <button
@@ -387,7 +384,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                                             return { ...f, priorityLevels: n };
                                                         });
                                                     }}
-                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all flex items-center gap-1 ${tagFilters.priorityLevels.has(level) ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all flex items-center gap-1 ${tagFilters.priorityLevels.has(level) ? 'bg-tag-amber-bg text-tag-amber-text border-tag-amber-border ring-1 ring-tag-amber-border/50' : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'}`}
                                                 >
                                                     <StarIcon className={`h-3 w-3 ${tagFilters.priorityLevels.has(level) ? 'text-tag-amber-text' : 'text-text-quaternary'}`} />
                                                     {'#'.repeat(level)}
@@ -398,7 +395,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 )}
                                 {availableTags.roofTypes.length > 0 && (
                                     <div className="flex items-start gap-2">
-                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Roof</span>
+                                        <span className="w-10 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary text-right flex-shrink-0">Roof</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.roofTypes.map(tag => (
                                                 <button key={tag}
@@ -420,7 +417,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                                             return { ...f, roofTypes: n };
                                                         });
                                                     }}
-                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.roofTypes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                    className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${tagFilters.roofTypes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'}`}
                                                 >{tag}</button>
                                             ))}
                                         </div>
@@ -428,7 +425,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 )}
                                 {availableTags.stories.length > 0 && (
                                     <div className="flex items-start gap-2">
-                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Height</span>
+                                        <span className="w-10 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary text-right flex-shrink-0">Height</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.stories.map(tag => (
                                                 <button key={tag}
@@ -450,7 +447,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                                             return { ...f, stories: n };
                                                         });
                                                     }}
-                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.stories.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                    className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${tagFilters.stories.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'}`}
                                                 >{tag} Story</button>
                                             ))}
                                         </div>
@@ -458,7 +455,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 )}
                                 {availableTags.ages.length > 0 && (
                                     <div className="flex items-start gap-2">
-                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Age</span>
+                                        <span className="w-10 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary text-right flex-shrink-0">Age</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.ages.map(tag => (
                                                 <button key={tag}
@@ -480,7 +477,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                                             return { ...f, ages: n };
                                                         });
                                                     }}
-                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.ages.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                    className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${tagFilters.ages.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'}`}
                                                 >{tag}</button>
                                             ))}
                                         </div>
@@ -488,7 +485,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                 )}
                                 {availableTags.sizes.length > 0 && (
                                     <div className="flex items-start gap-2">
-                                        <span className="w-10 pt-0.5 text-[9px] font-bold text-text-quaternary uppercase text-right flex-shrink-0">Size</span>
+                                        <span className="w-10 pt-0.5 text-[10px] font-bold uppercase tracking-wider text-text-tertiary text-right flex-shrink-0">Size</span>
                                         <div className="flex flex-wrap gap-1">
                                             {availableTags.sizes.map(tag => (
                                                 <button key={tag}
@@ -510,7 +507,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                                             return { ...f, sizes: n };
                                                         });
                                                     }}
-                                                    className={`px-2 py-0.5 text-[10px] font-medium rounded-full border transition-all ${tagFilters.sizes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-primary hover:border-brand-primary/50'}`}
+                                                    className={`px-2 py-0.5 text-[10px] font-semibold rounded-md border transition-colors ${tagFilters.sizes.has(tag) ? 'bg-brand-primary text-brand-text-on-primary border-brand-primary' : 'bg-bg-primary text-text-secondary border-border-secondary hover:border-brand-primary hover:text-brand-primary'}`}
                                                 >{tag}</button>
                                             ))}
                                         </div>

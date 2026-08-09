@@ -608,7 +608,7 @@ const MainLayout: React.FC = () => {
   const renderCollapsedColumn = (id: ColumnId) => (
     <div
       key={id}
-      className="flex-shrink-0 w-8 bg-bg-primary border border-border-primary/50 rounded-lg flex flex-col items-center py-2 gap-2 shadow-lg"
+      className="flex-shrink-0 w-8 rounded-md border border-border-secondary bg-bg-primary py-2 shadow-sm flex flex-col items-center gap-2"
     >
       <button
         onClick={() => toggleCollapse(id)}
@@ -636,7 +636,7 @@ const MainLayout: React.FC = () => {
       return (
         <React.Fragment key={id}>
           {/* Collapsed stacked panel */}
-          <div className="flex-shrink-0 h-10 bg-bg-primary rounded-xl border border-border-primary/50 shadow-md flex items-center px-3 gap-2 mt-3">
+          <div className="mt-3 flex h-10 flex-shrink-0 items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-3 shadow-sm">
             <button
               onClick={() => toggleCollapse(id)}
               className="p-1 hover:bg-bg-tertiary rounded transition"
@@ -669,11 +669,11 @@ const MainLayout: React.FC = () => {
 
         {/* Stacked panel - dashboard widget style */}
         <div
-          className="flex flex-col min-h-0 overflow-hidden bg-bg-primary rounded-xl border border-border-primary/50 shadow-lg"
+          className="flex flex-col min-h-0 overflow-hidden rounded-md border border-border-secondary bg-bg-primary shadow-sm"
           style={{ flex: `0 0 ${stackHeight}%` }}
         >
           {/* Widget header */}
-          <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0">
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-border-secondary bg-bg-primary px-4 py-2.5">
             <div className="flex items-center gap-2">
               <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
               <span className="text-sm font-semibold text-text-primary">{getColumnLabel(id)}</span>
@@ -681,14 +681,14 @@ const MainLayout: React.FC = () => {
             <div className="flex items-center gap-0.5">
               <button
                 onClick={() => toggleCollapse(id)}
-                className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-quaternary transition-colors duration-150 hover:bg-bg-tertiary hover:text-text-secondary"
                 title="Collapse"
               >
                 <MinimizeIcon className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setColumnStacking(id, null)}
-                className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-quaternary transition-colors duration-150 hover:bg-bg-tertiary hover:text-text-secondary"
                 title="Unstack - restore as separate column"
               >
                 <MaximizeIcon className="h-3.5 w-3.5" />
@@ -759,7 +759,7 @@ const MainLayout: React.FC = () => {
 
   const settingsControl = (
     <div ref={settingsRef} className="relative">
-      <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Settings">
+      <button onClick={() => setIsSettingsPanelOpen(prev => !prev)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Settings">
         <SettingsIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
       </button>
       {isSettingsPanelOpen && (
@@ -799,7 +799,7 @@ const MainLayout: React.FC = () => {
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setIsPasteModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-bg-secondary/50 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary rounded-md transition-all border border-border-secondary/50"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-secondary bg-bg-primary px-2.5 text-[11px] font-semibold text-text-secondary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary"
                 title="Paste Jobs"
               >
                 <PasteIcon className="h-3.5 w-3.5" />
@@ -809,7 +809,7 @@ const MainLayout: React.FC = () => {
               <button
                 onClick={context.handleLoadFromSheet}
                 disabled={context.isLoadingFromSheet || context.isLoadingReps}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-bg-secondary/50 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary rounded-md transition-all border border-border-secondary/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border-secondary bg-bg-primary px-2.5 text-[11px] font-semibold text-text-secondary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary disabled:cursor-not-allowed disabled:opacity-50"
                 title="Load sales appointments from Calendar Events sheet"
               >
                 {context.isLoadingFromSheet ? <LoadingIcon /> : <CloudDownloadIcon className="h-3.5 w-3.5" />}
@@ -819,7 +819,7 @@ const MainLayout: React.FC = () => {
               <button
                 onClick={context.handleAutoAssign}
                 disabled={context.isLoadingReps || context.isAutoAssigning || context.isParsing || context.appState.unassignedJobs.length === 0}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold bg-brand-primary text-brand-text-on-primary hover:bg-brand-secondary disabled:bg-bg-quaternary disabled:text-text-tertiary disabled:cursor-not-allowed rounded-md transition-all"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand-primary bg-brand-primary px-2.5 text-[11px] font-semibold text-brand-text-on-primary transition-colors duration-150 hover:bg-brand-secondary disabled:cursor-not-allowed disabled:border-border-secondary disabled:bg-bg-quaternary disabled:text-text-tertiary"
                 title={context.isLoadingReps ? "Waiting for rep data..." : context.appState.unassignedJobs.length === 0 ? "No unassigned jobs" : "Auto Assign Jobs"}
               >
                 {context.isAutoAssigning ? <LoadingIcon /> : <AutoAssignIcon className="h-3.5 w-3.5" />}
@@ -834,16 +834,16 @@ const MainLayout: React.FC = () => {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setIsNeedsRescheduleOpen(true)}
-                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${jobsNeedingRescheduleCount > 0
-                  ? 'bg-tag-blue-bg text-tag-blue-text hover:bg-tag-blue-bg/80'
-                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                className={`relative inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] font-bold uppercase tracking-wider transition-colors duration-150 ${jobsNeedingRescheduleCount > 0
+                  ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text hover:bg-tag-blue-bg/80'
+                  : 'border-border-secondary bg-bg-primary text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
                   }`}
                 title="Review jobs with potential scheduling conflicts"
               >
                 <RescheduleIcon className="h-3 w-3" />
                 <span>Reschedule</span>
                 {jobsNeedingRescheduleCount > 0 && (
-                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-brand-blue text-white">
+                  <span className="ml-0.5 rounded-full bg-tag-blue-text px-1 text-[9px] font-bold tabular-nums text-bg-primary">
                     {jobsNeedingRescheduleCount}
                   </span>
                 )}
@@ -851,16 +851,16 @@ const MainLayout: React.FC = () => {
 
               <button
                 onClick={() => setIsNeedsDetailsOpen(true)}
-                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${needsDetailsCount > 0
-                  ? 'bg-tag-amber-bg text-tag-amber-text hover:bg-tag-amber-bg/80'
-                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                className={`relative inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] font-bold uppercase tracking-wider transition-colors duration-150 ${needsDetailsCount > 0
+                  ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text hover:bg-tag-amber-bg/80'
+                  : 'border-border-secondary bg-bg-primary text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
                   }`}
                 title="Review jobs missing essential details"
               >
                 <RepairIcon className="h-3 w-3" />
                 <span>Details</span>
                 {needsDetailsCount > 0 && (
-                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-tag-amber-text text-white">
+                  <span className="ml-0.5 rounded-full bg-tag-amber-text px-1 text-[9px] font-bold tabular-nums text-bg-primary">
                     {needsDetailsCount}
                   </span>
                 )}
@@ -868,16 +868,16 @@ const MainLayout: React.FC = () => {
 
               <button
                 onClick={() => setIsUnplottedModalOpen(true)}
-                className={`relative flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded transition-all ${unplottedJobsCount > 0
-                  ? 'bg-tag-red-bg text-tag-red-text hover:bg-tag-red-bg/80'
-                  : 'text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
+                className={`relative inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[10px] font-bold uppercase tracking-wider transition-colors duration-150 ${unplottedJobsCount > 0
+                  ? 'border-tag-red-border bg-tag-red-bg text-tag-red-text hover:bg-tag-red-bg/80'
+                  : 'border-border-secondary bg-bg-primary text-text-quaternary hover:bg-bg-tertiary hover:text-text-secondary'
                   }`}
                 title="Review jobs that could not be plotted on the map"
               >
                 <MapPinIcon className="h-3 w-3" />
                 <span>Unplotted</span>
                 {unplottedJobsCount > 0 && (
-                  <span className="ml-0.5 px-1 text-[9px] font-bold rounded-full bg-tag-red-text text-white">
+                  <span className="ml-0.5 rounded-full bg-tag-red-text px-1 text-[9px] font-bold tabular-nums text-bg-primary">
                     {unplottedJobsCount}
                   </span>
                 )}
@@ -888,15 +888,15 @@ const MainLayout: React.FC = () => {
 
             {/* Reports */}
             <div className="flex items-center gap-0.5">
-              <button onClick={() => setIsDailySummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+              <button onClick={() => setIsDailySummaryOpen(true)} className="inline-flex h-7 items-center gap-1 rounded-md border border-border-secondary bg-bg-primary px-2 text-[10px] font-bold uppercase tracking-wider text-text-tertiary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary">
                 <SummaryIcon className="h-3 w-3" />
                 <span>Daily</span>
               </button>
-              <button onClick={() => setIsRepSummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+              <button onClick={() => setIsRepSummaryOpen(true)} className="inline-flex h-7 items-center gap-1 rounded-md border border-border-secondary bg-bg-primary px-2 text-[10px] font-bold uppercase tracking-wider text-text-tertiary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary">
                 <UserIcon className="h-3 w-3" />
                 <span>Reps</span>
               </button>
-              <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-text-tertiary hover:text-brand-primary hover:bg-bg-tertiary rounded transition-all">
+              <button onClick={() => setIsAvailabilitySummaryOpen(true)} className="inline-flex h-7 items-center gap-1 rounded-md border border-border-secondary bg-bg-primary px-2 text-[10px] font-bold uppercase tracking-wider text-text-tertiary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary">
                 <TagIcon className="h-3 w-3" />
                 <span>Slots</span>
               </button>
@@ -905,16 +905,16 @@ const MainLayout: React.FC = () => {
 
           {/* Right: Data Controls & Settings */}
           <div className="flex items-center gap-1">
-            <button onClick={context.handleSaveStateToFile} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Save to File">
+            <button onClick={context.handleSaveStateToFile} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Save to File">
               <SaveIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
-            <button onClick={handleLoadClick} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from File">
+            <button onClick={handleLoadClick} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Load from File">
               <UploadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
-            <button onClick={() => context.handleSaveStateToCloud()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Save to Cloud">
+            <button onClick={() => context.handleSaveStateToCloud()} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Save to Cloud">
               <CloudUploadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
-            <button onClick={() => context.showLoadOptionsModal()} className="p-1.5 rounded hover:bg-bg-tertiary transition" title="Load from Cloud">
+            <button onClick={() => context.showLoadOptionsModal()} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Load from Cloud">
               <CloudDownloadIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
             </button>
             {/* Auto-save indicator */}
@@ -934,17 +934,17 @@ const MainLayout: React.FC = () => {
         <div className="h-12 px-4 flex items-center justify-between">
           {/* Left: History Controls & Changes */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-0.5 bg-bg-secondary/50 p-0.5 rounded-md border border-border-secondary/50">
-              <button onClick={context.handleUndo} disabled={!context.canUndo} className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Undo (Ctrl+Z)">
+            <div className="flex items-center gap-0.5 rounded-md border border-border-secondary bg-bg-secondary p-0.5">
+              <button onClick={context.handleUndo} disabled={!context.canUndo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Undo (Ctrl+Z)">
                 <UndoIcon className="h-3.5 w-3.5" />
               </button>
-              <button onClick={context.handleRedo} disabled={!context.canRedo} className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-text-primary disabled:opacity-30 transition" title="Redo (Ctrl+Y)">
+              <button onClick={context.handleRedo} disabled={!context.canRedo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Redo (Ctrl+Y)">
                 <RedoIcon className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={context.handleRefreshAvailability}
                 disabled={context.isLoadingReps}
-                className="p-1.5 rounded hover:bg-bg-primary text-text-tertiary hover:text-brand-primary disabled:opacity-30 transition"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-brand-primary disabled:opacity-30"
                 title="Resync availability from Google Sheet"
               >
                 {context.isLoadingReps ? <LoadingIcon /> : <RefreshIcon className="h-3.5 w-3.5" />}
@@ -953,16 +953,16 @@ const MainLayout: React.FC = () => {
 
             <button
               onClick={() => setIsChangeLogOpen(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${context.changeLog.length > 0
-                ? 'bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20'
-                : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary'
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition-colors duration-150 ${context.changeLog.length > 0
+                ? 'border-brand-primary bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20'
+                : 'border-border-secondary bg-bg-primary text-text-tertiary hover:bg-bg-tertiary'
                 }`}
               title="View Change Log"
             >
               <HistoryIcon className="h-3.5 w-3.5" />
               <span>Changes</span>
               {context.changeLog.length > 0 && (
-                <span className="px-1.5 py-0.5 bg-brand-primary text-brand-text-on-primary rounded-full text-[9px] font-bold">
+                <span className="rounded-full bg-brand-primary px-1.5 py-0.5 text-[9px] font-bold tabular-nums text-brand-text-on-primary">
                   {context.changeLog.length}
                 </span>
               )}
@@ -1038,7 +1038,7 @@ const MainLayout: React.FC = () => {
                   transition-all duration-300 ease-in-out
                   ${stackedUnder.length > 0
                     ? 'bg-bg-secondary/50 p-2 rounded-xl gap-0'
-                    : 'bg-bg-primary p-4 rounded-lg shadow-lg border border-border-primary/50'
+                    : 'rounded-md border border-border-secondary bg-bg-primary p-4 shadow-sm'
                   }
                   ${showStackIndicator
                     ? 'border-brand-primary border-2 ring-4 ring-brand-primary/20'
@@ -1067,18 +1067,18 @@ const MainLayout: React.FC = () => {
                 {/* Parent column content - sized based on whether there are stacked children */}
                 {stackedUnder.length > 0 ? (
                   <div
-                    className="flex flex-col min-h-0 overflow-hidden bg-bg-primary rounded-xl border border-border-primary/50 shadow-lg"
+                    className="flex flex-col min-h-0 overflow-hidden rounded-md border border-border-secondary bg-bg-primary shadow-sm"
                     style={{ flex: `1 1 ${100 - stackedUnder.reduce((sum, sid) => sum + (collapsedColumns.has(sid) ? 0 : stackHeights[sid]), 0)}%` }}
                   >
                     {/* Widget header for parent when stacked */}
-                    <div className="flex justify-between items-center px-4 py-2.5 border-b border-border-primary/50 bg-bg-primary flex-shrink-0 rounded-t-xl">
+                    <div className="flex flex-shrink-0 items-center justify-between rounded-t-md border-b border-border-secondary bg-bg-primary px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <DragHandleIcon className="h-4 w-4 text-text-quaternary cursor-grab" />
                         <span className="text-sm font-semibold text-text-primary">{getColumnLabel(id)}</span>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); toggleCollapse(id); }}
-                        className="p-1.5 rounded-lg hover:bg-bg-tertiary text-text-quaternary hover:text-text-secondary transition"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-quaternary transition-colors duration-150 hover:bg-bg-tertiary hover:text-text-secondary"
                         title="Collapse column"
                       >
                         <MinimizeIcon className="h-3.5 w-3.5" />
