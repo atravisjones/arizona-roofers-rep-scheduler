@@ -632,11 +632,8 @@ const TodayBoard: React.FC = () => {
     const [source, setSource] = useState<string>('');
     const [searchInput, setSearchInput] = useState('');
     const [activeSearch, setActiveSearch] = useState<{ label: string; coordinates: Coordinates } | null>(null);
-    const [selectedMapRepNames, setSelectedMapRepNames] = useState<string[]>([]);
-    // Auto-sync the map's rep selection to the closest-3 only until the user
-    // toggles a chip themselves; a new search re-arms the auto-sync.
-    const mapRepsTouchedRef = useRef(false);
-    const lastMapSearchKeyRef = useRef<string | null>(null);
+    // Rep whose map-vs-search popup is open (set by clicking a rep column name).
+    const [mapPopupRepName, setMapPopupRepName] = useState<string | null>(null);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
@@ -1205,9 +1202,6 @@ const TodayBoard: React.FC = () => {
             }
 
             await ensureMissingAppointmentCoordinates();
-            // Every explicit Search press re-arms the map's closest-3 auto-select,
-            // even when the address (and so the coord key) is unchanged.
-            mapRepsTouchedRef.current = false;
             setActiveSearch({ label: query, coordinates: result.coordinates });
         } catch (err) {
             console.warn('Proximity search failed', err);
@@ -1401,38 +1395,14 @@ const TodayBoard: React.FC = () => {
         repHomeCoordinates,
     ]);
 
+    // Clearing the search (or switching days, which clears it) closes the popup.
     useEffect(() => {
-        if (!activeSearch) {
-            lastMapSearchKeyRef.current = null;
-            mapRepsTouchedRef.current = false;
-            setSelectedMapRepNames([]);
-            return;
-        }
+        if (!activeSearch) setMapPopupRepName(null);
+    }, [activeSearch]);
 
-        const searchKey = `${activeSearch.coordinates.lat},${activeSearch.coordinates.lon}`;
-        if (lastMapSearchKeyRef.current !== searchKey) {
-            lastMapSearchKeyRef.current = searchKey;
-            mapRepsTouchedRef.current = false;
-        }
-        if (mapRepsTouchedRef.current) return;
-
-        // Until the user takes over, the map tracks the same three reps the
-        // board already ranks closest (refining as geocodes stream in).
-        setSelectedMapRepNames(
-            proximityResults.closestReps
-                .map(result => result.repName)
-                .filter(repName => todayBoardMapReps.some(rep => rep.repName === repName)),
-        );
-    }, [activeSearch, proximityResults.closestReps, todayBoardMapReps]);
-
-    const handleToggleMapRep = useCallback((repName: string) => {
-        mapRepsTouchedRef.current = true;
-        setSelectedMapRepNames(previous => (
-            previous.includes(repName)
-                ? previous.filter(name => name !== repName)
-                : [...previous, repName]
-        ));
-    }, []);
+    const mapPopupRep = mapPopupRepName
+        ? todayBoardMapReps.find(rep => rep.repName === mapPopupRepName) ?? null
+        : null;
 
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
@@ -1579,15 +1549,6 @@ const TodayBoard: React.FC = () => {
                 )}
             </form>
 
-            {activeSearch && !searchError && (
-                <TodayBoardMap
-                    search={activeSearch}
-                    reps={todayBoardMapReps}
-                    selectedRepNames={selectedMapRepNames}
-                    onToggleRep={handleToggleMapRep}
-                />
-            )}
-
             {isLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-text-tertiary">
                     <LoadingIcon className="h-8 w-8 text-brand-primary mb-2" />
@@ -1708,7 +1669,18 @@ const TodayBoard: React.FC = () => {
                                                 style={{ height: HEADER_HEIGHT }}
                                             >
                                                 <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                                    <div className="text-[10px] font-bold uppercase tracking-wide text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0" title={group.repName}>{group.repName}</div>
+                                                    {activeSearch && todayBoardMapReps.some(rep => rep.repName === group.repName) ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setMapPopupRepName(group.repName)}
+                                                            className="text-[10px] font-bold uppercase tracking-wide text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0 text-left cursor-pointer hover:text-brand-primary hover:underline decoration-dotted underline-offset-2"
+                                                            title={`Map ${group.repName} vs ${activeSearch.label}`}
+                                                        >
+                                                            {group.repName}
+                                                        </button>
+                                                    ) : (
+                                                        <div className="text-[10px] font-bold uppercase tracking-wide text-text-primary leading-[1.1] break-words line-clamp-2 min-w-0" title={group.repName}>{group.repName}</div>
+                                                    )}
                                                     <div className="flex items-center gap-1 flex-shrink-0">
                                                         {isFullyUnavailable && (
                                                             <span className="text-[9px] font-bold uppercase text-text-tertiary bg-bg-tertiary px-1.5 py-0.5 rounded-full">
@@ -1972,6 +1944,31 @@ const TodayBoard: React.FC = () => {
                             </div>
                         </aside>
                     )}
+                </div>
+            )}
+
+            {activeSearch && mapPopupRep && (
+                <div className="fixed inset-0 bg-bg-secondary/60 backdrop-blur-sm flex items-center justify-center p-4 z-[60]" onClick={() => setMapPopupRepName(null)}>
+                    <div className="popup-surface w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-fade-in shadow-2xl rounded-xl ring-1 ring-border-primary" onClick={e => e.stopPropagation()}>
+                        <header className="px-5 py-4 border-b border-border-primary flex items-start justify-between gap-4 bg-bg-secondary/50">
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-bold text-text-primary truncate">{mapPopupRep.repName}</h2>
+                                <p className="text-xs text-text-tertiary truncate">vs {activeSearch.label}</p>
+                            </div>
+                            <button onClick={() => setMapPopupRepName(null)} className="text-text-quaternary hover:text-text-secondary p-1 rounded-full hover:bg-bg-tertiary transition" title="Close">
+                                <XIcon className="h-5 w-5" />
+                            </button>
+                        </header>
+                        <div className="overflow-y-auto">
+                            <TodayBoardMap
+                                search={activeSearch}
+                                reps={[mapPopupRep]}
+                                selectedRepNames={[mapPopupRep.repName]}
+                                onToggleRep={() => {}}
+                                showRepChips={false}
+                            />
+                        </div>
+                    </div>
                 </div>
             )}
 

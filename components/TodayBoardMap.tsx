@@ -63,6 +63,8 @@ interface TodayBoardMapProps {
     reps: TodayBoardMapRep[];
     selectedRepNames: string[];
     onToggleRep: (name: string) => void;
+    // Off in the single-rep popup, where the rep is chosen by clicking their name.
+    showRepChips?: boolean;
 }
 
 type NearestTarget = {
@@ -212,6 +214,7 @@ const TodayBoardMap: React.FC<TodayBoardMapProps> = ({
     reps,
     selectedRepNames,
     onToggleRep,
+    showRepChips = true,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any>(null);
@@ -477,6 +480,7 @@ const TodayBoardMap: React.FC<TodayBoardMapProps> = ({
 
     return (
         <section className="flex-shrink-0 border-b border-border-secondary bg-bg-secondary px-3 py-3">
+            {showRepChips && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-semibold text-text-secondary">
                     Map reps
@@ -517,6 +521,7 @@ const TodayBoardMap: React.FC<TodayBoardMapProps> = ({
                     );
                 })}
             </div>
+            )}
 
             {routeSummary && (
                 <div className="mb-2 text-[11px] text-text-secondary">
