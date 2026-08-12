@@ -527,9 +527,11 @@ const TodayBoardMap: React.FC<TodayBoardMapProps> = ({
                 </div>
             )}
 
+            {/* isolate traps Leaflet's internal z-indexes (400-1000) inside this
+                container so they can't punch through the board's z-[60] modals. */}
             <div
                 ref={containerRef}
-                className="h-72 overflow-hidden rounded-lg border border-border-secondary bg-bg-tertiary"
+                className="h-72 overflow-hidden rounded-lg border border-border-secondary bg-bg-tertiary relative z-0 isolate"
                 aria-label={`Map of reps near ${search.label}`}
             />
         </section>
