@@ -971,6 +971,14 @@ const TodayBoard: React.FC = () => {
         // or not a bookable rep (CSR/Management/D2D/manager-by-role).
         const present = new Set<string>();
         feedGroups.forEach(g => { present.add(normalizeRepName(g.repName)); present.add(normalizeName(g.repName)); });
+
+        // Up North is a dispatch, not a home base — a rep only goes when the day has
+        // northern work to justify the drive. Checked against the raw feed rather than
+        // the built columns so an unassigned northern appointment still counts: those
+        // sit in the CSR rail, which is forced region-neutral, and they're precisely
+        // the ones that might need the north slot filled.
+        const hasNorthernWork = appointments.some(appointment => getAppointmentRegion(appointment) === 'NORTH');
+
         const emptyRepGroups = dataSource === 'live'
             ? appState.reps
                 .filter(rep => {
@@ -982,6 +990,9 @@ const TodayBoard: React.FC = () => {
                     // Commercial reps aren't gap-fill candidates — their open time
                     // is not bookable residential capacity.
                     if (rep.region === 'COMMERCIAL' || isLondon(rep)) return false;
+                    // Nothing up north today: an empty north column is just an invitation
+                    // to book someone two hours out of position.
+                    if (rep.region === 'NORTH' && !hasNorthernWork) return false;
                     if (getEffectiveUnavailableSlots(rep, dayName).length >= fillWindows.length) return false;
                     return true;
                 })
