@@ -63,16 +63,25 @@ def sb_fetch(path, timeout=8):
         return json.loads(resp.read().decode())
 
 
-# Static fallback: Roofr numeric user ID -> rep name.
-# Used ONLY when the linked job is missing (job_id null) so job_owner is empty.
-# Values mirror the exact jobs.job_owner string for that rep so downstream
-# name-matching behaves identically to the normal (job-linked) path.
-# Regenerate with:
+# Roofr numeric user ID -> rep name. This is the PRIMARY way an appointment is
+# pinned to a column: the attendee tagged on the calendar event is the rep running
+# it, and resolve_attendees() only falls back to jobs.job_owner for unmapped ids.
+# So a missing entry here silently files that rep's appointments under whoever
+# owns the job — usually the CSR who booked it.
+#
+# Values mirror the exact jobs.job_owner string for that rep (including its odd
+# casing) so downstream name-matching behaves identically to the job-linked path.
+#
+# Regenerate the candidate list with:
 #   SELECT ce.attendees AS uid, mode() WITHIN GROUP (ORDER BY j.job_owner) AS rep
 #   FROM calendar_events ce JOIN jobs j ON j.job_id = ce.job_id
 #   WHERE ce.category='sales' AND ce.attendees ~ '^[0-9]+$'
 #     AND j.job_owner <> '' AND ce.start_date >= '<recent>'
 #   GROUP BY ce.attendees HAVING count(*) >= 2;
+# ...but do NOT trust that output on its own — it is a popularity heuristic and it
+# has misattributed a user before (see 372086 below). Confirm each id against the
+# attendee email on a real event before adding it:
+#   GET /api/calendar/event/<event_id>  ->  attendees[].email
 REP_BY_USER_ID = {
     "355304": "Ashkan Etemadi",
     "352704": "Bradley Crohurst",
@@ -82,8 +91,17 @@ REP_BY_USER_ID = {
     # Deliberately unmapped so she never resolves to a rep column.
     "400700": "Brandon Cook",
     "416699": "Chandler Duffy",
+    "568255": "Chris Diamond",
     "356679": "Christian Noren",
+    "568245": "Claude Springer",
+    "354859": "Cole Ludewig",
     "500123": "Connor Hamby",
+    # Hunter Fairfield is classified CSR by the roster, so his appointments still
+    # land in the CSR rail — mapped anyway so they attach to him rather than to
+    # whoever happens to own the job.
+    "568859": "Hunter Fairfield",
+    "596692": "Irving Lopez",
+    "497732": "James Chernek",
     "441144": "Jonathan Marino",
     "522189": "Josh Jewett",
     "355180": "Justin Parker",
@@ -93,8 +111,10 @@ REP_BY_USER_ID = {
     "407608": "Oliver Johnson",
     "472015": "Orlando Chavarria",
     "355065": "Richard Hadsall",
+    "592399": "Ryan Tempel",
     "525242": "Stephen Chaidez",
     "482761": "Tanner Broadbent",
+    "451106": "William Ludewig",
 }
 
 
@@ -102,22 +122,28 @@ def resolve_attendees(raw_attendees, job_owner):
     """Resolve attendee IDs to names.
 
     Supabase calendar_events stores numeric Roofr user IDs (e.g. '472015')
-    instead of names. If all parts are numeric, prefer the linked job's owner;
-    if the job link is missing (job_id null), fall back to the static
-    REP_BY_USER_ID map so the board still shows the right rep instead of going
-    blank.
+    instead of names. The tagged attendee is the rep actually running the
+    appointment; job_owner is only a proxy for it and goes stale whenever a CSR
+    or manager still owns the job. So resolve through REP_BY_USER_ID FIRST and
+    fall back to job_owner only when the id isn't mapped.
+
+    Only a single-attendee event overrides the owner. A multi-rep event has no
+    one right column, and the frontend renders whatever string it gets as the
+    column name (getRepName in TodayBoard.tsx), so joining names there would
+    invent a "Rep A, Rep B" column — keep deferring to job_owner for those.
     """
     if not raw_attendees:
         return job_owner or ""
     parts = [p.strip() for p in str(raw_attendees).split(",") if p.strip()]
     if all(p.isdigit() for p in parts):
-        # All numeric IDs — prefer job_owner, else resolve via the static map
+        mapped = [REP_BY_USER_ID.get(p) for p in parts]
+        mapped = list(dict.fromkeys(m for m in mapped if m))  # dedupe, preserve order
+        if len(mapped) == 1:
+            return mapped[0]
         if job_owner:
             return job_owner
-        mapped = [REP_BY_USER_ID.get(p) for p in parts]
-        mapped = [m for m in mapped if m]
         if mapped:
-            return ", ".join(dict.fromkeys(mapped))  # dedupe, preserve order
+            return ", ".join(mapped)
         return ""
     return raw_attendees
 
