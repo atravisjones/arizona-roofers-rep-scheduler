@@ -11,6 +11,7 @@ import { geocodeAddresses, preCacheGeocodes, type Coordinates } from '../service
 import { haversineDistance, NORTHERN_AZ_CITIES, FLAGSTAFF_ZONE_CITIES, I17_CORRIDOR_CITIES, SR87_CORRIDOR_CITIES, SOUTHERN_AZ_CITIES } from '../services/geography';
 import { supabase } from '../services/supabaseClient';
 import ReplacementPool, { type PoolAnchor } from './ReplacementPool';
+import TodayBoardMap, { getTodayBoardRepColor, type TodayBoardMapRep } from './TodayBoardMap';
 import { parseTimeSlotWindow } from '../utils/timeSlotUtils';
 
 interface RoofrAppointment {
@@ -631,6 +632,11 @@ const TodayBoard: React.FC = () => {
     const [source, setSource] = useState<string>('');
     const [searchInput, setSearchInput] = useState('');
     const [activeSearch, setActiveSearch] = useState<{ label: string; coordinates: Coordinates } | null>(null);
+    const [selectedMapRepNames, setSelectedMapRepNames] = useState<string[]>([]);
+    // Auto-sync the map's rep selection to the closest-3 only until the user
+    // toggles a chip themselves; a new search re-arms the auto-sync.
+    const mapRepsTouchedRef = useRef(false);
+    const lastMapSearchKeyRef = useRef<string | null>(null);
     const [searchError, setSearchError] = useState<string | null>(null);
     const [isLocating, setIsLocating] = useState(false);
     const [appointmentCoordinates, setAppointmentCoordinates] = useState<AppointmentCoordinateMap>({});
@@ -1199,6 +1205,9 @@ const TodayBoard: React.FC = () => {
             }
 
             await ensureMissingAppointmentCoordinates();
+            // Every explicit Search press re-arms the map's closest-3 auto-select,
+            // even when the address (and so the coord key) is unchanged.
+            mapRepsTouchedRef.current = false;
             setActiveSearch({ label: query, coordinates: result.coordinates });
         } catch (err) {
             console.warn('Proximity search failed', err);
@@ -1329,6 +1338,101 @@ const TodayBoard: React.FC = () => {
             closestReps,
         };
     }, [activeSearch, appointmentCoordinates, boardAppointments, freeRepCandidates, getRepGroup, repHomeCoordinates]);
+
+    const todayBoardMapReps = useMemo<TodayBoardMapRep[]>(() => {
+        const byRep = new Map<string, Omit<TodayBoardMapRep, 'color' | 'isClosest'>>();
+
+        boardAppointments.forEach(({ appointment, repName }) => {
+            // Same rule as the proximity ranking: CSRs book from the office, so
+            // their columns say nothing about where anyone physically is.
+            if (getRepGroup(repName) === 'CSR') return;
+
+            const coordinates = getAppointmentCoordinates(appointment, appointmentCoordinates);
+            if (!coordinates) return;
+
+            const existing = byRep.get(repName) || {
+                repName,
+                points: [],
+            };
+
+            existing.points.push({
+                key: `${appointment.status}-${appointment.eventId}`,
+                lat: coordinates.lat,
+                lon: coordinates.lon,
+                shortAddress: getShortAddress(appointment),
+                timeLabel: formatTimeRange(appointment),
+                status: appointment.status,
+            });
+
+            byRep.set(repName, existing);
+        });
+
+        // Free reps have no appointments, so their geocoded home ZIP is the one
+        // visual fallback point available for their map chip and proximity result.
+        freeRepCandidates.forEach(rep => {
+            const coordinates = repHomeCoordinates[rep.name];
+            if (!coordinates) return;
+
+            byRep.set(rep.name, {
+                repName: rep.name,
+                points: [],
+                home: {
+                    lat: coordinates.lat,
+                    lon: coordinates.lon,
+                    zip: rep.zipCodes?.[0] || 'Home',
+                },
+            });
+        });
+
+        const allNames = Array.from(byRep.keys());
+        return Array.from(byRep.values())
+            .map(rep => ({
+                ...rep,
+                color: getTodayBoardRepColor(rep.repName, allNames),
+                isClosest: proximityResults.closestRepNames.has(rep.repName),
+            }))
+            .sort((a, b) => a.repName.localeCompare(b.repName));
+    }, [
+        appointmentCoordinates,
+        boardAppointments,
+        freeRepCandidates,
+        getRepGroup,
+        proximityResults.closestRepNames,
+        repHomeCoordinates,
+    ]);
+
+    useEffect(() => {
+        if (!activeSearch) {
+            lastMapSearchKeyRef.current = null;
+            mapRepsTouchedRef.current = false;
+            setSelectedMapRepNames([]);
+            return;
+        }
+
+        const searchKey = `${activeSearch.coordinates.lat},${activeSearch.coordinates.lon}`;
+        if (lastMapSearchKeyRef.current !== searchKey) {
+            lastMapSearchKeyRef.current = searchKey;
+            mapRepsTouchedRef.current = false;
+        }
+        if (mapRepsTouchedRef.current) return;
+
+        // Until the user takes over, the map tracks the same three reps the
+        // board already ranks closest (refining as geocodes stream in).
+        setSelectedMapRepNames(
+            proximityResults.closestReps
+                .map(result => result.repName)
+                .filter(repName => todayBoardMapReps.some(rep => rep.repName === repName)),
+        );
+    }, [activeSearch, proximityResults.closestReps, todayBoardMapReps]);
+
+    const handleToggleMapRep = useCallback((repName: string) => {
+        mapRepsTouchedRef.current = true;
+        setSelectedMapRepNames(previous => (
+            previous.includes(repName)
+                ? previous.filter(name => name !== repName)
+                : [...previous, repName]
+        ));
+    }, []);
 
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
@@ -1474,6 +1578,15 @@ const TodayBoard: React.FC = () => {
                     </span>
                 )}
             </form>
+
+            {activeSearch && !searchError && (
+                <TodayBoardMap
+                    search={activeSearch}
+                    reps={todayBoardMapReps}
+                    selectedRepNames={selectedMapRepNames}
+                    onToggleRep={handleToggleMapRep}
+                />
+            )}
 
             {isLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-text-tertiary">
