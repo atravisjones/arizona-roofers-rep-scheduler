@@ -43,6 +43,11 @@ interface RoofrAppointment {
 type BoardAppointment = RoofrAppointment & {
     status: 'active' | 'cancelled';
     isNew?: boolean;
+    // Set only on the mirrored copy shown in the CSR rail when a job is still
+    // CSR-owned but a different rep is tagged on the calendar event. Holds that
+    // rep's name. A mirror is a pointer to a card that already exists on the
+    // rep's column — never a booking, and never counted as one.
+    mirrorFor?: string;
 };
 
 type AppointmentCoordinateMap = Record<string, Coordinates | null>;
@@ -909,6 +914,25 @@ const TodayBoard: React.FC = () => {
                 isNew: (newEventIds[appointment.eventId] || 0) > now,
             });
             byRep.set(repName, group);
+
+            // Mismatch: a rep is tagged on the event, but the job is still owned by a
+            // CSR. The booking belongs on the rep's column (that's who is driving out,
+            // and hiding it there would leave their slot advertised as open). Mirror a
+            // pointer into the CSR's column so the pending reassignment stays on their
+            // worklist instead of disappearing.
+            const ownerName = (appointment.jobOwner || '').trim();
+            if (!ownerName) return;
+            if (getRepGroup(ownerName) !== 'CSR') return;
+            if (normalizeRepName(ownerName) === normalizeRepName(repName)) return;
+
+            const ownerGroup = byRep.get(ownerName) || { departmentGroup: 'CSR' as DepartmentGroup, appointments: [] };
+            ownerGroup.appointments.push({
+                ...appointment,
+                status: 'active',
+                isNew: false,
+                mirrorFor: repName,
+            });
+            byRep.set(ownerName, ownerGroup);
         });
 
         Object.values(cancelledAppointments).forEach(({ appointment, expiresAt }) => {
@@ -982,9 +1006,16 @@ const TodayBoard: React.FC = () => {
             });
     }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers, fillWindows.length]);
 
+    // The day's real bookings, one row each. Mirrors are deliberately excluded: they
+    // point at a card that already appears on the rep's column, so counting them again
+    // would inflate the active total, flag the job as double-booked against itself, and
+    // re-geocode the same address. Rendering still reads groupedAppointments, so the
+    // mirrored card is drawn — it just isn't counted anywhere.
     const boardAppointments = useMemo(() => (
         groupedAppointments.flatMap(group => (
-            group.appointments.map(appointment => ({ appointment, repName: group.repName }))
+            group.appointments
+                .filter(appointment => !appointment.mirrorFor)
+                .map(appointment => ({ appointment, repName: group.repName }))
         ))
     ), [groupedAppointments]);
 
@@ -1020,7 +1051,9 @@ const TodayBoard: React.FC = () => {
     const doubleBookedIds = useMemo(() => {
         const ids = new Set<string>();
         groupedAppointments.forEach(group => {
-            const active = group.appointments.filter(a => a.status === 'active');
+            // Mirrors sit in the CSR column purely for visibility — several unrelated
+            // ones can overlap there without anyone being double-booked.
+            const active = group.appointments.filter(a => a.status === 'active' && !a.mirrorFor);
             for (let i = 0; i < active.length; i++) {
                 for (let j = i + 1; j < active.length; j++) {
                     const aStart = getAppointmentMinutes(active[i].start);
@@ -1319,6 +1352,7 @@ const TodayBoard: React.FC = () => {
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-green-bg border border-tag-green-border" />Open slot</span>
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-amber-bg border border-tag-amber-border" />Reserved</span>
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary"><span className="h-1.5 w-1.5 rounded-full bg-tag-red-bg border border-tag-red-border" />CSR-owned</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary" title="Shown in both places: the rep runs it, the CSR still owns the job"><span className="h-1.5 w-2.5 rounded-sm border border-dashed border-tag-red-border" />Assigned, owner pending</span>
                         {error && <span className="text-[10px] font-bold uppercase tracking-wider text-tag-red-text" title={error}>⚠ refresh failed · showing last update</span>}
                     </div>
                 </div>
@@ -1597,13 +1631,18 @@ const TodayBoard: React.FC = () => {
                                                     const isCancelled = appointment.status === 'cancelled';
                                                     const isNew = appointment.isNew;
                                                     const isCsr = group.departmentGroup === 'CSR';
-                                                    const isDouble = doubleBookedIds.has(appointment.eventId) && !isCancelled;
+                                                    // A pointer to the rep actually running this one — the job just hasn't
+                                                    // been handed off yet. Not a booking, so it never warns about conflicts.
+                                                    const isMirror = !!appointment.mirrorFor;
+                                                    const isDouble = doubleBookedIds.has(appointment.eventId) && !isCancelled && !isMirror;
                                                     const kind = appointment.kind || 'sales';
                                                     // Job still owned by a CSR in Roofr (not yet transferred to the rep) -> light red.
                                                     const isCsrOwnedJob = getRepGroup((appointment.jobOwner || '').trim()) === 'CSR';
                                                     const position = getAppointmentPosition(appointment);
                                                     const cardClass = isCancelled
                                                         ? 'bg-tag-red-bg text-tag-red-text border-tag-red-border opacity-90'
+                                                        : isMirror
+                                                        ? 'bg-bg-secondary text-text-secondary border-dashed border-tag-red-border/70 hover:border-tag-red-border hover:shadow-sm'
                                                         : isNew
                                                             ? 'bg-tag-green-bg text-tag-green-text border-tag-green-border ring-2 ring-tag-green-border/60'
                                                             : isCsrOwnedJob
@@ -1616,7 +1655,9 @@ const TodayBoard: React.FC = () => {
                                                                             ? 'bg-amber-100 text-amber-950 border-amber-400 hover:border-amber-600 hover:shadow-md'
                                                                             : 'bg-brand-bg-light text-text-primary border-brand-primary/30 hover:border-brand-primary hover:shadow-md';
                                                     // Double-booking warning outranks the CSR ring (outline composes with rings).
-                                                    const csrClass = isDouble ? 'outline outline-2 outline-orange-500' : isCsr ? 'ring-2 ring-tag-red-border' : '';
+                                                    // A mirror skips the ring — the dashed border already reads as "not a booking",
+                                                    // and the solid ring would make it look like real CSR-held time.
+                                                    const csrClass = isDouble ? 'outline outline-2 outline-orange-500' : (isCsr && !isMirror) ? 'ring-2 ring-tag-red-border' : '';
                                                     const proximity = proximityResults.byAppointmentKey[`${appointment.status}-${appointment.eventId}`];
                                                     const isDimmedBySearch = activeSearch && !isClosestRep;
                                                     const isClosestAppointment = !!activeSearch && proximityResults.closestAppointmentEventIds.has(appointment.eventId);
@@ -1624,8 +1665,10 @@ const TodayBoard: React.FC = () => {
 
                                                     return (
                                                         <button
-                                                            key={`${appointment.status}-${appointment.eventId}`}
-                                                            onClick={() => setSelectedAppointment({ appointment, repName: group.repName })}
+                                                            key={`${appointment.status}-${isMirror ? 'mirror-' : ''}${appointment.eventId}`}
+                                                            // Details for a mirror name the rep who is actually running it,
+                                                            // not the CSR whose column it is being shown in.
+                                                            onClick={() => setSelectedAppointment({ appointment, repName: appointment.mirrorFor || group.repName })}
                                                             className={`absolute z-10 text-left rounded-md border overflow-hidden transition-all ${cardClass} ${csrClass} ${closestAppointmentClass} cursor-pointer active:scale-[0.99] ${isDimmedBySearch ? 'opacity-[0.35] grayscale' : ''}`}
                                                             style={{
                                                                 top: position.top,
@@ -1658,16 +1701,24 @@ const TodayBoard: React.FC = () => {
                                                                     {kind === 'followup' && !isCancelled && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-amber-400 bg-amber-200 text-amber-900">Follow-up</span>
                                                                     )}
-                                                                    {(isCsr || isCsrOwnedJob) && !isCancelled && (
+                                                                    {isMirror && (
+                                                                        <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-dashed border-tag-red-border bg-bg-primary text-tag-red-text">Assigned</span>
+                                                                    )}
+                                                                    {(isCsr || isCsrOwnedJob) && !isCancelled && !isMirror && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">CSR</span>
                                                                     )}
                                                                     {isClosestAppointment && (
                                                                         <span className="text-[8px] font-bold uppercase tracking-wide flex-shrink-0 px-1 rounded border border-brand-primary bg-bg-primary text-brand-primary shadow-sm">Closest</span>
                                                                     )}
                                                                 </div>
-                                                                <div className="text-[10px] font-bold text-text-primary truncate">
+                                                                <div className={`text-[10px] font-bold truncate ${isMirror ? 'text-text-secondary' : 'text-text-primary'}`}>
                                                                     {appointment.customerName || 'Unknown customer'}
                                                                 </div>
+                                                                {isMirror && (
+                                                                    <div className="text-[9px] font-semibold text-tag-red-text truncate flex-shrink-0">
+                                                                        → {appointment.mirrorFor}
+                                                                    </div>
+                                                                )}
                                                                 <div className="text-[9px] text-text-secondary truncate flex-shrink-0">
                                                                     {getShortAddress(appointment)}
                                                                 </div>
