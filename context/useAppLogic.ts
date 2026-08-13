@@ -1940,7 +1940,12 @@ export const useAppLogic = () => {
                     .filter(Boolean)
                     .join(' ');
 
-                const titleRoofAge = allTagText.match(/\b(\d+)\s*yrs?\b/i);
+                // The # rating's reason list — "[#] (15yr+)", "[###] (3k+/10yr, 15yr+)" —
+                // states the THRESHOLD that earned the rating, not the roof's age. Strip
+                // any reason parenthetical carrying a year before reading the age, so
+                // "AVONDALE [#] (15yr+) 27yrs" reads 27 and not 15.
+                const ageSearchText = allTagText.replace(/\([^)]*\d\s*yrs?\b[^)]*\)/gi, ' ');
+                const titleRoofAge = ageSearchText.match(/\b(\d+)\s*yrs?\b/i);
                 const titleSqft = safeTagText.match(/\b(\d{3,6})\s*(?:sq\.?\s*(?:ft)?|sf)\b/i);
                 const titleStories = safeTagText.match(/\b([1-4])\s*(?:s|stor(?:y|ies))\b/i);
                 const hasShingle = /\bshingle\b/i.test(allTagText);

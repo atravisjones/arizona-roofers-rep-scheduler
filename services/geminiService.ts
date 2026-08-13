@@ -454,8 +454,10 @@ export async function parseJobsFromText(
             continue;
         }
 
-        // Parse roof age from notes (e.g., "20yrs", "15 yrs")
-        const ageMatch = notes.match(/\b(\d+)\s*yrs?\b/i);
+        // Parse roof age from notes (e.g., "20yrs", "15 yrs"). The # rating's reason
+        // list — "# (15yr+)", "### (3k+/10yr, 15yr+)" — states the threshold that
+        // earned the rating, not the roof's age, so strip it first.
+        const ageMatch = notes.replace(/\([^)]*\d\s*yrs?\b[^)]*\)/gi, ' ').match(/\b(\d+)\s*yrs?\b/i);
         const roofAge = ageMatch ? parseInt(ageMatch[1], 10) : undefined;
 
         // Detect repair-type keywords (lower value jobs)
