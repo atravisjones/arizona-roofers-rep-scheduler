@@ -314,6 +314,11 @@ const REGULAR_FILL_WINDOWS: FillWindow[] = [
     { id: 'ts-4', label: '5–8', startMin: 17 * 60, endMin: 20 * 60 },
 ];
 
+// Booking lead time: a window stops being offered as OPEN once we're within this
+// many minutes of its START. Booking a slot with less notice than this isn't
+// realistically dispatchable, so the board shouldn't advertise it.
+const OPEN_SLOT_LEAD_MINUTES = 90;
+
 const getFillWindows = (timeSlots: TimeSlot[]): FillWindow[] => {
     if (timeSlots.length === 4) return REGULAR_FILL_WINDOWS;
     return timeSlots.flatMap(slot => {
@@ -1407,10 +1412,10 @@ const TodayBoard: React.FC = () => {
     const activeCount = boardAppointments.filter(({ appointment }) => appointment.status === 'active').length;
     const cancelledCount = boardAppointments.filter(({ appointment }) => appointment.status === 'cancelled').length;
 
-    // Open-slot cutoff: on TODAY, hide windows whose time has already passed (keep the
-    // one we're currently in). Future days show every window; past days show none.
+    // Open-slot cutoff: on TODAY, hide windows we're too close to (see
+    // OPEN_SLOT_LEAD_MINUTES). Future days show every window; past days show none.
     // Plain const (not memoized) so it re-evaluates on each render — the 30s cleanup
-    // tick re-renders the board, so slots drop within ~30s of their end time.
+    // tick re-renders the board, so slots drop within ~30s of their cutoff.
     const nowCutoffMinutes = (() => {
         const t = todayKey();
         if (dateKey < t) return Infinity;   // whole day already passed
@@ -1616,11 +1621,12 @@ const TodayBoard: React.FC = () => {
                                     // Open booking windows → clickable green OPEN blocks. Excluded: CSR/Management
                                     // columns, managers/owners (by role), and commercial reps (their open time is
                                     // not bookable residential capacity). For everyone else, show empty windows
-                                    // that haven't passed; when we HAVE the rep's sheet availability, also skip the
-                                    // windows they're off for (reps not on the sheet are assumed available so they
-                                    // still get blocks — e.g. William Ludewig, who isn't on the SRA rota).
+                                    // that still have at least OPEN_SLOT_LEAD_MINUTES of notice before they start;
+                                    // when we HAVE the rep's sheet availability, also skip the windows they're off
+                                    // for (reps not on the sheet are assumed available so they still get blocks —
+                                    // e.g. William Ludewig, who isn't on the SRA rota).
                                     const openWindows = (leftSection || isRosterManager || isCommercialRep) ? [] : fillWindows.filter(win => (
-                                        win.endMin > nowCutoffMinutes &&
+                                        win.startMin - OPEN_SLOT_LEAD_MINUTES > nowCutoffMinutes &&
                                         (!matchedRep || !unavailableSlotIds.includes(win.id)) &&
                                         !group.appointments.some(appt => appointmentOverlapsWindow(appt, win))
                                     ));
