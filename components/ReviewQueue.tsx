@@ -45,6 +45,86 @@ const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
     ...FILTER_FIELDS.map(entry => ({ key: entry.key as SortKey, label: entry.label })),
 ];
 
+// ── Bookmarkable views ────────────────────────────────────────────────────────
+// Every choice a reviewer makes — period, status tab, outcome urgency, the
+// multi-select dropdowns, grouping — is mirrored into the query string and read
+// back on load, so "my unqualified outcomes, grouped by tech" is just a URL you
+// bookmark. The period is stored RELATIVE (kind + offset), so a saved link keeps
+// meaning "yesterday" every morning instead of freezing the date it was made;
+// only a Custom range stores absolute dates. Values equal to the mode's defaults
+// are left out, so an untouched view stays a clean /review/outcomes.
+interface ViewState {
+    tab: ReviewTab;
+    outcomeFilter: OutcomeFilter;
+    fieldFilters: Partial<Record<FilterField, string[]>>;
+    sortKey: SortKey;
+    periodKind: PeriodKind;
+    periodOffset: number;
+    dateFrom: string;
+    dateTo: string;
+}
+// Outcomes defaults to YESTERDAY: the appointments it reviews have already run,
+// and today's aren't finished yet. Bookings stays on today — it's the live queue.
+const defaultView = (mode: ReviewMode): ViewState => ({
+    tab: 'needs_review', outcomeFilter: 'all', fieldFilters: {}, sortKey: 'recent',
+    periodKind: 'day', periodOffset: mode === 'outcomes' ? -1 : 0, dateFrom: '', dateTo: '',
+});
+// Short query keys for the dropdowns, so a shared link stays human-readable.
+// Multi-select repeats the key: ?csr=Ana&csr=Bo.
+const FILTER_PARAM: Record<FilterField, string> = { appt_booker: 'csr', stage: 'status', job_owner: 'tech' };
+const REVIEW_TABS: ReviewTab[] = ['needs_review', 'reviewed', 'flagged', 'all'];
+const OUTCOME_FILTERS: OutcomeFilter[] = ['all', 'overdue', 'unqualified', 'lost', 'working'];
+const PERIOD_KINDS: PeriodKind[] = ['day', 'week', 'month', 'custom'];
+const isDateParam = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+// Anything unrecognized falls back to the default — a mangled or half-copied link
+// should open the normal view, never an empty list the reviewer can't explain.
+const readViewFromUrl = (mode: ReviewMode): ViewState => {
+    const view = defaultView(mode);
+    if (typeof window === 'undefined') return view;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') as ReviewTab | null;
+    if (tab && REVIEW_TABS.includes(tab)) view.tab = tab;
+    const outcome = params.get('outcome') as OutcomeFilter | null;
+    if (outcome && OUTCOME_FILTERS.includes(outcome)) view.outcomeFilter = outcome;
+    const sort = params.get('sort') as SortKey | null;
+    if (sort && SORT_OPTIONS.some(option => option.key === sort)) view.sortKey = sort;
+    const periodKind = params.get('period') as PeriodKind | null;
+    if (periodKind && PERIOD_KINDS.includes(periodKind)) view.periodKind = periodKind;
+    if (params.has('off')) {
+        const offset = Number(params.get('off'));
+        // Offsets only ever run backwards (the ▶ button stops at 0); the floor keeps
+        // a junk value from firing off a query for the year 1200.
+        if (Number.isInteger(offset) && offset <= 0 && offset > -600) view.periodOffset = offset;
+    }
+    const from = params.get('from') || '';
+    const to = params.get('to') || '';
+    if (isDateParam(from) && isDateParam(to)) { view.dateFrom = from; view.dateTo = to; }
+    FILTER_FIELDS.forEach(({ field }) => {
+        const values = params.getAll(FILTER_PARAM[field]).map(value => value.trim()).filter(Boolean);
+        if (values.length > 0) view.fieldFilters[field] = values;
+    });
+    return view;
+};
+
+const viewToSearch = (view: ViewState, mode: ReviewMode): string => {
+    const base = defaultView(mode);
+    const params = new URLSearchParams();
+    if (view.tab !== base.tab) params.set('tab', view.tab);
+    if (mode === 'outcomes' && view.outcomeFilter !== base.outcomeFilter) params.set('outcome', view.outcomeFilter);
+    if (view.sortKey !== base.sortKey) params.set('sort', view.sortKey);
+    if (view.periodKind !== base.periodKind) params.set('period', view.periodKind);
+    if (view.periodKind === 'custom') {
+        if (view.dateFrom) params.set('from', view.dateFrom);
+        if (view.dateTo) params.set('to', view.dateTo);
+    } else if (view.periodOffset !== base.periodOffset) {
+        params.set('off', String(view.periodOffset));
+    }
+    FILTER_FIELDS.forEach(({ field }) => (view.fieldFilters[field] || []).forEach(value => params.append(FILTER_PARAM[field], value)));
+    const query = params.toString();
+    return query ? `?${query}` : '';
+};
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const toDateStr = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 const fmtDateStr = (s: string) => {
@@ -243,8 +323,11 @@ const LinkPill: React.FC<{ href: string; label: string }> = ({ href, label }) =>
 );
 
 const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onCountChange }) => {
+    // A bookmarked link opens exactly as it was saved, so every control below seeds
+    // from the URL rather than from a hardcoded default.
+    const initialView = useMemo(() => readViewFromUrl(readModeFromUrl()), []);
     const [rows, setRows] = useState<ReviewRow[]>([]);
-    const [tab, setTab] = useState<ReviewTab>('needs_review');
+    const [tab, setTab] = useState<ReviewTab>(initialView.tab);
     const [reviewer, setReviewer] = useState(() => localStorage.getItem(REVIEWER_STORAGE_KEY) || '');
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -258,20 +341,19 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [stats, setStats] = useState<ReviewStats | null>(null);
     const [showStats, setShowStats] = useState(false);
     const [statsSort, setStatsSort] = useState<keyof RepStat>('flagged_month');
-    const [periodKind, setPeriodKind] = useState<PeriodKind>('day');
-    // Outcomes opens on yesterday (today's appointments haven't finished), so the
-    // initial value must already match the mode — otherwise mount fires a today
-    // fetch AND a yesterday refetch, and whichever response lands last wins.
-    const [periodOffset, setPeriodOffset] = useState(() => (readModeFromUrl() === 'outcomes' ? -1 : 0));
+    const [periodKind, setPeriodKind] = useState<PeriodKind>(initialView.periodKind);
+    // The period must already match the mode/link at mount — otherwise mount fires a
+    // today fetch AND a refetch for the real period, and whichever lands last wins.
+    const [periodOffset, setPeriodOffset] = useState(initialView.periodOffset);
     // Multi-select per field: empty/absent array = no filter on that field.
-    const [fieldFilters, setFieldFilters] = useState<Partial<Record<FilterField, string[]>>>({});
+    const [fieldFilters, setFieldFilters] = useState<Partial<Record<FilterField, string[]>>>(initialView.fieldFilters);
     const [mode, setMode] = useState<ReviewMode>(readModeFromUrl);
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
+    const [dateFrom, setDateFrom] = useState(initialView.dateFrom);
+    const [dateTo, setDateTo] = useState(initialView.dateTo);
     // 'all' = every appointment that hasn't reached Proposal signed, which is the
     // whole point of the view; unqualified/lost narrow it to the hard dispositions.
-    const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>('all');
-    const [sortKey, setSortKey] = useState<SortKey>('recent');
+    const [outcomeFilter, setOutcomeFilter] = useState<OutcomeFilter>(initialView.outcomeFilter);
+    const [sortKey, setSortKey] = useState<SortKey>(initialView.sortKey);
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
@@ -357,37 +439,49 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     // Bookings filter by the CSR who booked; Outcomes by the rep who dispositioned it.
     const activeFlagReasons: readonly string[] = mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS;
 
-    // Mode is owned by the URL: MainLayout's Review/Outcomes top tabs push the
-    // path and dispatch a synthetic popstate; back/forward fires the real one.
-    useEffect(() => {
-        const syncModeFromUrl = () => setMode(readModeFromUrl());
-        window.addEventListener('popstate', syncModeFromUrl);
-        return () => window.removeEventListener('popstate', syncModeFromUrl);
+    // Point every control at a saved view (or, with no query params, the mode's defaults).
+    const applyView = useCallback((view: ViewState) => {
+        setTab(view.tab); setOutcomeFilter(view.outcomeFilter); setFieldFilters(view.fieldFilters);
+        setSortKey(view.sortKey); setPeriodKind(view.periodKind); setPeriodOffset(view.periodOffset);
+        setDateFrom(view.dateFrom); setDateTo(view.dateTo);
     }, []);
 
+    // Mode is owned by the URL: MainLayout's Review/Outcomes top tabs push the
+    // path and dispatch a synthetic popstate; back/forward fires the real one.
+    // Back/forward between two saved views of the SAME mode doesn't retrigger the
+    // mode effect below, so the view is re-read here as well.
+    useEffect(() => {
+        const syncFromUrl = () => {
+            const nextMode = readModeFromUrl();
+            setMode(nextMode);
+            applyView(readViewFromUrl(nextMode));
+        };
+        window.addEventListener('popstate', syncFromUrl);
+        return () => window.removeEventListener('popstate', syncFromUrl);
+    }, [applyView]);
+
     // Normalize a bare /review to its canonical mode path, without adding a history
-    // entry — otherwise Back from Bookings lands on the same view it just left.
+    // entry — otherwise Back from Bookings lands on the same view it just left. The
+    // query string rides along so /review?csr=Ana keeps its filters.
     useEffect(() => {
         if (typeof window === 'undefined') return;
         if (window.location.pathname !== MODE_TO_PATH[mode]) {
-            window.history.replaceState({}, '', MODE_TO_PATH[mode]);
+            window.history.replaceState({}, '', `${MODE_TO_PATH[mode]}${window.location.search}`);
         }
         // Runs once on mount; mode changes arrive via the popstate listener above.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Reset view state when switching between Bookings and Outcomes.
-    // Outcomes opens on YESTERDAY: it reviews appointments that already ran, and
-    // today's aren't finished yet. Bookings stays on today -- it's the live queue
-    // whose badge and new-booking chime depend on showing bookings as they land.
+    // Switching between Bookings and Outcomes reloads the view from the URL: a
+    // bookmarked link arrives with its filters in the query, while the top tabs push
+    // a bare path and so land on the mode's defaults. Review progress (undo stack,
+    // open flag form) is per-mode and always cleared.
     useEffect(() => {
-        setTab('needs_review'); setFieldFilters({}); setFlaggingJobId(null); setActiveJobId(null);
+        applyView(readViewFromUrl(mode));
+        setFlaggingJobId(null); setActiveJobId(null);
         setUndoStack([]); setRedoStack([]);
         setFlagReason((mode === 'outcomes' ? OUTCOME_FLAG_REASONS : FLAG_REASONS)[0]);
-        setOutcomeFilter('all');
-        setPeriodKind('day');
-        setPeriodOffset(mode === 'outcomes' ? -1 : 0);
-    }, [mode]);
+    }, [mode, applyView]);
 
     // Dropdown choices come from the rows actually loaded, so they always reflect the
     // current period rather than offering values that would return nothing. Counted
@@ -558,6 +652,27 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         return () => window.removeEventListener('keydown', onKey, true);
     }, [undo, redo]);
 
+    // The address bar IS the saved view: mirror the controls into the query string on
+    // every change. replaceState, not push — working the filters shouldn't stack up a
+    // history entry per click, and Back should still leave the page.
+    const viewSearch = viewToSearch({ tab, outcomeFilter, fieldFilters, sortKey, periodKind, periodOffset, dateFrom, dateTo }, mode);
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (window.location.search === viewSearch) return;
+        window.history.replaceState({}, '', `${MODE_TO_PATH[mode]}${viewSearch}`);
+    }, [viewSearch, mode]);
+
+    // Saves a trip to the address bar — the link is already live there.
+    const copyViewLink = async () => {
+        const url = `${window.location.origin}${MODE_TO_PATH[mode]}${viewSearch}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            flashNotice('Link copied — bookmark it to reopen this exact view (filters, period and grouping included).');
+        } catch {
+            flashNotice(`Copy failed — bookmark this URL: ${url}`);
+        }
+    };
+
     const tabs: Array<{ key: ReviewTab; label: string; count?: number }> = [
         { key: 'needs_review', label: 'Needs Review', count: needsReviewCount }, { key: 'reviewed', label: 'Reviewed' }, { key: 'flagged', label: 'Flagged' }, { key: 'all', label: 'All' },
     ];
@@ -576,6 +691,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
                         <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="h-7 w-32 px-2 text-xs rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary transition-colors duration-150" />
                         <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="h-7 px-2 text-[11px] font-semibold tabular-nums rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
+                        <button onClick={copyViewLink} title="Copy a link to this exact view — status tab, period, filters and grouping included. Bookmark it to reopen the same list every day." className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150">🔗 Copy link</button>
                         <button onClick={redo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)" className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">Forward ▶</button>
                         <button onClick={() => fetchQueue()} disabled={isRefreshing} title="Refresh review queue" className="h-7 w-7 grid place-items-center rounded-md text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">{isRefreshing ? <LoadingIcon className="h-3.5 w-3.5 text-brand-primary" /> : <RefreshIcon className="h-3.5 w-3.5" />}</button>
                     </div>
