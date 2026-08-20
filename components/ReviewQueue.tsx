@@ -196,6 +196,7 @@ interface ReviewRow {
     grade_coach?: string | null;
     grade_layers?: Record<string, string | null> | null; // per-layer PASS/PARTIAL/FAIL/UNKNOWN
     grade_layer_notes?: Record<string, string | null> | null; // per-layer one-line explanation from the call
+    grade_layer_fixes?: Record<string, string | null> | null; // per-layer "say this next time" script line
     grade_checklist?: number | null;
     grade_checklist_total?: number | null;
     grade_checklist_missed?: string[] | null;
@@ -906,9 +907,13 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => {
                                     const verdict = row.grade_layers![layer] || 'UNKNOWN';
                                     const note = row.grade_layer_notes?.[layer];
+                                    const fix = verdict !== 'PASS' ? (row.grade_layer_fixes?.[layer] || '').trim() : '';
                                     return <div key={layer} className="flex items-start gap-2">
                                         <span className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</span>
-                                        <span className="flex-1 leading-snug">{note || verdict.toLowerCase()}</span>
+                                        <div className="flex-1 leading-snug">
+                                            <div>{note || verdict.toLowerCase()}</div>
+                                            {fix && <div className="mt-0.5 text-tag-green-text italic">Next time: {fix}</div>}
+                                        </div>
                                     </div>;
                                 })}
                             </div>}
