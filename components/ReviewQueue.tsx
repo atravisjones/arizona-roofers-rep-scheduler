@@ -195,6 +195,7 @@ interface ReviewRow {
     grade_flags?: string[] | null;
     grade_coach?: string | null;
     grade_layers?: Record<string, string | null> | null; // per-layer PASS/PARTIAL/FAIL/UNKNOWN
+    grade_layer_notes?: Record<string, string | null> | null; // per-layer one-line explanation from the call
     grade_checklist?: number | null;
     grade_checklist_total?: number | null;
     grade_checklist_missed?: string[] | null;
@@ -860,7 +861,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         : urgency === 'unqualified' ? 'bg-tag-red-bg/60 border-tag-red-border'
                             : urgency === 'lost' ? 'bg-bg-primary border-tag-red-border'
                                 : '';
-                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40 !max-h-96' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
+                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40 !max-h-none' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><h2 className="text-[15px] font-semibold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <>
@@ -901,12 +902,19 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 {formatCallDuration(row.grade_call_seconds) && <span className="text-text-tertiary">call {formatCallDuration(row.grade_call_seconds)}</span>}
                                 {row.grade_checklist != null && <span className="text-text-tertiary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</span>}
                             </div>
-                            {row.grade_layers && <div className="mt-1.5 flex flex-wrap gap-1">
-                                {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => { const verdict = row.grade_layers![layer]; return <span key={layer} className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${LAYER_PILL[verdict || 'UNKNOWN'] || LAYER_PILL.UNKNOWN}`} title={`${layer}: ${verdict || 'UNKNOWN'}`}>{layer} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</span>; })}
+                            {row.grade_layers && <div className="mt-1.5 space-y-1">
+                                {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => {
+                                    const verdict = row.grade_layers![layer] || 'UNKNOWN';
+                                    const note = row.grade_layer_notes?.[layer];
+                                    return <div key={layer} className="flex items-start gap-2">
+                                        <span className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</span>
+                                        <span className="flex-1 leading-snug">{note || verdict.toLowerCase()}</span>
+                                    </div>;
+                                })}
                             </div>}
-                            {row.grade_checklist_missed?.length ? <div className="mt-1 text-text-tertiary">Intake missed: {row.grade_checklist_missed.join(', ')}</div> : null}
-                            {row.grade_flags?.length ? <div className="mt-0.5 text-text-tertiary">Flags: {row.grade_flags.join(' · ')}</div> : null}
-                            <div className="mt-1">{row.grade_coach}</div>
+                            {row.grade_checklist_missed?.length ? <div className="mt-1.5"><b className="text-text-primary">Intake missed:</b> {row.grade_checklist_missed.join(', ')}</div> : null}
+                            {row.grade_flags?.length ? <div className="mt-1"><b className="text-text-primary">Flags:</b> {row.grade_flags.join(' · ')}</div> : null}
+                            <div className="mt-1.5 border-t border-border-secondary/50 pt-1.5"><b className="text-text-primary">Coach note:</b> {row.grade_coach}</div>
                         </div>}
                         {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{activeFlagReasons.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
                     </article>;
