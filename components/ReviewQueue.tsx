@@ -194,6 +194,11 @@ interface ReviewRow {
     grade_dispatch?: boolean | null; // false = SOP says this shouldn't have been booked
     grade_flags?: string[] | null;
     grade_coach?: string | null;
+    grade_layers?: Record<string, string | null> | null; // per-layer PASS/PARTIAL/FAIL/UNKNOWN
+    grade_checklist?: number | null;
+    grade_checklist_total?: number | null;
+    grade_checklist_missed?: string[] | null;
+    grade_call_seconds?: number | null;
 }
 
 // Outcomes urgency. 'overdue' = the appointment already ran but the job still
@@ -225,6 +230,17 @@ const GRADE_CHIP: Record<string, string> = {
     D: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text',
     F: 'border-tag-red-border bg-tag-red-bg text-tag-red-text',
 };
+// Per-layer verdict pill colors for the expanded grade panel.
+const LAYER_PILL: Record<string, string> = {
+    PASS: 'border-tag-green-border bg-tag-green-bg text-tag-green-text',
+    PARTIAL: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text',
+    FAIL: 'border-tag-red-border bg-tag-red-bg text-tag-red-text',
+    UNKNOWN: 'border-border-secondary bg-bg-tertiary text-text-tertiary',
+};
+const formatCallDuration = (seconds?: number | null) =>
+    seconds == null ? null : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+// jsonb loses key order — render the layer pills in the SOP's layer order.
+const LAYER_ORDER = ['Eligibility', 'Availability', 'Expectations', 'Path to sale', 'Presence', 'Decision-makers'];
 
 // Outcomes summary strip: stat segments with a severity dot; active = filled.
 const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on: string }> = [
@@ -879,9 +895,18 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             </div>
                         </div>
                         {activeJobId === row.job_id && row.grade_coach && GRADE_CHIP[row.grade || ''] && <div className="mt-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2 text-[10.5px] text-text-secondary" onClick={event => event.stopPropagation()}>
-                            <b className="text-text-primary">Booking grade {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
-                            {row.grade_flags?.length ? <span className="text-text-tertiary"> · {row.grade_flags.join(' · ')}</span> : null}
-                            <div className="mt-0.5">{row.grade_coach}</div>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <b className="text-text-primary">Booking grade {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
+                                {row.grade_dispatch === false && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">SHOULD NOT HAVE BEEN BOOKED</span>}
+                                {formatCallDuration(row.grade_call_seconds) && <span className="text-text-tertiary">call {formatCallDuration(row.grade_call_seconds)}</span>}
+                                {row.grade_checklist != null && <span className="text-text-tertiary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</span>}
+                            </div>
+                            {row.grade_layers && <div className="mt-1.5 flex flex-wrap gap-1">
+                                {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => { const verdict = row.grade_layers![layer]; return <span key={layer} className={`px-1.5 py-0.5 text-[9px] font-semibold rounded border ${LAYER_PILL[verdict || 'UNKNOWN'] || LAYER_PILL.UNKNOWN}`} title={`${layer}: ${verdict || 'UNKNOWN'}`}>{layer} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</span>; })}
+                            </div>}
+                            {row.grade_checklist_missed?.length ? <div className="mt-1 text-text-tertiary">Intake missed: {row.grade_checklist_missed.join(', ')}</div> : null}
+                            {row.grade_flags?.length ? <div className="mt-0.5 text-text-tertiary">Flags: {row.grade_flags.join(' · ')}</div> : null}
+                            <div className="mt-1">{row.grade_coach}</div>
                         </div>}
                         {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{activeFlagReasons.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
                     </article>;
