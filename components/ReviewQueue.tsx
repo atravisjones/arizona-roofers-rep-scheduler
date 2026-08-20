@@ -187,6 +187,13 @@ interface ReviewRow {
     review_note: string | null;
     reviewed_by: string | null;
     reviewed_at: string | null;
+    // Booking-grader scorecard (left join on booking_grades; null until the
+    // grader has processed the booking — it runs every 5 minutes)
+    grade?: string | null;          // A–F, or NO_CALL / NO_TRANSCRIPT
+    grade_score?: number | null;
+    grade_dispatch?: boolean | null; // false = SOP says this shouldn't have been booked
+    grade_flags?: string[] | null;
+    grade_coach?: string | null;
 }
 
 // Outcomes urgency. 'overdue' = the appointment already ran but the job still
@@ -207,6 +214,17 @@ const getOutcomeUrgency = (row: ReviewRow): OutcomeUrgency => {
     return 'working';
 };
 const getInitials = (name: string) => name.trim().split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase() || '?';
+
+// Booking-grade chip styling (grades written by the marvin booking-grader
+// against the CSR Booking SOP). Unknown grades (NO_CALL / NO_TRANSCRIPT)
+// render as a muted "no call" chip instead.
+const GRADE_CHIP: Record<string, string> = {
+    A: 'border-tag-green-border bg-tag-green-bg text-tag-green-text',
+    B: 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text',
+    C: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text',
+    D: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text',
+    F: 'border-tag-red-border bg-tag-red-bg text-tag-red-text',
+};
 
 // Outcomes summary strip: stat segments with a severity dot; active = filled.
 const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on: string }> = [
@@ -826,7 +844,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         : urgency === 'unqualified' ? 'bg-tag-red-bg/60 border-tag-red-border'
                             : urgency === 'lost' ? 'bg-bg-primary border-tag-red-border'
                                 : '';
-                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
+                    return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40 !max-h-96' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
                                 <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5"><h2 className="text-[15px] font-semibold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>{mode === 'outcomes' ? <>
@@ -835,7 +853,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     {urgency === 'lost' && <span className="px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border border-tag-red-text bg-tag-red-text text-bg-primary">LOST</span>}
                                     {urgency === 'working' && <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-border-secondary bg-bg-tertiary text-text-secondary" title="Roofr job-card status">{row.stage || row.outcome || 'In progress'}</span>}
                                     <span className="text-[11px] tabular-nums text-text-tertiary whitespace-nowrap">Appt {row.appt_date || '—'}</span>
-                                </> : <span className="text-[11px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
+                                </> : <span className="text-[11px] text-text-tertiary whitespace-nowrap"><span className="font-semibold text-brand-primary">{formatRelativeTime(row.appt_booked_at)}</span>{' · '}{formatPhoenixDate(row.appt_booked_at)}</span>}{mode === 'bookings' && row.grade && (GRADE_CHIP[row.grade]
+                                    ? <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border ${GRADE_CHIP[row.grade]} ${row.grade_dispatch === false ? 'ring-1 ring-tag-red-text' : ''}`} title={row.grade_coach || 'Booking grade — click the card for details'}>{row.grade}{row.grade_score != null ? ` · ${row.grade_score}` : ''}{row.grade_dispatch === false ? ' · BAD DISPATCH' : ''}</span>
+                                    : <span className="px-1.5 py-0.5 text-[9px] font-semibold rounded border border-border-secondary text-text-quaternary" title="No gradeable booking call found in CTM">no call</span>)}{isRisky && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text">⚠ {risks.join(', ')}</span>}</div>
                                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
                                     <span className="inline-flex items-center gap-1.5 font-bold text-brand-text-light" title="CSR who booked this appointment">
                                         <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-primary text-[9px] font-bold text-brand-text-on-primary">{getInitials(csrName || '?')}</span>
@@ -858,6 +878,11 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 {row.review_status === 'needs_review' ? <div className="flex flex-wrap justify-end gap-1"><button onClick={() => reviewWithAnimation(row, 'reviewed')} disabled={isBusy} className="px-2.5 py-1 text-[10px] font-bold rounded bg-tag-green-text text-bg-primary hover:opacity-90 disabled:opacity-50 transition">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-text-tertiary text-right"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
                             </div>
                         </div>
+                        {activeJobId === row.job_id && row.grade_coach && GRADE_CHIP[row.grade || ''] && <div className="mt-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2 text-[10.5px] text-text-secondary" onClick={event => event.stopPropagation()}>
+                            <b className="text-text-primary">Booking grade {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
+                            {row.grade_flags?.length ? <span className="text-text-tertiary"> · {row.grade_flags.join(' · ')}</span> : null}
+                            <div className="mt-0.5">{row.grade_coach}</div>
+                        </div>}
                         {flaggingJobId === row.job_id && <div className="mt-1 flex flex-wrap gap-1.5 rounded border border-tag-amber-border bg-tag-amber-bg p-2"><select value={flagReason} onChange={event => setFlagReason(event.target.value)} className="px-1.5 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary">{activeFlagReasons.map(reason => <option key={reason}>{reason}</option>)}</select><input value={flagNote} onChange={event => setFlagNote(event.target.value)} placeholder="Optional note" className="flex-1 min-w-32 px-2 py-1 text-[10px] rounded border border-tag-amber-border bg-bg-primary text-text-primary" /><button onClick={() => reviewWithAnimation(row, 'flagged', flagReason, flagNote.trim() || null)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded bg-tag-amber-text text-bg-primary disabled:opacity-50">{isBusy ? 'Saving…' : 'Save flag'}</button></div>}
                     </article>;
                 })}</div>}
