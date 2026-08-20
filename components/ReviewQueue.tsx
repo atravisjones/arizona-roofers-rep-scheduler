@@ -28,10 +28,12 @@ const readModeFromUrl = (): ReviewMode => (
 );
 type OutcomeFilter = 'all' | 'overdue' | 'unqualified' | 'lost' | 'working';
 type PeriodKind = 'day' | 'week' | 'month' | 'custom';
-// List ordering. 'recent' is the original behaviour (newest booking first, risky
-// ones floated in the bookings needs-review tab); the rest group the list so one
-// CSR / status / technician can be worked through in a block.
-type SortKey = 'recent' | 'csr' | 'stage' | 'tech';
+// List ordering. 'oldest' reads the queue top-to-bottom in booking order, so new
+// bookings append at the BOTTOM and the reviewer's place in the list holds still;
+// 'recent' is newest-first (risky ones float in the bookings needs-review tab
+// either way); the rest group the list so one CSR / status / technician can be
+// worked through in a block.
+type SortKey = 'recent' | 'oldest' | 'csr' | 'stage' | 'tech';
 type FilterField = 'appt_booker' | 'stage' | 'job_owner';
 // The groupable fields are also the filterable ones, so sort and filter stay in
 // lockstep — one entry here yields both a Sort button and a filter dropdown.
@@ -41,6 +43,7 @@ const FILTER_FIELDS: Array<{ key: Exclude<SortKey, 'recent'>; field: FilterField
     { key: 'tech', field: 'job_owner', label: 'Technician' },
 ];
 const SORT_OPTIONS: Array<{ key: SortKey; label: string }> = [
+    { key: 'oldest', label: 'Oldest' },
     { key: 'recent', label: 'Newest' },
     ...FILTER_FIELDS.map(entry => ({ key: entry.key as SortKey, label: entry.label })),
 ];
@@ -64,9 +67,11 @@ interface ViewState {
     dateTo: string;
 }
 // Outcomes defaults to YESTERDAY: the appointments it reviews have already run,
-// and today's aren't finished yet. Bookings stays on today — it's the live queue.
+// and today's aren't finished yet. Bookings stays on today — it's the live queue,
+// and it defaults to OLDEST first so the queue is worked top-down in the order
+// the bookings came in.
 const defaultView = (mode: ReviewMode): ViewState => ({
-    tab: 'needs_review', outcomeFilter: 'all', fieldFilters: {}, sortKey: 'recent',
+    tab: 'needs_review', outcomeFilter: 'all', fieldFilters: {}, sortKey: mode === 'outcomes' ? 'recent' : 'oldest',
     periodKind: 'day', periodOffset: mode === 'outcomes' ? -1 : 0, dateFrom: '', dateTo: '',
 });
 // Short query keys for the dropdowns, so a shared link stays human-readable.
@@ -562,7 +567,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     return aKey.localeCompare(bKey);
                 }
             }
-            return new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
+            const newestFirst = new Date(b.appt_booked_at || 0).getTime() - new Date(a.appt_booked_at || 0).getTime();
+            return sortKey === 'oldest' ? -newestFirst : newestFirst;
         }), [rows, tab, fieldFilters, mode, sortKey, outcomeFilter]);
 
     const sortedReps = useMemo(() => stats ? [...stats.by_rep].sort((a, b) => (Number(b[statsSort]) - Number(a[statsSort])) || a.rep.localeCompare(b.rep)) : [], [stats, statsSort]);
@@ -602,9 +608,16 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         // In the "All" tab the card stays (status change only) — no exit animation.
         if (tab === 'all' || status === 'needs_review') { runReviewAction(row, status, reason, note); return; }
         setExiting(prev => ({ ...prev, [row.job_id]: status === 'flagged' ? 'flagged' : 'reviewed' }));
+        // The clicked card is about to leave the list, taking the last-clicked
+        // highlight with it. Park the ring on the card after it (or before it, at
+        // the bottom) so the reviewer's place in the queue stays visible.
+        const exitingIndex = visibleRows.findIndex(r => r.job_id === row.job_id);
+        const nextActiveJobId = visibleRows[exitingIndex + 1]?.job_id ?? visibleRows[exitingIndex - 1]?.job_id ?? null;
         window.setTimeout(() => {
             setRows(prev => prev.filter(r => r.job_id !== row.job_id)); // optimistic remove → list slides up
             setExiting(prev => { const next = { ...prev }; delete next[row.job_id]; return next; });
+            // Guard: only move the ring if it still sits on the removed card.
+            setActiveJobId(current => (current === row.job_id ? nextActiveJobId : current));
             runReviewAction(row, status, reason, note);
         }, 320);
     };
@@ -677,6 +690,12 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         { key: 'needs_review', label: 'Needs Review', count: needsReviewCount }, { key: 'reviewed', label: 'Reviewed' }, { key: 'flagged', label: 'Flagged' }, { key: 'all', label: 'All' },
     ];
 
+    // The last card acted on this session — kept as a header chip so "which one
+    // did I just review?" survives the card sliding out of the queue.
+    const lastAction = undoStack.length > 0 ? undoStack[undoStack.length - 1] : null;
+    const lastActionFlagged = lastAction?.after.status === 'flagged';
+    const lastActionName = lastAction ? (lastAction.row.customer || lastAction.row.name || lastAction.row.job_id) : '';
+
     return (
         <main className="h-full min-h-0 flex flex-col overflow-hidden">
             <header className="flex-shrink-0 px-1 pb-3 space-y-2 border-b border-border-secondary/60">
@@ -690,6 +709,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
                         <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="h-7 w-32 px-2 text-xs rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary transition-colors duration-150" />
+                        {lastAction && <span title={`Last action: ${lastActionFlagged ? 'flagged' : 'reviewed'} ${lastActionName}`} className={`inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold rounded-md border max-w-[180px] ${lastActionFlagged ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text' : 'border-tag-green-border bg-tag-green-bg text-tag-green-text'}`}>{lastActionFlagged ? '⚑' : '✓'}<span className="truncate">{lastActionName}</span></span>}
                         <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="h-7 px-2 text-[11px] font-semibold tabular-nums rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
                         <button onClick={copyViewLink} title="Copy a link to this exact view — status tab, period, filters and grouping included. Bookmark it to reopen the same list every day." className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150">🔗 Copy link</button>
                         <button onClick={redo} disabled={redoStack.length === 0} title="Redo (Ctrl+Y)" className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">Forward ▶</button>
@@ -737,8 +757,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             />
                         ))}
                         {activeFilterCount > 0 && <button onClick={() => setFieldFilters({})} className="h-7 px-2 rounded-md bg-bg-tertiary text-brand-primary font-semibold tabular-nums hover:opacity-80 transition-opacity duration-150" title="Clear all filters">✕ {visibleRows.length} shown</button>}
-                        <span className="text-text-tertiary ml-1.5">Group:</span>
-                        <select value={sortKey} onChange={event => setSortKey(event.target.value as SortKey)} title="Group the list" className="h-7 px-2 rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary">
+                        <span className="text-text-tertiary ml-1.5">Sort:</span>
+                        <select value={sortKey} onChange={event => setSortKey(event.target.value as SortKey)} title="Sort or group the list" className="h-7 px-2 rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary">
                             {SORT_OPTIONS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
                         </select>
                     </div>
