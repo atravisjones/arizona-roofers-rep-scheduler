@@ -263,9 +263,9 @@ const SOP_TARGET = 'ar-sop';
 const sopUrl = (anchor?: string) => (anchor ? `${SOP_DOC_URL}&h=${anchor}#heading=${anchor}` : SOP_DOC_URL);
 const SOP_LAYER_ANCHOR: Record<string, string> = {
     'Eligibility': 'h.bd56bgmdif6t',      // Layer 1 — Eligibility (What We Book)
-    'Availability': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 1)
-    'Expectations': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 2)
-    'Path to sale': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 3)
+    'Availability': 'h.5fr7w6u5880',      // Gate 1 — Decision-Maker Available
+    'Expectations': 'h.iac4ausxfx2e',     // Gate 2 — Expectations Set
+    'Path to sale': 'h.hvkttg3s5z87',     // Gate 3 — Real Path to Move Forward
     'Presence': 'h.ytuj1ykzw9nb',         // Layer 3 — Presence Policy (Safety)
     'Decision-makers': 'h.aot17cywlfxn',  // Layer 4 — Both Decision-Makers
 };
