@@ -249,7 +249,9 @@ const LAYER_ORDER = ['Eligibility', 'Availability', 'Expectations', 'Path to sal
 // top of the doc. The three dispatch-gate layers all live in the Layer 2
 // section, so they share its anchor. Re-fetch ids via the Docs API if the doc
 // is restructured (paragraphStyle.headingId per heading).
-const SOP_DOC_URL = 'https://docs.google.com/document/d/1tqQu23LjIkPI538hucUa5Ul5UyhXg98Sfr6dG6-TPps/edit';
+// The ?tab= param is REQUIRED: since the Docs tabs rollout, the editor ignores
+// a #heading= fragment unless the tab is named in the URL (this doc: t.0).
+const SOP_DOC_URL = 'https://docs.google.com/document/d/1tqQu23LjIkPI538hucUa5Ul5UyhXg98Sfr6dG6-TPps/edit?tab=t.0';
 const SOP_LAYER_ANCHOR: Record<string, string> = {
     'Eligibility': 'h.bd56bgmdif6t',      // Layer 1 — Eligibility (What We Book)
     'Availability': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 1)
