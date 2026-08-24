@@ -243,6 +243,22 @@ const formatCallDuration = (seconds?: number | null) =>
     seconds == null ? null : seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
 // jsonb loses key order — render the layer pills in the SOP's layer order.
 const LAYER_ORDER = ['Eligibility', 'Availability', 'Expectations', 'Path to sale', 'Presence', 'Decision-makers'];
+// Deep links from the grade panel into the CSR Booking SOP Google Doc (the
+// grading rubric). Google heading anchors are stable ids that survive edits as
+// long as the heading itself isn't deleted; an unknown anchor just opens the
+// top of the doc. The three dispatch-gate layers all live in the Layer 2
+// section, so they share its anchor. Re-fetch ids via the Docs API if the doc
+// is restructured (paragraphStyle.headingId per heading).
+const SOP_DOC_URL = 'https://docs.google.com/document/d/1tqQu23LjIkPI538hucUa5Ul5UyhXg98Sfr6dG6-TPps/edit';
+const SOP_LAYER_ANCHOR: Record<string, string> = {
+    'Eligibility': 'h.bd56bgmdif6t',      // Layer 1 — Eligibility (What We Book)
+    'Availability': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 1)
+    'Expectations': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 2)
+    'Path to sale': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 3)
+    'Presence': 'h.ytuj1ykzw9nb',         // Layer 3 — Presence Policy (Safety)
+    'Decision-makers': 'h.aot17cywlfxn',  // Layer 4 — Both Decision-Makers
+};
+const SOP_INTAKE_ANCHOR = 'h.w9k85rh2qa02'; // Intake Checklist — Collect ALL of These
 
 // Outcomes summary strip: stat segments with a severity dot; active = filled.
 const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on: string }> = [
@@ -898,10 +914,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         </div>
                         {activeJobId === row.job_id && row.grade_coach && GRADE_CHIP[row.grade || ''] && <div className="mt-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2 text-[10.5px] text-text-secondary" onClick={event => event.stopPropagation()}>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <b className="text-text-primary">Booking grade {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
+                                <b className="text-text-primary"><a href={SOP_DOC_URL} target="_blank" rel="noreferrer" title="Open the CSR Booking SOP (the grading rubric)" className="hover:underline hover:text-brand-primary">Booking grade</a> {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
                                 {row.grade_dispatch === false && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">SHOULD NOT HAVE BEEN BOOKED</span>}
                                 {formatCallDuration(row.grade_call_seconds) && <span className="text-text-tertiary">call {formatCallDuration(row.grade_call_seconds)}</span>}
-                                {row.grade_checklist != null && <span className="text-text-tertiary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</span>}
+                                {row.grade_checklist != null && <a href={`${SOP_DOC_URL}#heading=${SOP_INTAKE_ANCHOR}`} target="_blank" rel="noreferrer" title="Open the SOP intake checklist" className="text-text-tertiary hover:underline hover:text-brand-primary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</a>}
                             </div>
                             {row.grade_layers && <div className="mt-1.5 space-y-1">
                                 {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => {
@@ -909,7 +925,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     const note = row.grade_layer_notes?.[layer];
                                     const fix = verdict !== 'PASS' ? (row.grade_layer_fixes?.[layer] || '').trim() : '';
                                     return <div key={layer} className="flex items-start gap-2">
-                                        <span className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</span>
+                                        <a href={`${SOP_DOC_URL}${SOP_LAYER_ANCHOR[layer] ? `#heading=${SOP_LAYER_ANCHOR[layer]}` : ''}`} target="_blank" rel="noreferrer" title={`Open the ${layer} section of the CSR Booking SOP`} className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center hover:underline hover:opacity-80 transition ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</a>
                                         <div className="flex-1 leading-snug">
                                             <div>{note || verdict.toLowerCase()}</div>
                                             {fix && <div className="mt-0.5 text-tag-green-text italic">Next time: {fix}</div>}
@@ -917,7 +933,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     </div>;
                                 })}
                             </div>}
-                            {row.grade_checklist_missed?.length ? <div className="mt-1.5"><b className="text-text-primary">Intake missed:</b> {row.grade_checklist_missed.join(', ')}</div> : null}
+                            {row.grade_checklist_missed?.length ? <div className="mt-1.5"><b className="text-text-primary"><a href={`${SOP_DOC_URL}#heading=${SOP_INTAKE_ANCHOR}`} target="_blank" rel="noreferrer" title="Open the SOP intake checklist" className="hover:underline hover:text-brand-primary">Intake missed:</a></b> {row.grade_checklist_missed.join(', ')}</div> : null}
                             {row.grade_flags?.length ? <div className="mt-1"><b className="text-text-primary">Flags:</b> {row.grade_flags.join(' · ')}</div> : null}
                             <div className="mt-1.5 border-t border-border-secondary/50 pt-1.5"><b className="text-text-primary">Coach note:</b> {row.grade_coach}</div>
                         </div>}
