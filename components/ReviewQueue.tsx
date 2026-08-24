@@ -252,6 +252,15 @@ const LAYER_ORDER = ['Eligibility', 'Availability', 'Expectations', 'Path to sal
 // The ?tab= param is REQUIRED: since the Docs tabs rollout, the editor ignores
 // a #heading= fragment unless the tab is named in the URL (this doc: t.0).
 const SOP_DOC_URL = 'https://docs.google.com/document/d/1tqQu23LjIkPI538hucUa5Ul5UyhXg98Sfr6dG6-TPps/edit?tab=t.0';
+// Every SOP link shares one NAMED browser tab, so clicking another section
+// re-navigates that tab instead of stacking new ones. Two load-bearing rules:
+// (1) no rel="noopener"/"noreferrer" on these links — noopener discards the
+// window name, which brings back a fresh tab per click; (2) the &h= param
+// makes each section's URL unique, because two URLs differing only in the
+// #fragment are a same-document navigation the Docs editor ignores (it only
+// reads the heading fragment at load time).
+const SOP_TARGET = 'ar-sop';
+const sopUrl = (anchor?: string) => (anchor ? `${SOP_DOC_URL}&h=${anchor}#heading=${anchor}` : SOP_DOC_URL);
 const SOP_LAYER_ANCHOR: Record<string, string> = {
     'Eligibility': 'h.bd56bgmdif6t',      // Layer 1 — Eligibility (What We Book)
     'Availability': 'h.ie0dclc6s0l2',     // Layer 2 — The Dispatch Gate (gate 1)
@@ -916,10 +925,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         </div>
                         {activeJobId === row.job_id && row.grade_coach && GRADE_CHIP[row.grade || ''] && <div className="mt-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2 text-[10.5px] text-text-secondary" onClick={event => event.stopPropagation()}>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                <b className="text-text-primary"><a href={SOP_DOC_URL} target="_blank" rel="noreferrer" title="Open the CSR Booking SOP (the grading rubric)" className="hover:underline hover:text-brand-primary">Booking grade</a> {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
+                                <b className="text-text-primary"><a href={sopUrl()} target={SOP_TARGET} title="Open the CSR Booking SOP (the grading rubric)" className="hover:underline hover:text-brand-primary">Booking grade</a> {row.grade}{row.grade_score != null ? ` (${row.grade_score})` : ''}</b>
                                 {row.grade_dispatch === false && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-red-border bg-tag-red-bg text-tag-red-text">SHOULD NOT HAVE BEEN BOOKED</span>}
                                 {formatCallDuration(row.grade_call_seconds) && <span className="text-text-tertiary">call {formatCallDuration(row.grade_call_seconds)}</span>}
-                                {row.grade_checklist != null && <a href={`${SOP_DOC_URL}#heading=${SOP_INTAKE_ANCHOR}`} target="_blank" rel="noreferrer" title="Open the SOP intake checklist" className="text-text-tertiary hover:underline hover:text-brand-primary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</a>}
+                                {row.grade_checklist != null && <a href={sopUrl(SOP_INTAKE_ANCHOR)} target={SOP_TARGET} title="Open the SOP intake checklist" className="text-text-tertiary hover:underline hover:text-brand-primary">intake {row.grade_checklist}/{row.grade_checklist_total ?? 15}</a>}
                             </div>
                             {row.grade_layers && <div className="mt-1.5 space-y-1">
                                 {LAYER_ORDER.filter(layer => row.grade_layers && layer in row.grade_layers).map(layer => {
@@ -927,7 +936,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     const note = row.grade_layer_notes?.[layer];
                                     const fix = verdict !== 'PASS' ? (row.grade_layer_fixes?.[layer] || '').trim() : '';
                                     return <div key={layer} className="flex items-start gap-2">
-                                        <a href={`${SOP_DOC_URL}${SOP_LAYER_ANCHOR[layer] ? `#heading=${SOP_LAYER_ANCHOR[layer]}` : ''}`} target="_blank" rel="noreferrer" title={`Open the ${layer} section of the CSR Booking SOP`} className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center hover:underline hover:opacity-80 transition ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</a>
+                                        <a href={sopUrl(SOP_LAYER_ANCHOR[layer])} target={SOP_TARGET} title={`Open the ${layer} section of the CSR Booking SOP`} className={`shrink-0 w-32 px-1.5 py-0.5 text-[9px] font-bold rounded border text-center hover:underline hover:opacity-80 transition ${LAYER_PILL[verdict] || LAYER_PILL.UNKNOWN}`}>{layer.toUpperCase()} {verdict === 'PASS' ? '✓' : verdict === 'FAIL' ? '✗' : verdict === 'PARTIAL' ? '~' : '?'}</a>
                                         <div className="flex-1 leading-snug">
                                             <div>{note || verdict.toLowerCase()}</div>
                                             {fix && <div className="mt-0.5 text-tag-green-text italic">Next time: {fix}</div>}
@@ -935,7 +944,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     </div>;
                                 })}
                             </div>}
-                            {row.grade_checklist_missed?.length ? <div className="mt-1.5"><b className="text-text-primary"><a href={`${SOP_DOC_URL}#heading=${SOP_INTAKE_ANCHOR}`} target="_blank" rel="noreferrer" title="Open the SOP intake checklist" className="hover:underline hover:text-brand-primary">Intake missed:</a></b> {row.grade_checklist_missed.join(', ')}</div> : null}
+                            {row.grade_checklist_missed?.length ? <div className="mt-1.5"><b className="text-text-primary"><a href={sopUrl(SOP_INTAKE_ANCHOR)} target={SOP_TARGET} title="Open the SOP intake checklist" className="hover:underline hover:text-brand-primary">Intake missed:</a></b> {row.grade_checklist_missed.join(', ')}</div> : null}
                             {row.grade_flags?.length ? <div className="mt-1"><b className="text-text-primary">Flags:</b> {row.grade_flags.join(' · ')}</div> : null}
                             <div className="mt-1.5 border-t border-border-secondary/50 pt-1.5"><b className="text-text-primary">Coach note:</b> {row.grade_coach}</div>
                         </div>}
