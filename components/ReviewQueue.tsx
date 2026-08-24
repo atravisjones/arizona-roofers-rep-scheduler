@@ -384,8 +384,12 @@ const FilterDropdown: React.FC<{
 };
 
 // Quiet utility links — the review actions below them are the primary controls.
-const LinkPill: React.FC<{ href: string; label: string }> = ({ href, label }) => (
-    <a href={href} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded border border-transparent text-text-tertiary hover:border-border-secondary hover:text-brand-primary hover:bg-bg-tertiary transition">
+// An optional named target shares ONE browser tab across clicks (like the SOP
+// links) — rel="noreferrer" must be dropped for those, since its implied
+// noopener discards the window name and forces a fresh tab per click.
+// Middle/Ctrl-click still opens a separate tab either way.
+const LinkPill: React.FC<{ href: string; label: string; target?: string }> = ({ href, label, target }) => (
+    <a href={href} target={target || '_blank'} rel={target ? undefined : 'noreferrer'} onClick={event => event.stopPropagation()} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold rounded border border-transparent text-text-tertiary hover:border-border-secondary hover:text-brand-primary hover:bg-bg-tertiary transition">
         <ExternalLinkIcon className="h-3 w-3" />{label}
     </a>
 );
@@ -919,7 +923,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     : <span>{row.phone}</span>)}{row.value != null && <span className="font-semibold tabular-nums text-text-primary">${row.value.toLocaleString()}</span>}{propertyFields.map(([label, value]) => <span key={label} className="text-[10px] text-text-tertiary">{label}: <span className="font-semibold text-text-secondary">{String(value)}</span></span>)}</div>
                             </div>
                             <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                                <div className="flex flex-wrap justify-end gap-1">{row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" />}{phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}{row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}</div>
+                                <div className="flex flex-wrap justify-end gap-1">{row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" target="ar-roofr" />}{phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}{row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}</div>
                                 {row.review_status === 'needs_review' ? <div className="flex flex-wrap justify-end gap-1"><button onClick={() => reviewWithAnimation(row, 'reviewed')} disabled={isBusy} className="px-2.5 py-1 text-[10px] font-bold rounded bg-tag-green-text text-bg-primary hover:opacity-90 disabled:opacity-50 transition">{isBusy ? 'Saving…' : 'Mark Reviewed'}</button><button onClick={() => { setFlaggingJobId(flaggingJobId === row.job_id ? null : row.job_id); setFlagNote(''); }} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text disabled:opacity-50">Flag</button></div> : <div className="flex flex-wrap items-center justify-end gap-2 text-[10px] text-text-tertiary text-right"><span>{row.review_status === 'flagged' ? 'Flagged' : 'Reviewed'}{row.reviewed_by ? ` by ${row.reviewed_by}` : ''}{row.reviewed_at ? ` · ${formatPhoenixDate(row.reviewed_at)}` : ''}{row.flag_reason ? ` · ${row.flag_reason}` : ''}{row.review_note ? `: ${row.review_note}` : ''}</span><button onClick={() => runReviewAction(row, 'needs_review')} disabled={isBusy} className="px-2 py-1 font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Reopen</button></div>}
                             </div>
                         </div>
