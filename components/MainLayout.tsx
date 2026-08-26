@@ -704,7 +704,7 @@ const MainLayout: React.FC = () => {
     );
   };
 
-  // Shared between the full planner header and the compact review header.
+  // Rendered in the compact top bar, which is identical on every view.
   const navTabs = (
     <div className="flex items-center gap-1">
       <button
@@ -777,25 +777,22 @@ const MainLayout: React.FC = () => {
     <div className="h-screen flex flex-col bg-bg-secondary text-text-primary font-sans overflow-hidden">
       {/* Two-Level Header */}
       <header className="bg-bg-primary border-b border-border-primary flex-shrink-0 z-30 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
-        {showReviewQueue ? (
-          /* Review / Outcomes: the planner chrome (paste/load/auto-assign, alerts,
-             reports, file/cloud state, planner undo, day tabs) does nothing on
-             these pages — show one compact bar: brand, tabs, settings. */
-          <div className="h-12 px-4 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
-              {navTabs}
-            </div>
-            {settingsControl}
-          </div>
-        ) : (<>
-        {/* Top Bar: Reports, Alerts, Data Controls */}
-        <div className="h-10 px-4 flex items-center justify-between border-b border-border-secondary/50 bg-bg-secondary/30">
-          {/* Left: Branding + Paste/Auto Assign */}
-          <div className="flex items-center gap-3">
+        {/* Compact top bar — identical on every view: brand, tabs, settings. */}
+        <div className="h-12 px-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <h1 className="text-sm font-bold text-text-primary tracking-tight">Rep Route Planner</h1>
+            {navTabs}
+          </div>
+          {settingsControl}
+        </div>
 
-            {/* Paste Jobs & Auto Assign Buttons */}
+        {showPlanner && (
+        /* Planner-only utility bar: paste/load/auto-assign, history, alerts,
+           reports, file/cloud state, day tabs. flex-wrap so narrow windows
+           wrap instead of overflowing. */
+        <div className="min-h-10 px-4 py-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border-secondary/50 bg-bg-secondary/30">
+          {/* Left: Paste/Load/Auto Assign + History */}
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setIsPasteModalOpen(true)}
@@ -826,6 +823,40 @@ const MainLayout: React.FC = () => {
                 <span>{context.isAutoAssigning ? 'Assigning...' : 'Auto Assign'}</span>
               </button>
             </div>
+
+            <div className="flex items-center gap-0.5 rounded-md border border-border-secondary bg-bg-secondary p-0.5">
+              <button onClick={context.handleUndo} disabled={!context.canUndo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Undo (Ctrl+Z)">
+                <UndoIcon className="h-3.5 w-3.5" />
+              </button>
+              <button onClick={context.handleRedo} disabled={!context.canRedo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Redo (Ctrl+Y)">
+                <RedoIcon className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={context.handleRefreshAvailability}
+                disabled={context.isLoadingReps}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-brand-primary disabled:opacity-30"
+                title="Resync availability from Google Sheet"
+              >
+                {context.isLoadingReps ? <LoadingIcon /> : <RefreshIcon className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            <button
+              onClick={() => setIsChangeLogOpen(true)}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition-colors duration-150 ${context.changeLog.length > 0
+                ? 'border-brand-primary bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20'
+                : 'border-border-secondary bg-bg-primary text-text-tertiary hover:bg-bg-tertiary'
+                }`}
+              title="View Change Log"
+            >
+              <HistoryIcon className="h-3.5 w-3.5" />
+              <span>Changes</span>
+              {context.changeLog.length > 0 && (
+                <span className="rounded-full bg-brand-primary px-1.5 py-0.5 text-[9px] font-bold tabular-nums text-brand-text-on-primary">
+                  {context.changeLog.length}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* Center: Reports & Alerts */}
@@ -903,7 +934,7 @@ const MainLayout: React.FC = () => {
             </div>
           </div>
 
-          {/* Right: Data Controls & Settings */}
+          {/* Right: Data Controls & Date Navigation */}
           <div className="flex items-center gap-1">
             <button onClick={context.handleSaveStateToFile} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border-secondary bg-bg-primary text-text-quaternary transition-colors duration-150 hover:border-brand-primary hover:bg-bg-tertiary hover:text-brand-primary" title="Save to File">
               <SaveIcon className="h-3.5 w-3.5 text-text-quaternary hover:text-brand-primary" />
@@ -926,58 +957,10 @@ const MainLayout: React.FC = () => {
               </span>
             ) : null}
             <div className="w-px h-4 bg-border-secondary mx-1"></div>
-            {settingsControl}
-          </div>
-        </div>
-
-        {/* Bottom Bar: History, Announcements, Calendar */}
-        <div className="h-12 px-4 flex items-center justify-between">
-          {/* Left: History Controls & Changes */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-0.5 rounded-md border border-border-secondary bg-bg-secondary p-0.5">
-              <button onClick={context.handleUndo} disabled={!context.canUndo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Undo (Ctrl+Z)">
-                <UndoIcon className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={context.handleRedo} disabled={!context.canRedo} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-text-primary disabled:opacity-30" title="Redo (Ctrl+Y)">
-                <RedoIcon className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={context.handleRefreshAvailability}
-                disabled={context.isLoadingReps}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors duration-150 hover:bg-bg-primary hover:text-brand-primary disabled:opacity-30"
-                title="Resync availability from Google Sheet"
-              >
-                {context.isLoadingReps ? <LoadingIcon /> : <RefreshIcon className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-
-            <button
-              onClick={() => setIsChangeLogOpen(true)}
-              className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-semibold transition-colors duration-150 ${context.changeLog.length > 0
-                ? 'border-brand-primary bg-brand-bg-light text-brand-text-light hover:bg-brand-primary/20'
-                : 'border-border-secondary bg-bg-primary text-text-tertiary hover:bg-bg-tertiary'
-                }`}
-              title="View Change Log"
-            >
-              <HistoryIcon className="h-3.5 w-3.5" />
-              <span>Changes</span>
-              {context.changeLog.length > 0 && (
-                <span className="rounded-full bg-brand-primary px-1.5 py-0.5 text-[9px] font-bold tabular-nums text-brand-text-on-primary">
-                  {context.changeLog.length}
-                </span>
-              )}
-            </button>
-
-            {/* Tabs: Planner / Today Board / Review / Outcomes — each its own URL */}
-            {navTabs}
-          </div>
-
-          {/* Right: Date Navigation */}
-          <div className="flex items-center">
             <DayTabs />
           </div>
         </div>
-        </>)}
+        )}
         <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
       </header>
 
