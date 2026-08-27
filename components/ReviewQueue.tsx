@@ -1185,7 +1185,12 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                                 {ccEligible
                                                     ? <p className="text-[10.5px] font-semibold text-tag-green-text">✓ Over {CC_CHECKOFF_PCT}% — OK to check off “Sales - Production Report” on the Roofr job card (by hand — nothing is changed automatically).</p>
                                                     : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>}
-                                                {(cc.missing?.length ?? 0) > 0 && <p className="text-[10.5px] text-text-secondary">Missing: {cc.missing!.join(' · ')}</p>}
+                                                {(cc.missing?.length ?? 0) > 0 && <ul className="space-y-1 pt-0.5">
+                                                    {cc.missing!.map(task => <li key={task} className="flex items-center gap-2 text-[11px] text-text-secondary">
+                                                        <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />
+                                                        <span>{task}</span>
+                                                    </li>)}
+                                                </ul>}
                                             </div>}
                                 </div>}
                                 {(rescueHistory[row.job_id]?.length ?? 0) > 0 && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
