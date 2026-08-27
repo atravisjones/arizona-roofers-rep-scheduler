@@ -1182,9 +1182,11 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                                     {cc.last_task_at && <span className="text-text-quaternary">last activity {formatRelativeTime(cc.last_task_at)}</span>}
                                                     {cc.project_url && <a href={cc.project_url} target="_blank" rel="noreferrer" className="font-semibold text-brand-primary hover:underline">Open in CompanyCam ↗</a>}
                                                 </div>
-                                                {ccEligible
+                                                {/* At 100% the chip already says it all — the check-off hint only earns
+                                                    its space while the report is partial. */}
+                                                {!cc.complete && (ccEligible
                                                     ? <p className="text-[10.5px] font-semibold text-tag-green-text">✓ Over {CC_CHECKOFF_PCT}% — OK to check off “Sales - Production Report” on the Roofr job card (by hand — nothing is changed automatically).</p>
-                                                    : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>}
+                                                    : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>)}
                                                 {(cc.missing?.length ?? 0) > 0 && <ul className="space-y-1 pt-0.5">
                                                     {cc.missing!.map(task => <li key={task} className="flex items-center gap-2 text-[11px] text-text-secondary">
                                                         <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />
