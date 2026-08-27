@@ -337,6 +337,12 @@ const daysChipClass = (days: number) => days >= 14
     : days >= 7 ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
         : 'border-border-secondary bg-bg-tertiary text-text-secondary';
 
+// Read-only CompanyCam production-report status (from /api/companycam).
+// ≥50% complete = Bradley's bar for hand-checking "Sales - Production Report"
+// in Roofr — the app only surfaces it, it never writes anywhere.
+const CC_CHECKOFF_PCT = 50;
+interface CcReport { found: boolean; pct?: number; done?: number; total?: number; complete?: boolean; missing?: string[]; project_url?: string; last_task_at?: string | null; reason?: string; }
+
 interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
 interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
 interface RepStat { rep: string; flagged_day: number; flagged_week: number; flagged_month: number; reviewed_day: number; reviewed_week: number; reviewed_month: number; }
@@ -489,6 +495,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [rescueNote, setRescueNote] = useState('');
     // Per-job action trail, fetched lazily when a rescue card is expanded.
     const [rescueHistory, setRescueHistory] = useState<Record<string, Array<{ action: string; note: string | null; actor: string | null; created_at: string }>>>({});
+    // CompanyCam production-report status per job (null = fetch in flight).
+    const [ccReports, setCcReports] = useState<Record<string, CcReport | null>>({});
     const priorNeedsIdsRef = useRef<Set<string> | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
     // Monotonic fetch id — a response only lands if no newer fetch has started,
@@ -811,6 +819,21 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         return () => { cancelled = true; };
     }, [mode, activeJobId, rescueHistory]);
 
+    // Expanded rescue card also checks CompanyCam: how far along is the rep's
+    // production report? Fetched once per job per visit, cached in state.
+    useEffect(() => {
+        if (mode !== 'rescue' || !activeJobId || ccReports[activeJobId] !== undefined) return;
+        const row = rows.find(r => r.job_id === activeJobId);
+        if (!row?.address?.trim()) return;
+        let cancelled = false;
+        setCcReports(prev => ({ ...prev, [activeJobId]: null }));
+        fetch(`/api/companycam?address=${encodeURIComponent(row.address)}`)
+            .then(resp => resp.json())
+            .then((data: CcReport) => { if (!cancelled) setCcReports(prev => ({ ...prev, [activeJobId]: data })); })
+            .catch(() => { if (!cancelled) setCcReports(prev => ({ ...prev, [activeJobId]: { found: false, reason: 'fetch_failed' } })); });
+        return () => { cancelled = true; };
+    }, [mode, activeJobId, rows, ccReports]);
+
     const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
         setFlaggingJobId(null);
         setFlagNote('');
@@ -1080,6 +1103,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         const lockedByOther = claimActive && !mine;
                         const stageActions = RESCUE_ACTIONS.filter(a => !a.stages || a.stages.includes(stageKey));
                         const primary = stageActions.find(a => a.primary);
+                        const cc = ccReports[row.job_id];
+                        const ccEligible = !!cc?.found && (cc.complete || (cc.pct ?? 0) >= CC_CHECKOFF_PCT);
                         return <React.Fragment key={row.job_id}>
                         {showTouchedDivider && <div className="flex items-center gap-2 mt-2 mb-2">
                             <span className="h-px flex-1 bg-tag-green-border/60" />
@@ -1095,6 +1120,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                         <span className={`px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border ${stageInfo?.chip || 'border-border-secondary bg-bg-tertiary text-text-secondary'}`} title="Roofr job stage">{stageKey || 'Unknown stage'}</span>
                                         <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border tabular-nums ${daysChipClass(days)}`} title="Days the job has sat in this stage">{days}d stuck</span>
                                         {touched && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text" title={`${RESCUE_ACTION_LABEL[row.last_action || ''] || row.last_action} by ${row.last_action_by}`}>✓ Contacted today</span>}
+                                        {cc?.found && <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border tabular-nums ${ccEligible ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'}`} title={`CompanyCam production report: ${cc.done}/${cc.total} tasks done${ccEligible ? ' — over 50%, OK to check off "Sales - Production Report" in Roofr' : ' — under 50%, keep chasing the rep'}`}>📸 Report {cc.complete ? '✓ 100' : cc.pct}%</span>}
                                         {row.value != null && <span className="text-[11.5px] font-semibold tabular-nums text-text-primary">${row.value.toLocaleString()}</span>}
                                     </div>
                                     <div className="text-[12px] font-semibold text-brand-text-light">{stageInfo?.task || 'Work this job forward'}</div>
@@ -1142,6 +1168,23 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                         className={`px-2 py-1 text-[10px] font-bold rounded transition disabled:opacity-50 ${a.primary ? 'bg-tag-green-text text-bg-primary hover:opacity-90' : 'border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{a.label}</button>)}
                                     <input value={rescueNote} onChange={event => setRescueNote(event.target.value)} placeholder="Optional note — what happened on the call?" className="flex-1 min-w-40 px-2 py-1 text-[10px] rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
                                 </div>
+                                {cc !== undefined && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
+                                    <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">📸 Production report — CompanyCam (read-only)</p>
+                                    {cc === null ? <p className="text-[10.5px] text-text-tertiary">Checking CompanyCam…</p>
+                                        : !cc.found ? <p className="text-[10.5px] text-text-tertiary">{cc.reason === 'no_report_checklist' ? <>Project found, but no production-report checklist on it.{cc.project_url && <> <a href={cc.project_url} target="_blank" rel="noreferrer" className="font-semibold text-brand-primary hover:underline">Open project ↗</a></>}</> : 'No CompanyCam project matched this address.'}</p>
+                                            : <div className="space-y-1">
+                                                <div className="flex flex-wrap items-center gap-2 text-[10.5px]">
+                                                    <span className="h-1.5 w-28 rounded-full bg-bg-quaternary overflow-hidden"><span className={`block h-full rounded-full ${ccEligible ? 'bg-tag-green-text' : 'bg-tag-amber-text'}`} style={{ width: `${cc.pct ?? 0}%` }} /></span>
+                                                    <b className="tabular-nums text-text-primary">{cc.done}/{cc.total} tasks · {cc.pct}%</b>
+                                                    {cc.last_task_at && <span className="text-text-quaternary">last activity {formatRelativeTime(cc.last_task_at)}</span>}
+                                                    {cc.project_url && <a href={cc.project_url} target="_blank" rel="noreferrer" className="font-semibold text-brand-primary hover:underline">Open in CompanyCam ↗</a>}
+                                                </div>
+                                                {ccEligible
+                                                    ? <p className="text-[10.5px] font-semibold text-tag-green-text">✓ Over {CC_CHECKOFF_PCT}% — OK to check off “Sales - Production Report” on the Roofr job card (by hand — nothing is changed automatically).</p>
+                                                    : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>}
+                                                {(cc.missing?.length ?? 0) > 0 && <p className="text-[10.5px] text-text-secondary">Missing: {cc.missing!.join(' · ')}</p>}
+                                            </div>}
+                                </div>}
                                 {(rescueHistory[row.job_id]?.length ?? 0) > 0 && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
                                     <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">History — every touch on this job</p>
                                     {rescueHistory[row.job_id]!.map((entry, index) => <div key={index} className="flex items-start gap-2 text-[10.5px] text-text-secondary">
