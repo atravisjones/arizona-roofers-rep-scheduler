@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLinkIcon, LoadingIcon, RefreshIcon } from './icons';
 import { supabase } from '../services/supabaseClient';
 import { SEG_WRAP, SEG_BTN, SEG_ON, SEG_OFF } from './ui';
+import { getAuthUser } from './AuthGate';
 
 const REVIEWER_STORAGE_KEY = 'reviewQueue.reviewer';
 const POLL_MS = 60000;
@@ -448,7 +449,10 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const initialView = useMemo(() => readViewFromUrl(readModeFromUrl()), []);
     const [rows, setRows] = useState<ReviewRow[]>([]);
     const [tab, setTab] = useState<ReviewTab>(initialView.tab);
-    const [reviewer, setReviewer] = useState(() => localStorage.getItem(REVIEWER_STORAGE_KEY) || '');
+    // Signed in = identity comes from the Google account and can't be edited;
+    // the free-text input only survives as a fallback when auth is off.
+    const authUser = useMemo(() => getAuthUser(), []);
+    const [reviewer, setReviewer] = useState(() => (getAuthUser()?.name) || localStorage.getItem(REVIEWER_STORAGE_KEY) || '');
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -478,6 +482,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
     const [rescueNote, setRescueNote] = useState('');
+    // Per-job action trail, fetched lazily when a rescue card is expanded.
+    const [rescueHistory, setRescueHistory] = useState<Record<string, Array<{ action: string; note: string | null; actor: string | null; created_at: string }>>>({});
     const priorNeedsIdsRef = useRef<Set<string> | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
     // Monotonic fetch id — a response only lands if no newer fetch has started,
@@ -778,11 +784,23 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             if (rpcError) throw new Error(rpcError.message);
             if (!(data as { ok?: boolean } | null)?.ok) throw new Error('Action was not accepted');
             setRescueNote('');
+            // Drop the cached trail so the expanded card refetches with this action.
+            setRescueHistory(prev => { const next = { ...prev }; delete next[row.job_id]; return next; });
             flashNotice(`Logged: ${RESCUE_ACTION_LABEL[action] || action} — ${row.customer || row.name || row.job_id}`);
         } catch (err) {
             flashNotice(err instanceof Error ? err.message : 'Action failed');
         } finally { setBusyJobId(null); fetchQueue(); }
     };
+
+    // Expanded rescue card loads the job's full action trail (who did what, when).
+    useEffect(() => {
+        if (mode !== 'rescue' || !activeJobId || rescueHistory[activeJobId]) return;
+        let cancelled = false;
+        supabase.rpc('get_rescue_history', { p_job_id: activeJobId }).then(({ data }) => {
+            if (!cancelled) setRescueHistory(prev => ({ ...prev, [activeJobId]: Array.isArray(data) ? data : [] }));
+        });
+        return () => { cancelled = true; };
+    }, [mode, activeJobId, rescueHistory]);
 
     const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
         setFlaggingJobId(null);
@@ -897,8 +915,16 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 : `Bookings made ${rangeText}`}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
-                        <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="h-7 w-32 px-2 text-xs rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary transition-colors duration-150" />
+                        {authUser ? (
+                            <span title={`Every review, flag, claim and rescue action is logged as ${authUser.email}`}
+                                className="inline-flex items-center gap-1.5 h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-tertiary/60 text-text-primary">
+                                <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-primary text-[9px] font-bold text-brand-text-on-primary">{getInitials(authUser.name || authUser.email)}</span>
+                                <span className="max-w-[140px] truncate">{authUser.name || authUser.email}</span>
+                            </span>
+                        ) : <>
+                            <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
+                            <input id="reviewer-name" value={reviewer} onChange={event => setReviewerPersisted(event.target.value)} placeholder="Your name" className="h-7 w-32 px-2 text-xs rounded-md border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary transition-colors duration-150" />
+                        </>}
                         {lastAction && <span title={`Last action: ${lastActionFlagged ? 'flagged' : 'reviewed'} ${lastActionName}`} className={`inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold rounded-md border max-w-[180px] ${lastActionFlagged ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text' : 'border-tag-green-border bg-tag-green-bg text-tag-green-text'}`}>{lastActionFlagged ? '⚑' : '✓'}<span className="truncate">{lastActionName}</span></span>}
                         <button onClick={undo} disabled={undoStack.length === 0} title="Undo last review (Ctrl+Z)" className="h-7 px-2 text-[11px] font-semibold tabular-nums rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary disabled:opacity-40 transition-colors duration-150">◀ Back{undoStack.length > 0 ? ` (${undoStack.length})` : ''}</button>
                         <button onClick={copyViewLink} title="Copy a link to this exact view — status tab, period, filters and grouping included. Bookmark it to reopen the same list every day." className="h-7 px-2 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary transition-colors duration-150">🔗 Copy link</button>
@@ -1090,10 +1116,21 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     {primary && !lockedByOther && <button onClick={() => logRescue(row, primary.key, rescueNote.trim() || null)} disabled={isBusy} className="px-2.5 py-1 text-[10px] font-bold rounded bg-tag-green-text text-bg-primary hover:opacity-90 disabled:opacity-50 transition">{isBusy ? 'Saving…' : primary.label}</button>}
                                 </div>
                             </div>
-                            {activeJobId === row.job_id && <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2" onClick={event => event.stopPropagation()}>
-                                {stageActions.map(a => <button key={a.key} onClick={() => logRescue(row, a.key, rescueNote.trim() || null)} disabled={isBusy || lockedByOther}
-                                    className={`px-2 py-1 text-[10px] font-bold rounded transition disabled:opacity-50 ${a.primary ? 'bg-tag-green-text text-bg-primary hover:opacity-90' : 'border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{a.label}</button>)}
-                                <input value={rescueNote} onChange={event => setRescueNote(event.target.value)} placeholder="Optional note — what happened on the call?" className="flex-1 min-w-40 px-2 py-1 text-[10px] rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                            {activeJobId === row.job_id && <div className="mt-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2 space-y-1.5" onClick={event => event.stopPropagation()}>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {stageActions.map(a => <button key={a.key} onClick={() => logRescue(row, a.key, rescueNote.trim() || null)} disabled={isBusy || lockedByOther}
+                                        className={`px-2 py-1 text-[10px] font-bold rounded transition disabled:opacity-50 ${a.primary ? 'bg-tag-green-text text-bg-primary hover:opacity-90' : 'border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{a.label}</button>)}
+                                    <input value={rescueNote} onChange={event => setRescueNote(event.target.value)} placeholder="Optional note — what happened on the call?" className="flex-1 min-w-40 px-2 py-1 text-[10px] rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                                </div>
+                                {(rescueHistory[row.job_id]?.length ?? 0) > 0 && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
+                                    <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">History — every touch on this job</p>
+                                    {rescueHistory[row.job_id]!.map((entry, index) => <div key={index} className="flex items-start gap-2 text-[10.5px] text-text-secondary">
+                                        <span className="grid h-4 w-4 flex-shrink-0 mt-px place-items-center rounded-full bg-brand-primary/80 text-[8px] font-bold text-brand-text-on-primary" title={entry.actor || 'Unknown'}>{getInitials(entry.actor || '?')}</span>
+                                        <span className="leading-snug"><b className="text-text-primary">{entry.actor || 'Unknown'}</b> — {RESCUE_ACTION_LABEL[entry.action] || entry.action}
+                                            <span className="text-text-quaternary"> · {formatRelativeTime(entry.created_at)}</span>
+                                            {entry.note ? <span className="italic"> — “{entry.note}”</span> : null}</span>
+                                    </div>)}
+                                </div>}
                             </div>}
                         </article>;
                     }

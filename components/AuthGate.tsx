@@ -67,9 +67,9 @@ const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               if (!result.success || !result.session_token) { setError(result.error || 'Access denied.'); return; }
               const session: StoredSession = { token: result.session_token, email: result.email || '', name: result.name || result.email || '', exp: result.exp || 0 };
               localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
-              // First sign-in seeds the reviewer name so claims and reviews
-              // are logged under the real account identity.
-              if (!localStorage.getItem(REVIEWER_STORAGE_KEY) && session.name) localStorage.setItem(REVIEWER_STORAGE_KEY, session.name);
+              // Sign-in OWNS the reviewer identity: always overwrite, so a
+              // shared machine switching accounts logs under the right name.
+              if (session.name) localStorage.setItem(REVIEWER_STORAGE_KEY, session.name);
               setUser(session);
               setPhase('ready');
             })
