@@ -1169,8 +1169,12 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     </div>}
                                 </div>
                                 <div className="flex-shrink-0 flex flex-col items-end gap-1" onClick={event => event.stopPropagation()}>
+                                    {/* Roofr is THE destination for working a card — full button, brand color, centered. */}
+                                    {row.job_id && <a href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} target="ar-roofr" onClick={event => event.stopPropagation()}
+                                        className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-1.5 text-[11px] font-bold rounded bg-brand-primary text-brand-text-on-primary hover:opacity-90 transition">
+                                        <ExternalLinkIcon className="h-3.5 w-3.5" />Roofr
+                                    </a>}
                                     <div className="flex flex-wrap justify-end gap-1">
-                                        {row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" target="ar-roofr" />}
                                         {phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}
                                         {row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}
                                     </div>
