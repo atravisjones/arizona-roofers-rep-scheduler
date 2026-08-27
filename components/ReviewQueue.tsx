@@ -1126,6 +1126,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         const cc = ccReports[row.job_id];
                         const ccEligible = !!cc?.found && (cc.complete || (cc.pct ?? 0) >= CC_CHECKOFF_PCT);
                         const rt = roofrTasks[row.job_id];
+                        // The per-person "NEW DEAL WON" sign-offs are back-office noise here.
+                        const rtVisible = rt?.found ? (rt.tasks || []).filter(t => !/new deal won/i.test(t.title)) : [];
                         return <React.Fragment key={row.job_id}>
                         {showTouchedDivider && <div className="flex items-center gap-2 mt-2 mb-2">
                             <span className="h-px flex-1 bg-tag-green-border/60" />
@@ -1192,9 +1194,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                 {rt !== undefined && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
                                     <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">☑ Job-card tasks — Roofr (read-only)</p>
                                     {rt === null ? <p className="text-[10.5px] text-text-tertiary">Loading Roofr tasks…</p>
-                                        : !rt.found || !(rt.tasks?.length) ? <p className="text-[10.5px] text-text-tertiary">Couldn’t load tasks — open the Roofr card instead.</p>
+                                        : rtVisible.length === 0 ? <p className="text-[10.5px] text-text-tertiary">Couldn’t load tasks — open the Roofr card instead.</p>
                                             : <ul className="space-y-1 pt-0.5">
-                                                {rt.tasks!.map((task, taskIndex) => <li key={taskIndex} className={`flex items-center gap-2 text-[11px] ${task.done ? 'text-text-tertiary' : 'text-text-primary font-semibold'}`}>
+                                                {rtVisible.map((task, taskIndex) => <li key={taskIndex} className={`flex items-center gap-2 text-[11px] ${task.done ? 'text-text-tertiary' : 'text-text-primary font-semibold'}`}>
                                                     {task.done
                                                         ? <span className="grid h-3.5 w-3.5 flex-shrink-0 place-items-center rounded-[3px] bg-tag-green-text text-[9px] font-bold text-bg-primary" aria-hidden="true">✓</span>
                                                         : <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />}
@@ -1218,21 +1220,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                                 {!cc.complete && (ccEligible
                                                     ? <p className="text-[10.5px] font-semibold text-tag-green-text">✓ Over {CC_CHECKOFF_PCT}% — OK to check off “Sales - Production Report” on the Roofr job card (by hand — nothing is changed automatically).</p>
                                                     : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>)}
-                                                {(cc.tasks?.length ?? 0) > 0
-                                                    ? <ul className="space-y-1 pt-0.5">
-                                                        {cc.tasks!.map(task => <li key={task.name} className={`flex items-center gap-2 text-[11px] ${task.done ? 'text-text-tertiary' : 'text-text-primary font-semibold'}`}>
-                                                            {task.done
-                                                                ? <span className="grid h-3.5 w-3.5 flex-shrink-0 place-items-center rounded-[3px] bg-tag-green-text text-[9px] font-bold text-bg-primary" aria-hidden="true">✓</span>
-                                                                : <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />}
-                                                            <span>{task.name}</span>
-                                                        </li>)}
-                                                    </ul>
-                                                    : (cc.missing?.length ?? 0) > 0 && <ul className="space-y-1 pt-0.5">
-                                                        {cc.missing!.map(task => <li key={task} className="flex items-center gap-2 text-[11px] text-text-secondary">
-                                                            <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />
-                                                            <span>{task}</span>
-                                                        </li>)}
-                                                    </ul>}
+                                                {/* Just the % — Travis: the report's task checkboxes aren't needed here. */}
                                             </div>}
                                 </div>}
                                 {(rescueHistory[row.job_id]?.length ?? 0) > 0 && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
