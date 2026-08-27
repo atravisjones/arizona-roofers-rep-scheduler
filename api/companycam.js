@@ -15,6 +15,26 @@
 const TOKEN = (process.env.COMPANYCAM_API_TOKEN || '').trim();
 const API = 'https://api.companycam.com/v2';
 
+// The dozen tasks a CSR actually chases on the report. The rest of the
+// checklist (Ridge Vent, Solar, Skylights, ... in Roof Counts) is count/tag
+// bookkeeping Travis doesn't want on the card — % still covers everything.
+const CORE_TASKS = [
+  'All Sides Of The Property & Driveway & Liability Photos',
+  'Edge Photos',
+  'Fascia Boards',
+  'Drip Edge',
+  'Shingle Molding',
+  'Gutters',
+  '360 View Photos On The Roof',
+  'Damage Photos',
+  'T Top Vents',
+  'Pipe Jacks',
+  'Gas Pipes',
+  'O Hagin / Box Vents',
+];
+const normTask = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const CORE_SET = new Set(CORE_TASKS.map(normTask));
+
 // Reduce a street line to a comparable key: drop unit markers, abbreviate
 // directionals (West -> w), strip suffix words (Road/Rd), squash spacing.
 function streetKey(value) {
@@ -69,6 +89,9 @@ export default async function handler(req, res) {
       .map((t) => String(t.name || t.title || '').replace(/\*/g, '').trim())
       .filter(Boolean);
     const lastDone = tasks.reduce((max, t) => Math.max(max, Number(t.completed_at) || 0), 0);
+    const core = tasks
+      .filter((t) => CORE_SET.has(normTask(t.name || t.title)))
+      .map((t) => ({ name: String(t.name || t.title || '').replace(/\*/g, '').trim(), done: !!t.completed_at }));
 
     return res.status(200).json({
       found: true,
@@ -81,6 +104,7 @@ export default async function handler(req, res) {
       pct: total ? Math.round((100 * done) / total) : 0,
       complete: !!report.completed_at || (total > 0 && done === total),
       missing: missing.slice(0, 12),
+      tasks: core,
       last_task_at: lastDone ? new Date(lastDone * 1000).toISOString() : null,
     });
   } catch (err) {

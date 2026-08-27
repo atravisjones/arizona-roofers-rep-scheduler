@@ -341,7 +341,7 @@ const daysChipClass = (days: number) => days >= 14
 // ≥50% complete = Bradley's bar for hand-checking "Sales - Production Report"
 // in Roofr — the app only surfaces it, it never writes anywhere.
 const CC_CHECKOFF_PCT = 50;
-interface CcReport { found: boolean; pct?: number; done?: number; total?: number; complete?: boolean; missing?: string[]; project_url?: string; last_task_at?: string | null; reason?: string; }
+interface CcReport { found: boolean; pct?: number; done?: number; total?: number; complete?: boolean; missing?: string[]; tasks?: Array<{ name: string; done: boolean }>; project_url?: string; last_task_at?: string | null; reason?: string; }
 
 interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
 interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
@@ -1187,12 +1187,21 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                                 {!cc.complete && (ccEligible
                                                     ? <p className="text-[10.5px] font-semibold text-tag-green-text">✓ Over {CC_CHECKOFF_PCT}% — OK to check off “Sales - Production Report” on the Roofr job card (by hand — nothing is changed automatically).</p>
                                                     : <p className="text-[10.5px] font-semibold text-tag-amber-text">Under {CC_CHECKOFF_PCT}% — keep chasing the rep before the Roofr task gets checked.</p>)}
-                                                {(cc.missing?.length ?? 0) > 0 && <ul className="space-y-1 pt-0.5">
-                                                    {cc.missing!.map(task => <li key={task} className="flex items-center gap-2 text-[11px] text-text-secondary">
-                                                        <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />
-                                                        <span>{task}</span>
-                                                    </li>)}
-                                                </ul>}
+                                                {(cc.tasks?.length ?? 0) > 0
+                                                    ? <ul className="space-y-1 pt-0.5">
+                                                        {cc.tasks!.map(task => <li key={task.name} className={`flex items-center gap-2 text-[11px] ${task.done ? 'text-text-tertiary' : 'text-text-primary font-semibold'}`}>
+                                                            {task.done
+                                                                ? <span className="grid h-3.5 w-3.5 flex-shrink-0 place-items-center rounded-[3px] bg-tag-green-text text-[9px] font-bold text-bg-primary" aria-hidden="true">✓</span>
+                                                                : <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />}
+                                                            <span>{task.name}</span>
+                                                        </li>)}
+                                                    </ul>
+                                                    : (cc.missing?.length ?? 0) > 0 && <ul className="space-y-1 pt-0.5">
+                                                        {cc.missing!.map(task => <li key={task} className="flex items-center gap-2 text-[11px] text-text-secondary">
+                                                            <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />
+                                                            <span>{task}</span>
+                                                        </li>)}
+                                                    </ul>}
                                             </div>}
                                 </div>}
                                 {(rescueHistory[row.job_id]?.length ?? 0) > 0 && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
