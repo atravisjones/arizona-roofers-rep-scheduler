@@ -58,10 +58,12 @@ const TODAY_BOARD_PATH = '/today-board';
 const REVIEW_PATH = '/review';
 const REVIEW_BOOKINGS_PATH = `${REVIEW_PATH}/bookings`;
 const REVIEW_OUTCOMES_PATH = `${REVIEW_PATH}/outcomes`;
+const REVIEW_RESCUE_PATH = `${REVIEW_PATH}/rescue`;
 // Review has a per-mode URL (/review/bookings, /review/outcomes), so match the
 // prefix — a bare /review still counts and ReviewQueue normalizes it on mount.
 const isReviewPath = (path: string) => path === REVIEW_PATH || path.startsWith(`${REVIEW_PATH}/`);
 const isOutcomesPath = (path: string) => path.toLowerCase().startsWith(REVIEW_OUTCOMES_PATH);
+const isRescuePath = (path: string) => path.toLowerCase().startsWith(REVIEW_RESCUE_PATH);
 
 const MainLayout: React.FC = () => {
   const context = useAppContext();
@@ -132,9 +134,12 @@ const MainLayout: React.FC = () => {
   const [showReviewQueue, setShowReviewQueue] = useState(
     () => typeof window !== 'undefined' && isReviewPath(window.location.pathname)
   );
-  // Which review-family top tab is lit: Review (bookings) vs Outcomes.
+  // Which review-family top tab is lit: Review (bookings) vs Outcomes vs Rescue.
   const [showReviewOutcomes, setShowReviewOutcomes] = useState(
     () => typeof window !== 'undefined' && isOutcomesPath(window.location.pathname)
+  );
+  const [showReviewRescue, setShowReviewRescue] = useState(
+    () => typeof window !== 'undefined' && isRescuePath(window.location.pathname)
   );
   const showPlanner = !showTodayBoard && !showReviewQueue;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
@@ -194,6 +199,7 @@ const MainLayout: React.FC = () => {
     setShowTodayBoard(path === TODAY_BOARD_PATH);
     setShowReviewQueue(isReviewPath(path));
     setShowReviewOutcomes(isOutcomesPath(path));
+    setShowReviewRescue(isRescuePath(path));
   }, []);
 
   useEffect(() => {
@@ -201,6 +207,7 @@ const MainLayout: React.FC = () => {
       setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
       setShowReviewQueue(isReviewPath(window.location.pathname));
       setShowReviewOutcomes(isOutcomesPath(window.location.pathname));
+      setShowReviewRescue(isRescuePath(window.location.pathname));
     };
     window.addEventListener('popstate', syncFromUrl);
     return () => window.removeEventListener('popstate', syncFromUrl);
@@ -733,14 +740,14 @@ const MainLayout: React.FC = () => {
 
       <button
         onClick={() => navigateTo(REVIEW_BOOKINGS_PATH)}
-        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes && !showReviewRescue
           ? 'bg-brand-primary text-brand-text-on-primary'
           : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
           }`}
         title="Booking review queue"
       >
         <span>Review</span>
-        {!showReviewOutcomes && reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
+        {!showReviewOutcomes && !showReviewRescue && reviewNeedsCount > 0 && <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${showReviewQueue ? 'bg-bg-primary text-brand-primary' : 'bg-tag-red-bg text-tag-red-text'}`}>{reviewNeedsCount}</span>}
       </button>
 
       <button
@@ -753,6 +760,18 @@ const MainLayout: React.FC = () => {
       >
         <span>Outcomes</span>
         {showReviewOutcomes && reviewNeedsCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-bg-primary text-brand-primary">{reviewNeedsCount}</span>}
+      </button>
+
+      <button
+        onClick={() => navigateTo(REVIEW_RESCUE_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewRescue
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Stuck-deal work queue — signed jobs needing deposits, colors, or a rep chase before production"
+      >
+        <span>Rescue</span>
+        {showReviewRescue && reviewNeedsCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-bg-primary text-brand-primary">{reviewNeedsCount}</span>}
       </button>
     </div>
   );

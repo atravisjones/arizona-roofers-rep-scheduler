@@ -11,21 +11,25 @@ const OUTCOME_FLAG_REASONS = ['Should be qualified', 'Wrongly unqualified', 'No-
 
 type ReviewStatus = 'needs_review' | 'reviewed' | 'flagged';
 type ReviewTab = 'needs_review' | 'reviewed' | 'flagged' | 'all';
-type ReviewMode = 'bookings' | 'outcomes';
+type ReviewMode = 'bookings' | 'outcomes' | 'rescue';
 
 // Each mode gets its own URL so a view is linkable and back/forward works:
-// /review and /review/bookings = Bookings, /review/outcomes = Outcomes.
+// /review and /review/bookings = Bookings, /review/outcomes = Outcomes,
+// /review/rescue = Rescue (the stuck-deal CSR work queue).
 // Bare /review stays on Bookings so existing links and bookmarks keep working.
 const REVIEW_BASE_PATH = '/review';
 const MODE_TO_PATH: Record<ReviewMode, string> = {
     bookings: `${REVIEW_BASE_PATH}/bookings`,
     outcomes: `${REVIEW_BASE_PATH}/outcomes`,
+    rescue: `${REVIEW_BASE_PATH}/rescue`,
 };
-const readModeFromUrl = (): ReviewMode => (
-    typeof window !== 'undefined' && window.location.pathname.toLowerCase().startsWith(MODE_TO_PATH.outcomes)
-        ? 'outcomes'
-        : 'bookings'
-);
+const readModeFromUrl = (): ReviewMode => {
+    if (typeof window === 'undefined') return 'bookings';
+    const path = window.location.pathname.toLowerCase();
+    if (path.startsWith(MODE_TO_PATH.outcomes)) return 'outcomes';
+    if (path.startsWith(MODE_TO_PATH.rescue)) return 'rescue';
+    return 'bookings';
+};
 type OutcomeFilter = 'all' | 'overdue' | 'unqualified' | 'lost' | 'working';
 type PeriodKind = 'day' | 'week' | 'month' | 'custom';
 // List ordering. 'oldest' reads the queue top-to-bottom in booking order, so new
@@ -201,6 +205,16 @@ interface ReviewRow {
     grade_checklist_total?: number | null;
     grade_checklist_missed?: string[] | null;
     grade_call_seconds?: number | null;
+    // Rescue mode (get_rescue_queue): how long the job has sat in its current
+    // stage, the active phone-claim, and the latest CSR action logged on it.
+    days_in_stage?: number | null;
+    claimed_by?: string | null;
+    claimed_at?: string | null;
+    last_action?: string | null;
+    last_action_note?: string | null;
+    last_action_by?: string | null;
+    last_action_at?: string | null;
+    action_count?: number | null;
 }
 
 // Outcomes urgency. 'overdue' = the appointment already ran but the job still
@@ -282,6 +296,40 @@ const OUTCOME_STRIP: Array<{ key: OutcomeFilter; label: string; dot: string; on:
 const OUTCOME_FILTER_PHRASE: Record<OutcomeFilter, string> = {
     all: 'Not proposal-signed', overdue: 'Overdue · no outcome', unqualified: 'Turned unqualified', lost: 'Turned lost', working: 'Still working',
 };
+
+// ── Rescue mode ──────────────────────────────────────────────────────────────
+// Signed retail deals stuck in the production-manager chase stages. Each stage
+// maps to ONE concrete CSR task; the card leads with it so the queue reads as
+// a to-do list, not a job dump. Claims stop two CSRs calling the same customer.
+const RESCUE_TASK: Record<string, { task: string; who: 'customer' | 'rep'; chip: string }> = {
+    'Needs Deposit': { task: 'Call customer — collect the deposit', who: 'customer', chip: 'border-tag-green-border bg-tag-green-bg text-tag-green-text' },
+    'Colors & Selection': { task: 'Get shingle/tile colors — rep or customer', who: 'customer', chip: 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text' },
+    'Failed Sales Audit': { task: 'Chase rep — audit items / production report', who: 'rep', chip: 'border-tag-red-border bg-tag-red-bg text-tag-red-text' },
+    'Deposits On Hold': { task: 'Deposit blocked — check in and revive', who: 'customer', chip: 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text' },
+    'Appointment Ran': { task: 'Nudge rep — appointment needs an outcome', who: 'rep', chip: 'border-border-secondary bg-bg-tertiary text-text-secondary' },
+};
+// Stage strip order = the money order: deposits first, then colors, then audit.
+const RESCUE_STAGES = ['Needs Deposit', 'Colors & Selection', 'Failed Sales Audit', 'Deposits On Hold', 'Appointment Ran'];
+// What a CSR can log after working a card. Per-stage primaries come first;
+// the common outcomes (LM / no answer / hand-offs) apply everywhere.
+const RESCUE_ACTIONS: Array<{ key: string; label: string; stages?: string[]; primary?: boolean }> = [
+    { key: 'deposit_collected', label: '💰 Deposit collected', stages: ['Needs Deposit', 'Deposits On Hold'], primary: true },
+    { key: 'deposit_promised', label: '🤝 Deposit promised', stages: ['Needs Deposit', 'Deposits On Hold'] },
+    { key: 'colors_collected', label: '🎨 Colors picked', stages: ['Colors & Selection'], primary: true },
+    { key: 'rep_chased', label: '📣 Rep chased', stages: ['Failed Sales Audit', 'Appointment Ran'], primary: true },
+    { key: 'left_message', label: 'Left message' },
+    { key: 'no_answer', label: 'No answer' },
+    { key: 'needs_rep', label: '→ Needs rep' },
+    { key: 'needs_bradley', label: '→ Needs Bradley' },
+];
+const RESCUE_ACTION_LABEL: Record<string, string> = Object.fromEntries(RESCUE_ACTIONS.map(a => [a.key, a.label.replace(/^[^\w→]+\s*/, '')]));
+// A claim is a soft phone-lock, not ownership — the backend expires it at 45
+// minutes and logging any action releases it.
+const RESCUE_CLAIM_MS = 45 * 60 * 1000;
+const daysChipClass = (days: number) => days >= 14
+    ? 'border-tag-red-border bg-tag-red-bg text-tag-red-text'
+    : days >= 7 ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
+        : 'border-border-secondary bg-bg-tertiary text-text-secondary';
 
 interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
 interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
@@ -429,6 +477,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [flaggingJobId, setFlaggingJobId] = useState<string | null>(null);
     const [flagReason, setFlagReason] = useState<string>(FLAG_REASONS[0]);
     const [flagNote, setFlagNote] = useState('');
+    const [rescueNote, setRescueNote] = useState('');
     const priorNeedsIdsRef = useRef<Set<string> | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
     // Monotonic fetch id — a response only lands if no newer fetch has started,
@@ -451,17 +500,23 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 : getPeriodRange(periodKind, periodOffset);
             // Outcomes always fetches the whole range; the urgency filter is applied
             // client-side so the summary-strip counts stay accurate for every bucket.
-            const resp = mode === 'outcomes'
-                ? await supabase.rpc('get_outcome_review', {
-                    p_start: range?.start || null, p_end: range?.end || null,
-                    p_outcome: null,
-                })
-                : await supabase.rpc('get_review_queue', range
-                    ? { p_days: 7, p_start: range.start, p_end: range.end }
-                    : { p_days: 7 });
+            // Rescue isn't date-ranged — the queue IS every currently stuck job.
+            const resp = mode === 'rescue'
+                ? await supabase.rpc('get_rescue_queue')
+                : mode === 'outcomes'
+                    ? await supabase.rpc('get_outcome_review', {
+                        p_start: range?.start || null, p_end: range?.end || null,
+                        p_outcome: null,
+                    })
+                    : await supabase.rpc('get_review_queue', range
+                        ? { p_days: 7, p_start: range.start, p_end: range.end }
+                        : { p_days: 7 });
             if (resp.error) throw new Error(resp.error.message);
             if (seq !== fetchSeqRef.current) return; // a newer fetch superseded this one
-            const next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
+            let next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
+            // Rescue rows have no review state; derive one so the untouched count
+            // (needs_review) can drive the top-tab badge without special cases.
+            if (mode === 'rescue') next = next.map(row => ({ ...row, review_status: (row.last_action ? 'reviewed' : 'needs_review') as ReviewStatus }));
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
             if (checkForNewBooking && priorNeedsIdsRef.current) {
                 const hasNew = [...nextNeedsIds].some(jobId => !priorNeedsIdsRef.current!.has(jobId));
@@ -609,9 +664,17 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         return counts;
     }, [rows, mode]);
 
+    // Rescue strip counts per stage, from the full queue before any filters.
+    const rescueStageCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        if (mode === 'rescue') rows.forEach(row => { const stage = (row.stage || '').trim(); if (stage) counts[stage] = (counts[stage] || 0) + 1; });
+        return counts;
+    }, [rows, mode]);
+
     const visibleRows = useMemo(() => rows
         // Filters compose: picking a CSR and a status narrows to rows matching both.
-        .filter(row => (tab === 'all' || row.review_status === tab)
+        // Rescue skips the review-status tabs (its strip filters by stage instead).
+        .filter(row => (mode === 'rescue' || tab === 'all' || row.review_status === tab)
             && (mode !== 'outcomes' || outcomeFilter === 'all' || getOutcomeUrgency(row) === outcomeFilter)
             && FILTER_FIELDS.every(({ field }) => {
                 const wanted = fieldFilters[field];
@@ -621,6 +684,20 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             if (mode === 'bookings' && tab === 'needs_review') {
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
                 if (riskDifference) return riskDifference;
+            }
+            // Rescue works oldest-stuck-first inside the grouping order.
+            if (mode === 'rescue') {
+                const sortField = FILTER_FIELDS.find(entry => entry.key === sortKey)?.field;
+                if (sortField) {
+                    const aKey = (a[sortField] || '').toString().trim();
+                    const bKey = (b[sortField] || '').toString().trim();
+                    if (aKey !== bKey) {
+                        if (!aKey) return 1;
+                        if (!bKey) return -1;
+                        return aKey.localeCompare(bKey);
+                    }
+                }
+                return (b.days_in_stage ?? 0) - (a.days_in_stage ?? 0);
             }
             // Group by the chosen field, then newest-first inside each group so a
             // block stays in a sensible order. Blanks sort last rather than first.
@@ -661,6 +738,50 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             setBusyJobId(null);
             fetchQueue();
         }
+    };
+
+    // ── Rescue actions ──────────────────────────────────────────────────────
+    // Claim = soft phone-lock (45 min, backend-enforced) so two CSRs never call
+    // the same customer; logging any action releases the claim server-side.
+    const requireName = (): string | null => {
+        const name = reviewer.trim();
+        if (!name) { flashNotice('Enter your name (top right) first — claims and actions are logged under it.'); return null; }
+        return name;
+    };
+    const claimRescue = async (row: ReviewRow) => {
+        const name = requireName(); if (!name) return;
+        setBusyJobId(row.job_id);
+        try {
+            const { data, error: rpcError } = await supabase.rpc('claim_rescue', { p_job_id: row.job_id, p_by: name });
+            if (rpcError) throw new Error(rpcError.message);
+            const result = data as { ok?: boolean; holder?: string } | null;
+            if (!result?.ok) flashNotice(`Already claimed by ${result?.holder || 'someone else'} — pick another card.`);
+        } catch (err) {
+            flashNotice(err instanceof Error ? err.message : 'Claim failed');
+        } finally { setBusyJobId(null); fetchQueue(); }
+    };
+    const releaseRescue = async (row: ReviewRow) => {
+        const name = requireName(); if (!name) return;
+        setBusyJobId(row.job_id);
+        try {
+            const { error: rpcError } = await supabase.rpc('release_rescue', { p_job_id: row.job_id, p_by: name });
+            if (rpcError) throw new Error(rpcError.message);
+        } catch (err) {
+            flashNotice(err instanceof Error ? err.message : 'Release failed');
+        } finally { setBusyJobId(null); fetchQueue(); }
+    };
+    const logRescue = async (row: ReviewRow, action: string, note: string | null) => {
+        const name = requireName(); if (!name) return;
+        setBusyJobId(row.job_id);
+        try {
+            const { data, error: rpcError } = await supabase.rpc('log_rescue_action', { p_job_id: row.job_id, p_action: action, p_note: note, p_actor: name });
+            if (rpcError) throw new Error(rpcError.message);
+            if (!(data as { ok?: boolean } | null)?.ok) throw new Error('Action was not accepted');
+            setRescueNote('');
+            flashNotice(`Logged: ${RESCUE_ACTION_LABEL[action] || action} — ${row.customer || row.name || row.job_id}`);
+        } catch (err) {
+            flashNotice(err instanceof Error ? err.message : 'Action failed');
+        } finally { setBusyJobId(null); fetchQueue(); }
     };
 
     const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
@@ -768,10 +889,12 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             <header className="flex-shrink-0 px-1 pb-3 space-y-2 border-b border-border-secondary/60">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-baseline gap-2.5">
-                        <h2 className="text-[15px] font-semibold text-text-primary">{mode === 'outcomes' ? 'Outcomes' : 'Bookings'}</h2>
-                        <p className="text-[11.5px] text-text-tertiary">{mode === 'outcomes'
-                            ? `${OUTCOME_FILTER_PHRASE[outcomeFilter]} · appointments ${rangeText} · rescheduled excluded`
-                            : `Bookings made ${rangeText}`}</p>
+                        <h2 className="text-[15px] font-semibold text-text-primary">{mode === 'rescue' ? 'Rescue' : mode === 'outcomes' ? 'Outcomes' : 'Bookings'}</h2>
+                        <p className="text-[11.5px] text-text-tertiary">{mode === 'rescue'
+                            ? `${rows.length} signed deals stuck before production — claim a card, make the call, log it`
+                            : mode === 'outcomes'
+                                ? `${OUTCOME_FILTER_PHRASE[outcomeFilter]} · appointments ${rangeText} · rescheduled excluded`
+                                : `Bookings made ${rangeText}`}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         <label className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary" htmlFor="reviewer-name">Reviewer</label>
@@ -784,12 +907,25 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                    <div className={SEG_WRAP}>
+                    {/* Rescue has no date range — the queue is whatever is stuck right now. */}
+                    {mode !== 'rescue' && <div className={SEG_WRAP}>
                         {(['day', 'week', 'month', 'custom'] as const).map(k => (
                             <button key={k} onClick={() => selectPeriod(k)} className={`${SEG_BTN} capitalize ${periodKind === k ? SEG_ON : SEG_OFF}`}>{k}</button>
                         ))}
-                    </div>
-                    {periodKind !== 'custom' ? (
+                    </div>}
+                    {mode === 'rescue' ? (
+                        <div className={SEG_WRAP}>
+                            <button onClick={() => setFieldFilters(prev => { const copy = { ...prev }; delete copy.stage; return copy; })}
+                                className={`${SEG_BTN} ${!(fieldFilters.stage?.length) ? SEG_ON : SEG_OFF}`}>All<span className="tabular-nums font-bold">{rows.length}</span></button>
+                            {RESCUE_STAGES.map(stage => (
+                                <button key={stage} onClick={() => setFieldFilters(prev => ({ ...prev, stage: [stage] }))} title={RESCUE_TASK[stage]?.task || stage}
+                                    className={`${SEG_BTN} ${fieldFilters.stage?.length === 1 && fieldFilters.stage[0] === stage ? SEG_ON : SEG_OFF}`}>
+                                    {stage.replace(' & Selection', '').replace('Sales ', '')}
+                                    <span className="tabular-nums font-bold">{rescueStageCounts[stage] || 0}</span>
+                                </button>
+                            ))}
+                        </div>
+                    ) : periodKind !== 'custom' ? (
                         <div className="inline-flex items-center h-7 rounded-md border border-border-secondary bg-bg-primary overflow-hidden">
                             <button onClick={() => setPeriodOffset(o => o - 1)} title={`Previous ${periodKind}`} className="h-full px-2 text-text-secondary hover:bg-bg-tertiary hover:text-brand-primary transition-colors duration-150">◀</button>
                             <span className="px-2 min-w-[96px] text-center font-semibold text-text-primary">{period.label}</span>
@@ -831,9 +967,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <nav className={SEG_WRAP} aria-label="Review status">
+                    {mode !== 'rescue' && <nav className={SEG_WRAP} aria-label="Review status">
                         {tabs.map(item => <button key={item.key} onClick={() => setTab(item.key)} className={`${SEG_BTN} ${tab === item.key ? SEG_ON : SEG_OFF}`}>{item.label}{item.count != null && <span className="tabular-nums font-bold">{item.count}</span>}</button>)}
-                    </nav>
+                    </nav>}
                     {stats && <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px] tabular-nums">
                         <span className="px-2 py-0.5 rounded bg-bg-tertiary text-text-secondary">Today · <b className="text-text-primary">{stats.today.booked}</b> booked</span>
                         <span className="px-2 py-0.5 rounded bg-tag-green-bg text-tag-green-text"><b>{stats.today.reviewed}</b> reviewed</span>
@@ -861,14 +997,16 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     </div>
                 ))}</div> : rows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <p className="text-[15px] font-semibold text-text-secondary">{mode === 'outcomes'
-                            ? (outcomeFilter === 'all' ? `No unsigned appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}` : `No ${outcomeFilter} appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`)
-                            : `No bookings ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`}</p>
-                        <p className="mt-1.5 text-[11.5px] text-text-tertiary">{mode === 'outcomes' ? 'Use ◀ to step back through earlier periods.' : 'New bookings land here in real time. Use ◀ to check earlier periods.'}</p>
+                        <p className="text-[15px] font-semibold text-text-secondary">{mode === 'rescue'
+                            ? 'Nothing stuck — the pipeline is clear 🎉'
+                            : mode === 'outcomes'
+                                ? (outcomeFilter === 'all' ? `No unsigned appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}` : `No ${outcomeFilter} appointments ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`)
+                                : `No bookings ${period.label === 'Custom' ? 'in this range' : `for ${period.label.toLowerCase()}`}`}</p>
+                        <p className="mt-1.5 text-[11.5px] text-text-tertiary">{mode === 'rescue' ? 'Jobs land here when they enter a chase stage in Roofr.' : mode === 'outcomes' ? 'Use ◀ to step back through earlier periods.' : 'New bookings land here in real time. Use ◀ to check earlier periods.'}</p>
                     </div>
                 ) : visibleRows.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <p className="text-[15px] font-semibold text-text-secondary">{tab === 'needs_review' ? 'Review queue clear' : 'Nothing in this view'}</p>
+                        <p className="text-[15px] font-semibold text-text-secondary">{mode === 'rescue' || tab === 'needs_review' ? 'Nothing in this view' : 'Review queue clear'}</p>
                         <p className="mt-1.5 text-[11.5px] text-text-tertiary tabular-nums">{mode === 'outcomes'
                             ? `In this range: ${outcomeCounts.overdue} overdue · ${outcomeCounts.unqualified} unqualified · ${outcomeCounts.lost} lost · ${outcomeCounts.working} working. Adjust the tabs or filters above to see them.`
                             : 'Adjust the status tabs or filters above to see more.'}</p>
@@ -893,6 +1031,72 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         : urgency === 'unqualified' ? 'bg-tag-red-bg/60 border-tag-red-border'
                             : urgency === 'lost' ? 'bg-bg-primary border-tag-red-border'
                                 : '';
+                    // ── Rescue card: task first, claim-to-call, log what happened ──
+                    if (mode === 'rescue') {
+                        const stageKey = (row.stage || '').trim();
+                        const stageInfo = RESCUE_TASK[stageKey];
+                        const days = Math.round(row.days_in_stage ?? 0);
+                        const claimActive = !!row.claimed_by && !!row.claimed_at && (Date.now() - new Date(row.claimed_at).getTime()) < RESCUE_CLAIM_MS;
+                        const mine = claimActive && (row.claimed_by || '').toLowerCase() === reviewer.trim().toLowerCase();
+                        const lockedByOther = claimActive && !mine;
+                        const stageActions = RESCUE_ACTIONS.filter(a => !a.stages || a.stages.includes(stageKey));
+                        const primary = stageActions.find(a => a.primary);
+                        return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)}
+                            className={`rounded-md border px-3.5 py-2.5 mb-2 transition-all duration-300 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : lockedByOther ? 'bg-bg-secondary/60 border-border-secondary opacity-75' : 'bg-bg-primary border-border-secondary hover:border-border-primary'}`}>
+                            <div className="flex items-start gap-4">
+                                <div className="flex-1 min-w-0 space-y-1">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                        <h2 className="text-[15px] font-semibold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>
+                                        <span className={`px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border ${stageInfo?.chip || 'border-border-secondary bg-bg-tertiary text-text-secondary'}`} title="Roofr job stage">{stageKey || 'Unknown stage'}</span>
+                                        <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border tabular-nums ${daysChipClass(days)}`} title="Days the job has sat in this stage">{days}d stuck</span>
+                                        {row.value != null && <span className="text-[11.5px] font-semibold tabular-nums text-text-primary">${row.value.toLocaleString()}</span>}
+                                    </div>
+                                    <div className="text-[12px] font-semibold text-brand-text-light">{stageInfo?.task || 'Work this job forward'}</div>
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+                                        <span className="inline-flex items-center gap-1.5 font-bold text-brand-text-light" title="CSR who booked this appointment — their deal too">
+                                            <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-primary text-[9px] font-bold text-brand-text-on-primary">{getInitials(csrName || '?')}</span>
+                                            {csrName || 'Unknown CSR'}
+                                        </span>
+                                        {techName && <span className={stageInfo?.who === 'rep' ? 'font-bold text-text-primary' : 'text-text-secondary'} title={stageInfo?.who === 'rep' ? 'The rep this task chases' : 'Rep on the job'}>Rep: <b className="font-semibold">{techName}</b></span>}
+                                        {row.lead_source && <span className="text-text-tertiary">{row.lead_source}</span>}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-x-3 text-[11.5px] text-text-secondary">
+                                        {row.address && <span>{row.address}</span>}
+                                        {row.phone && (phoneDigits
+                                            ? <a href={`https://app.calltrackingmetrics.com/calls#filter=${phoneDigits}`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()} title="Open this number's calls in CTM" className="font-semibold text-brand-primary hover:underline">{row.phone}</a>
+                                            : <span>{row.phone}</span>)}
+                                    </div>
+                                    {row.last_action && <div className="text-[10.5px] text-text-tertiary">
+                                        Last: <b className="text-text-secondary">{RESCUE_ACTION_LABEL[row.last_action] || row.last_action}</b>
+                                        {row.last_action_by ? ` by ${row.last_action_by}` : ''}{row.last_action_at ? ` · ${formatRelativeTime(row.last_action_at)}` : ''}
+                                        {row.last_action_note ? <span className="italic"> — “{row.last_action_note}”</span> : null}
+                                        {(row.action_count ?? 0) > 1 ? ` · ${row.action_count} touches` : ''}
+                                    </div>}
+                                </div>
+                                <div className="flex-shrink-0 flex flex-col items-end gap-1" onClick={event => event.stopPropagation()}>
+                                    <div className="flex flex-wrap justify-end gap-1">
+                                        {row.job_id && <LinkPill href={`https://app.roofr.com/dashboard/team/239329/jobs/list-view?selectedJobId=${row.job_id}`} label="Roofr" target="ar-roofr" />}
+                                        {phoneDigits && <LinkPill href={`https://app.calltrackingmetrics.com/calls/desk#filter=${phoneDigits}`} label="CTM" />}
+                                        {row.address && <LinkPill href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(row.address)}`} label="Map" />}
+                                    </div>
+                                    {lockedByOther
+                                        ? <span className="px-2 py-1 text-[10px] font-bold rounded border border-tag-amber-border bg-tag-amber-bg text-tag-amber-text" title="Someone is already working this card">📞 {row.claimed_by} · {formatRelativeTime(row.claimed_at ?? null)}</span>
+                                        : mine
+                                            ? <div className="flex gap-1">
+                                                <span className="px-2 py-1 text-[10px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text">✓ Yours</span>
+                                                <button onClick={() => releaseRescue(row)} disabled={isBusy} className="px-2 py-1 text-[10px] font-bold rounded border border-border-secondary text-text-secondary hover:border-brand-primary disabled:opacity-50">Release</button>
+                                            </div>
+                                            : <button onClick={() => claimRescue(row)} disabled={isBusy} className="px-2.5 py-1 text-[10px] font-bold rounded bg-brand-primary text-brand-text-on-primary hover:opacity-90 disabled:opacity-50 transition">{isBusy ? '…' : '📞 Claim to call'}</button>}
+                                    {primary && !lockedByOther && <button onClick={() => logRescue(row, primary.key, rescueNote.trim() || null)} disabled={isBusy} className="px-2.5 py-1 text-[10px] font-bold rounded bg-tag-green-text text-bg-primary hover:opacity-90 disabled:opacity-50 transition">{isBusy ? 'Saving…' : primary.label}</button>}
+                                </div>
+                            </div>
+                            {activeJobId === row.job_id && <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded border border-border-secondary/60 bg-bg-tertiary/40 p-2" onClick={event => event.stopPropagation()}>
+                                {stageActions.map(a => <button key={a.key} onClick={() => logRescue(row, a.key, rescueNote.trim() || null)} disabled={isBusy || lockedByOther}
+                                    className={`px-2 py-1 text-[10px] font-bold rounded transition disabled:opacity-50 ${a.primary ? 'bg-tag-green-text text-bg-primary hover:opacity-90' : 'border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{a.label}</button>)}
+                                <input value={rescueNote} onChange={event => setRescueNote(event.target.value)} placeholder="Optional note — what happened on the call?" className="flex-1 min-w-40 px-2 py-1 text-[10px] rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
+                            </div>}
+                        </article>;
+                    }
                     return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40 !max-h-none' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
                             <div className="flex-1 min-w-0 space-y-0.5">
