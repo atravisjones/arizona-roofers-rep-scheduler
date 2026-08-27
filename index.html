@@ -533,14 +533,48 @@
 
       --map-tile-filter: invert(1) hue-rotate(180deg) brightness(90%) contrast(90%) sepia(0.15);
     }
+    /* The "design on the back": drawn ribbon curves sweeping the canvas,
+       tone-on-tone petrol with a lit edge and a soft green stage glow. */
     [data-theme="aircall"] body {
       background-color: #092229;
-      background-image:
-        radial-gradient(120% 90% at -10% 110%, rgba(38, 96, 104, 0.55) 0%, rgba(38, 96, 104, 0) 55%),
-        radial-gradient(140% 100% at 115% -15%, rgba(30, 80, 92, 0.5) 0%, rgba(30, 80, 92, 0) 60%),
-        radial-gradient(80% 60% at 70% 85%, rgba(22, 66, 76, 0.6) 0%, rgba(22, 66, 76, 0) 65%),
-        linear-gradient(160deg, #0c2f38 0%, #092229 100%);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1600 900' preserveAspectRatio='xMidYMid slice'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23134450'/%3E%3Cstop offset='1' stop-color='%230c2f38'/%3E%3C/linearGradient%3E%3ClinearGradient id='b' x1='0' y1='1' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%230f3841'/%3E%3Cstop offset='1' stop-color='%230a252d'/%3E%3C/linearGradient%3E%3CradialGradient id='g' cx='0.5' cy='0.5' r='0.5'%3E%3Cstop offset='0' stop-color='%2336be7c' stop-opacity='0.13'/%3E%3Cstop offset='1' stop-color='%2336be7c' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='1600' height='900' fill='%23092229'/%3E%3Cpath d='M1700,-150 C1300,180 1000,80 760,-180 L1800,-180 Z' fill='%230d323b'/%3E%3Ccircle cx='1150' cy='740' r='430' fill='url(%23g)'/%3E%3Cpath d='M-200,940 C250,560 700,980 1050,640 C1250,450 1500,520 1750,380 L1750,1000 L-200,1000 Z' fill='url(%23b)'/%3E%3Cpath d='M-200,940 C250,560 700,980 1050,640 C1250,450 1500,520 1750,380' fill='none' stroke='%23237a68' stroke-opacity='0.5' stroke-width='2.5'/%3E%3Cpath d='M-100,1060 C300,760 620,1080 1020,820 C1320,630 1650,740 1800,600 L1800,1150 L-100,1150 Z' fill='url(%23a)'/%3E%3Cpath d='M-100,1060 C300,760 620,1080 1020,820 C1320,630 1650,740 1800,600' fill='none' stroke='%232f9d7f' stroke-opacity='0.45' stroke-width='2'/%3E%3C/svg%3E");
+      background-size: cover;
+      background-position: center;
       background-attachment: fixed;
+    }
+
+    /* ── Elevation: tools float ABOVE the painted background ─────────────
+       Cards get a lit top edge + deep soft shadow; the app bar becomes a
+       frosted glass layer. Scoped to the two scenic themes only. */
+    [data-theme="aircall"] article,
+    [data-theme="aircall"] .popup-surface {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                  0 12px 32px -14px rgba(0, 0, 0, 0.6),
+                  0 3px 10px -4px rgba(0, 0, 0, 0.4);
+    }
+    [data-theme="aircall"] article {
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 45%);
+    }
+    [data-theme="aircall"] header {
+      background-color: rgb(13 38 46 / 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 10px 28px -16px rgba(0, 0, 0, 0.55);
+    }
+    [data-theme="falls"] article,
+    [data-theme="falls"] .popup-surface {
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55),
+                  0 14px 30px -16px rgba(97, 45, 5, 0.5),
+                  0 3px 10px -5px rgba(97, 45, 5, 0.3);
+    }
+    [data-theme="falls"] article {
+      background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 40%);
+    }
+    [data-theme="falls"] header {
+      background-color: rgb(255 253 248 / 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 10px 24px -16px rgba(97, 45, 5, 0.45);
     }
 
     /* Both scenic themes: the app shell and login screen go transparent so
