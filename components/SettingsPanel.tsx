@@ -81,6 +81,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ onOpenThemeEditor, onOpen
                     <ThemeButton theme="dark" currentTheme={uiSettings.theme} label="Dark" icon={<MoonIcon />} onClick={handleThemeChange} />
                     <ThemeButton theme="midnight" currentTheme={uiSettings.theme} label="Midnight" icon={<div className="w-5 h-5 rounded-full bg-[#0f172a] border-2 border-[#334155]" />} onClick={handleThemeChange} />
                     <ThemeButton theme="gruvbox" currentTheme={uiSettings.theme} label="Gruvbox" icon={<div className="w-5 h-5 rounded-full bg-[#fbf1c7] border-2 border-[#928374]" />} onClick={handleThemeChange} />
+                    <ThemeButton theme="falls" currentTheme={uiSettings.theme} label="Falls" icon={<div className="w-5 h-5 rounded-full bg-gradient-to-b from-[#a39d94] via-[#e08a52] to-[#f0761c] border-2 border-[#284fed]" />} onClick={handleThemeChange} />
+                    <ThemeButton theme="aircall" currentTheme={uiSettings.theme} label="Petrol" icon={<div className="w-5 h-5 rounded-full bg-[#0c2f38] border-2 border-[#36be7c]" />} onClick={handleThemeChange} />
                     {uiSettings.customTheme && (
                         <ThemeButton theme="custom" currentTheme={uiSettings.theme} label="Custom" icon={<div className="w-5 h-5 rounded-full bg-gradient-to-br from-brand-primary to-tag-amber-bg" />} onClick={handleThemeChange} />
                     )}

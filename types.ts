@@ -108,7 +108,7 @@ export interface Settings {
 }
 
 export interface UiSettings {
-  theme: 'light' | 'dark' | 'system' | 'midnight' | 'gruvbox' | 'custom';
+  theme: 'light' | 'dark' | 'system' | 'midnight' | 'gruvbox' | 'falls' | 'aircall' | 'custom';
   showUnplottedJobs: boolean;
   showUnassignedJobsColumn: boolean;
   customTheme?: Record<string, string>;

@@ -19,6 +19,7 @@
 
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
   <script>
     tailwind.config = {
       // darkMode: false, // Removed deprecated option
@@ -415,6 +416,138 @@
       --stone-border: 146 131 116;
 
       --map-tile-filter: grayscale(0.2) sepia(0.5) hue-rotate(-15deg) saturate(0.9);
+    }
+
+    /* ── FALLS: light surfaces on the festival's grainy grey→orange sunset.
+       Only overrides what differs from light — unset vars inherit :root. */
+    [data-theme="falls"] {
+      color-scheme: light;
+      --bg-primary: 255 253 248;
+      --bg-secondary: 247 242 233;
+      --bg-tertiary: 240 232 219;
+      --bg-quaternary: 223 211 192;
+
+      --text-primary: 26 22 18;
+      --text-secondary: 60 52 45;
+      --text-tertiary: 122 108 96;
+      --text-quaternary: 168 152 138;
+
+      --border-primary: 226 214 196;
+      --border-secondary: 202 186 164;
+      --border-tertiary: 158 142 120;
+
+      /* Falls' electric royal blue is the brand */
+      --brand-primary: 40 79 237;
+      --brand-secondary: 28 58 199;
+      --brand-text-on-primary: 255 255 255;
+      --brand-bg-light: 232 237 255;
+      --brand-text-light: 28 58 199;
+
+      --amber-bg: 255 244 214;
+      --amber-text: 176 90 7;
+      --amber-border: 247 216 138;
+      --orange-bg: 255 238 224;
+      --orange-text: 194 65 12;
+      --orange-border: 250 200 158;
+
+      --map-tile-filter: sepia(0.25) saturate(1.05);
+    }
+    /* The page itself is the poster: grain layered over the sunset gradient. */
+    [data-theme="falls"] body {
+      background-color: #b1aba2;
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"),
+        linear-gradient(180deg, #a39d94 0%, #b39a83 30%, #dd8d55 62%, #ee7c28 85%, #f0731a 100%);
+      background-attachment: fixed, fixed;
+    }
+    /* Chunky festival headline type (Archivo Black ≈ the site's SEQUAL) */
+    [data-theme="falls"] h1,
+    [data-theme="falls"] h2 {
+      font-family: 'Archivo Black', 'Arial Black', sans-serif;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── AIRCALL/PETROL: deep teal night with soft sweeping wave shapes. */
+    [data-theme="aircall"] {
+      color-scheme: dark;
+      --bg-primary: 16 45 54;
+      --bg-secondary: 9 34 41;
+      --bg-tertiary: 24 60 70;
+      --bg-quaternary: 34 78 90;
+
+      --text-primary: 235 244 246;
+      --text-secondary: 205 222 226;
+      --text-tertiary: 148 176 182;
+      --text-quaternary: 104 132 138;
+      --text-inverted: 7 26 32;
+
+      --border-primary: 34 78 90;
+      --border-secondary: 52 96 108;
+      --border-tertiary: 90 130 140;
+
+      /* Aircall's green as the brand */
+      --brand-primary: 54 190 124;
+      --brand-secondary: 31 157 97;
+      --brand-text-on-primary: 6 30 20;
+      --brand-bg-light: 16 66 46;
+      --brand-text-light: 142 230 184;
+
+      --amber-bg: 66 46 4;
+      --amber-text: 252 211 77;
+      --amber-border: 120 85 15;
+      --red-bg: 76 29 29;
+      --red-text: 253 164 175;
+      --red-border: 153 27 27;
+      --green-bg: 12 74 50;
+      --green-text: 110 231 183;
+      --green-border: 22 101 62;
+      --blue-bg: 30 58 138;
+      --blue-text: 147 197 253;
+      --blue-border: 30 64 175;
+      --blue-brand: 96 165 250;
+      --blue-brand-dark: 59 130 246;
+      --teal-bg: 19 78 74;
+      --teal-text: 94 234 212;
+      --teal-border: 17 94 89;
+      --orange-bg: 68 32 6;
+      --orange-text: 253 186 116;
+      --orange-border: 124 55 18;
+      --cyan-bg: 21 94 117;
+      --cyan-text: 103 232 249;
+      --cyan-border: 8 145 178;
+      --slate-bg: 40 66 76;
+      --slate-text: 203 219 225;
+      --slate-border: 90 120 132;
+      --purple-bg: 88 28 135;
+      --purple-text: 233 213 255;
+      --purple-border: 107 33 168;
+      --emerald-bg: 6 78 59;
+      --emerald-text: 110 231 183;
+      --emerald-border: 5 150 105;
+      --sky-bg: 7 89 133;
+      --sky-text: 125 211 252;
+      --sky-border: 3 105 161;
+      --stone-bg: 62 60 54;
+      --stone-text: 214 211 209;
+      --stone-border: 118 112 104;
+
+      --map-tile-filter: invert(1) hue-rotate(180deg) brightness(90%) contrast(90%) sepia(0.15);
+    }
+    [data-theme="aircall"] body {
+      background-color: #092229;
+      background-image:
+        radial-gradient(120% 90% at -10% 110%, rgba(38, 96, 104, 0.55) 0%, rgba(38, 96, 104, 0) 55%),
+        radial-gradient(140% 100% at 115% -15%, rgba(30, 80, 92, 0.5) 0%, rgba(30, 80, 92, 0) 60%),
+        radial-gradient(80% 60% at 70% 85%, rgba(22, 66, 76, 0.6) 0%, rgba(22, 66, 76, 0) 65%),
+        linear-gradient(160deg, #0c2f38 0%, #092229 100%);
+      background-attachment: fixed;
+    }
+
+    /* Both scenic themes: the app shell and login screen go transparent so
+       the painted body shows through; cards stay solid for readability. */
+    [data-theme="falls"] .h-screen.bg-bg-secondary,
+    [data-theme="aircall"] .h-screen.bg-bg-secondary {
+      background-color: transparent;
     }
 
     body {
