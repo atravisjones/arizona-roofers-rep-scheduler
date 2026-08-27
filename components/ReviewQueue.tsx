@@ -225,6 +225,11 @@ const normalizeStatus = (value?: string | null) => (value ?? '').toLowerCase().r
 // Phoenix calendar date, not the browser's — appt_date comparisons must not
 // flip a card to overdue at 5pm because the viewer's machine is in UTC.
 const phoenixToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Phoenix' }).format(new Date());
+const phoenixDateOf = (value: string) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Phoenix' }).format(new Date(value));
+// Rescue is a DAILY touch queue: a card counts as handled once anyone logs an
+// action today (Phoenix day); it resurfaces tomorrow and only leaves the queue
+// when the job's Roofr stage actually changes.
+const isTouchedToday = (row: ReviewRow) => !!row.last_action_at && phoenixDateOf(row.last_action_at) === phoenixToday();
 const getOutcomeUrgency = (row: ReviewRow): OutcomeUrgency => {
     const stage = normalizeStatus(row.stage);
     const outcome = normalizeStatus(row.outcome);
@@ -520,9 +525,9 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             if (resp.error) throw new Error(resp.error.message);
             if (seq !== fetchSeqRef.current) return; // a newer fetch superseded this one
             let next = (Array.isArray(resp.data) ? resp.data : []) as ReviewRow[];
-            // Rescue rows have no review state; derive one so the untouched count
-            // (needs_review) can drive the top-tab badge without special cases.
-            if (mode === 'rescue') next = next.map(row => ({ ...row, review_status: (row.last_action ? 'reviewed' : 'needs_review') as ReviewStatus }));
+            // Rescue rows have no review state; derive one from TODAY's touches so
+            // the badge counts jobs still needing contact today (Phoenix day).
+            if (mode === 'rescue') next = next.map(row => ({ ...row, review_status: (isTouchedToday(row) ? 'reviewed' : 'needs_review') as ReviewStatus }));
             const nextNeedsIds = new Set(next.filter(row => row.review_status === 'needs_review').map(row => row.job_id));
             if (checkForNewBooking && priorNeedsIdsRef.current) {
                 const hasNew = [...nextNeedsIds].some(jobId => !priorNeedsIdsRef.current!.has(jobId));
@@ -691,8 +696,11 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                 const riskDifference = Number(getRiskReasons(b).length > 0) - Number(getRiskReasons(a).length > 0);
                 if (riskDifference) return riskDifference;
             }
-            // Rescue works oldest-stuck-first inside the grouping order.
+            // Rescue: today's touched cards sink to the bottom (done for the day),
+            // then grouping, then Oldest = most days stuck first / Newest = least.
             if (mode === 'rescue') {
+                const touchDifference = Number(isTouchedToday(a)) - Number(isTouchedToday(b));
+                if (touchDifference) return touchDifference;
                 const sortField = FILTER_FIELDS.find(entry => entry.key === sortKey)?.field;
                 if (sortField) {
                     const aKey = (a[sortField] || '').toString().trim();
@@ -703,7 +711,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         return aKey.localeCompare(bKey);
                     }
                 }
-                return (b.days_in_stage ?? 0) - (a.days_in_stage ?? 0);
+                const daysDifference = (b.days_in_stage ?? 0) - (a.days_in_stage ?? 0);
+                return sortKey === 'recent' ? -daysDifference : daysDifference;
             }
             // Group by the chosen field, then newest-first inside each group so a
             // block stays in a sensible order. Blanks sort last rather than first.
@@ -909,7 +918,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                     <div className="flex items-baseline gap-2.5">
                         <h2 className="text-[15px] font-semibold text-text-primary">{mode === 'rescue' ? 'Rescue' : mode === 'outcomes' ? 'Outcomes' : 'Bookings'}</h2>
                         <p className="text-[11.5px] text-text-tertiary">{mode === 'rescue'
-                            ? `${rows.length} signed deals stuck before production — claim a card, make the call, log it`
+                            ? `${needsReviewCount} of ${rows.length} still need a touch today — cards clear for the day once contacted, and leave when the stage moves`
                             : mode === 'outcomes'
                                 ? `${OUTCOME_FILTER_PHRASE[outcomeFilter]} · appointments ${rangeText} · rescheduled excluded`
                                 : `Bookings made ${rangeText}`}</p>
@@ -1037,7 +1046,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                             ? `In this range: ${outcomeCounts.overdue} overdue · ${outcomeCounts.unqualified} unqualified · ${outcomeCounts.lost} lost · ${outcomeCounts.working} working. Adjust the tabs or filters above to see them.`
                             : 'Adjust the status tabs or filters above to see more.'}</p>
                     </div>
-                ) : <div className="flex flex-col">{visibleRows.map(row => {
+                ) : <div className="flex flex-col">{visibleRows.map((row, rowIndex) => {
                     const risks = getRiskReasons(row);
                     const isRisky = mode === 'bookings' && row.review_status === 'needs_review' && risks.length > 0;
                     const isBusy = busyJobId === row.job_id;
@@ -1062,19 +1071,30 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         const stageKey = (row.stage || '').trim();
                         const stageInfo = RESCUE_TASK[stageKey];
                         const days = Math.round(row.days_in_stage ?? 0);
+                        const touched = isTouchedToday(row);
+                        // Divider above the first done-for-today card (the sort sinks them all to the bottom).
+                        const showTouchedDivider = touched && (rowIndex === 0 || !isTouchedToday(visibleRows[rowIndex - 1]));
+                        const touchedCount = visibleRows.filter(isTouchedToday).length;
                         const claimActive = !!row.claimed_by && !!row.claimed_at && (Date.now() - new Date(row.claimed_at).getTime()) < RESCUE_CLAIM_MS;
                         const mine = claimActive && (row.claimed_by || '').toLowerCase() === reviewer.trim().toLowerCase();
                         const lockedByOther = claimActive && !mine;
                         const stageActions = RESCUE_ACTIONS.filter(a => !a.stages || a.stages.includes(stageKey));
                         const primary = stageActions.find(a => a.primary);
-                        return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)}
-                            className={`rounded-md border px-3.5 py-2.5 mb-2 transition-all duration-300 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : lockedByOther ? 'bg-bg-secondary/60 border-border-secondary opacity-75' : 'bg-bg-primary border-border-secondary hover:border-border-primary'}`}>
+                        return <React.Fragment key={row.job_id}>
+                        {showTouchedDivider && <div className="flex items-center gap-2 mt-2 mb-2">
+                            <span className="h-px flex-1 bg-tag-green-border/60" />
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-tag-green-text">✓ Contacted today — done until tomorrow ({touchedCount})</span>
+                            <span className="h-px flex-1 bg-tag-green-border/60" />
+                        </div>}
+                        <article onClick={() => setActiveJobId(row.job_id)}
+                            className={`rounded-md border px-3.5 py-2.5 mb-2 transition-all duration-300 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40' : touched ? 'bg-tag-green-bg/30 border-tag-green-border/70 opacity-80' : lockedByOther ? 'bg-bg-secondary/60 border-border-secondary opacity-75' : 'bg-bg-primary border-border-secondary hover:border-border-primary'}`}>
                             <div className="flex items-start gap-4">
                                 <div className="flex-1 min-w-0 space-y-1">
                                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                                         <h2 className="text-[15px] font-semibold text-text-primary">{row.customer || row.name || 'Unknown customer'}</h2>
                                         <span className={`px-2 py-0.5 text-[9px] font-bold tracking-wide rounded border ${stageInfo?.chip || 'border-border-secondary bg-bg-tertiary text-text-secondary'}`} title="Roofr job stage">{stageKey || 'Unknown stage'}</span>
                                         <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded border tabular-nums ${daysChipClass(days)}`} title="Days the job has sat in this stage">{days}d stuck</span>
+                                        {touched && <span className="px-1.5 py-0.5 text-[9px] font-bold rounded border border-tag-green-border bg-tag-green-bg text-tag-green-text" title={`${RESCUE_ACTION_LABEL[row.last_action || ''] || row.last_action} by ${row.last_action_by}`}>✓ Contacted today</span>}
                                         {row.value != null && <span className="text-[11.5px] font-semibold tabular-nums text-text-primary">${row.value.toLocaleString()}</span>}
                                     </div>
                                     <div className="text-[12px] font-semibold text-brand-text-light">{stageInfo?.task || 'Work this job forward'}</div>
@@ -1132,7 +1152,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                     </div>)}
                                 </div>}
                             </div>}
-                        </article>;
+                        </article>
+                        </React.Fragment>;
                     }
                     return <article key={row.job_id} onClick={() => setActiveJobId(row.job_id)} className={`rounded-md border px-3.5 py-2.5 mb-2 overflow-hidden transition-all duration-300 max-h-48 active:scale-[0.99] hover:shadow-sm ${activeJobId === row.job_id ? 'bg-bg-primary border-brand-primary ring-2 ring-brand-primary/40 !max-h-none' : urgencyCardClass || 'bg-bg-primary border-border-secondary hover:border-border-primary'} ${isRisky ? 'border-tag-amber-border' : ''} ${exitState === 'reviewed' ? 'translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-green-bg' : exitState === 'flagged' ? '-translate-x-[110%] opacity-0 !max-h-0 !py-0 !mb-0 !bg-tag-red-bg' : ''}`}>
                         <div className="flex items-start gap-4">
