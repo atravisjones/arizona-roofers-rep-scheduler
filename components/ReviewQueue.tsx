@@ -825,13 +825,16 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
         if (mode !== 'rescue' || !activeJobId || ccReports[activeJobId] !== undefined) return;
         const row = rows.find(r => r.job_id === activeJobId);
         if (!row?.address?.trim()) return;
-        let cancelled = false;
-        setCcReports(prev => ({ ...prev, [activeJobId]: null }));
+        // No cancellation: results are keyed by job id, so a late resolve is
+        // still correct — and the null placeholder below re-runs this effect,
+        // which would trip a naive cleanup flag and strand the card on
+        // "Checking…" forever.
+        const jobId = activeJobId;
+        setCcReports(prev => ({ ...prev, [jobId]: null }));
         fetch(`/api/companycam?address=${encodeURIComponent(row.address)}`)
             .then(resp => resp.json())
-            .then((data: CcReport) => { if (!cancelled) setCcReports(prev => ({ ...prev, [activeJobId]: data })); })
-            .catch(() => { if (!cancelled) setCcReports(prev => ({ ...prev, [activeJobId]: { found: false, reason: 'fetch_failed' } })); });
-        return () => { cancelled = true; };
+            .then((data: CcReport) => setCcReports(prev => ({ ...prev, [jobId]: data })))
+            .catch(() => setCcReports(prev => ({ ...prev, [jobId]: { found: false, reason: 'fetch_failed' } })));
     }, [mode, activeJobId, rows, ccReports]);
 
     const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
