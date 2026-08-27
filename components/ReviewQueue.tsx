@@ -342,6 +342,8 @@ const daysChipClass = (days: number) => days >= 14
 // in Roofr — the app only surfaces it, it never writes anywhere.
 const CC_CHECKOFF_PCT = 50;
 interface CcReport { found: boolean; pct?: number; done?: number; total?: number; complete?: boolean; missing?: string[]; tasks?: Array<{ name: string; done: boolean }>; project_url?: string; last_task_at?: string | null; reason?: string; }
+// Roofr job-card tasks, read live through /api/roofr-tasks (read-only).
+interface RoofrTasks { found: boolean; tasks?: Array<{ title: string; done: boolean; assignee?: string | null }>; reason?: string; }
 
 interface ReviewSnapshot { status: ReviewStatus; reason: string | null; note: string | null; reviewer: string | null; }
 interface ReviewAction { row: ReviewRow; before: ReviewSnapshot; after: ReviewSnapshot; }
@@ -497,6 +499,8 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
     const [rescueHistory, setRescueHistory] = useState<Record<string, Array<{ action: string; note: string | null; actor: string | null; created_at: string }>>>({});
     // CompanyCam production-report status per job (null = fetch in flight).
     const [ccReports, setCcReports] = useState<Record<string, CcReport | null>>({});
+    // Roofr job-card task list per job (null = fetch in flight).
+    const [roofrTasks, setRoofrTasks] = useState<Record<string, RoofrTasks | null>>({});
     const priorNeedsIdsRef = useRef<Set<string> | null>(null);
     const noticeTimerRef = useRef<number | null>(null);
     // Monotonic fetch id — a response only lands if no newer fetch has started,
@@ -837,6 +841,19 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
             .catch(() => setCcReports(prev => ({ ...prev, [jobId]: { found: false, reason: 'fetch_failed' } })));
     }, [mode, activeJobId, rows, ccReports]);
 
+    // Expanded rescue card also pulls the Roofr job-card task list live
+    // (read-only read-through of the synced session). Same no-cancel shape
+    // as the CompanyCam fetch above, for the same placeholder reason.
+    useEffect(() => {
+        if (mode !== 'rescue' || !activeJobId || roofrTasks[activeJobId] !== undefined) return;
+        const jobId = activeJobId;
+        setRoofrTasks(prev => ({ ...prev, [jobId]: null }));
+        fetch(`/api/roofr-tasks?job_id=${encodeURIComponent(jobId)}`)
+            .then(resp => resp.json())
+            .then((data: RoofrTasks) => setRoofrTasks(prev => ({ ...prev, [jobId]: data })))
+            .catch(() => setRoofrTasks(prev => ({ ...prev, [jobId]: { found: false, reason: 'fetch_failed' } })));
+    }, [mode, activeJobId, roofrTasks]);
+
     const reviewWithAnimation = (row: ReviewRow, status: ReviewStatus, reason: string | null = null, note: string | null = null) => {
         setFlaggingJobId(null);
         setFlagNote('');
@@ -1108,6 +1125,7 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                         const primary = stageActions.find(a => a.primary);
                         const cc = ccReports[row.job_id];
                         const ccEligible = !!cc?.found && (cc.complete || (cc.pct ?? 0) >= CC_CHECKOFF_PCT);
+                        const rt = roofrTasks[row.job_id];
                         return <React.Fragment key={row.job_id}>
                         {showTouchedDivider && <div className="flex items-center gap-2 mt-2 mb-2">
                             <span className="h-px flex-1 bg-tag-green-border/60" />
@@ -1171,6 +1189,19 @@ const ReviewQueue: React.FC<{ onCountChange: (count: number) => void }> = ({ onC
                                         className={`px-2 py-1 text-[10px] font-bold rounded transition disabled:opacity-50 ${a.primary ? 'bg-tag-green-text text-bg-primary hover:opacity-90' : 'border border-border-secondary bg-bg-primary text-text-secondary hover:border-brand-primary hover:text-brand-primary'}`}>{a.label}</button>)}
                                     <input value={rescueNote} onChange={event => setRescueNote(event.target.value)} placeholder="Optional note — what happened on the call?" className="flex-1 min-w-40 px-2 py-1 text-[10px] rounded border border-border-secondary bg-bg-primary text-text-primary outline-none focus:border-brand-primary" />
                                 </div>
+                                {rt !== undefined && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
+                                    <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">☑ Job-card tasks — Roofr (read-only)</p>
+                                    {rt === null ? <p className="text-[10.5px] text-text-tertiary">Loading Roofr tasks…</p>
+                                        : !rt.found || !(rt.tasks?.length) ? <p className="text-[10.5px] text-text-tertiary">Couldn’t load tasks — open the Roofr card instead.</p>
+                                            : <ul className="space-y-1 pt-0.5">
+                                                {rt.tasks!.map((task, taskIndex) => <li key={taskIndex} className={`flex items-center gap-2 text-[11px] ${task.done ? 'text-text-tertiary' : 'text-text-primary font-semibold'}`}>
+                                                    {task.done
+                                                        ? <span className="grid h-3.5 w-3.5 flex-shrink-0 place-items-center rounded-[3px] bg-tag-green-text text-[9px] font-bold text-bg-primary" aria-hidden="true">✓</span>
+                                                        : <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[3px] border-[1.5px] border-tag-amber-text/70 bg-bg-primary" aria-hidden="true" />}
+                                                    <span>{task.title}{task.assignee && <span className="font-normal text-text-quaternary"> · {task.assignee}</span>}</span>
+                                                </li>)}
+                                            </ul>}
+                                </div>}
                                 {cc !== undefined && <div className="border-t border-border-secondary/50 pt-1.5 space-y-1">
                                     <p className="text-[9px] font-bold uppercase tracking-wide text-text-quaternary">📸 Production report — CompanyCam (read-only)</p>
                                     {cc === null ? <p className="text-[10.5px] text-text-tertiary">Checking CompanyCam…</p>
