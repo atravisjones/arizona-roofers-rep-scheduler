@@ -142,8 +142,14 @@ export const ROTATION_MAX_BONUS = 10;
 //
 // An unmapped id is not an error you will see: that rep's trips quietly file
 // under whoever owns the job, so they read as "never went" and sit at the top of
-// the queue forever. Resolve new ids with the mode() query in roofr-appointments.py
-// and confirm against the attendee email before adding.
+// the queue forever.
+//
+// TO RESOLVE A NEW ID, read tools/production-map/roofr-users.json FIRST — it is
+// a full Roofr team dump, id -> name + email, and answers in one lookup what
+// correlating job_owner across a rep's calendar only guesses at. It goes stale
+// (it is a snapshot, not a feed), so an id absent from it is simply newer than
+// the file; only then fall back to the owner<->attendee correlation, and
+// confirm the name's department against the `teams` table before adding.
 //
 // Deliberately absent: 372086 (Brenda Ochoa, office), 565310 / 494624
 // (ride-along/shadow attendees — they would credit a turn to every rep they join).
@@ -160,6 +166,11 @@ export const ROOFR_NON_REP_USER_IDS = new Set<string>([
   // by "Marcus Ruppel" (Production) that have a calendar event both carry this
   // id as sole attendee, so probably him. Non-rep either way.
   "562516",   // likely Marcus Ruppel - Production/ops
+  // Lead Center (CSR), Active. Rides along on reps' appointments, which is why
+  // she kept turning up on southern jobs under three different reps in three
+  // weeks. Confirmed by name and email against tools/production-map/roofr-users.json
+  // and by department against the teams roster.
+  "459345",   // Bronte Pisz - Lead Center CSR
 ]);
 
 export const ROOFR_USER_ID_TO_REP: Record<string, string> = {

@@ -121,8 +121,11 @@ It is editable on `/rotation` and in the assignment settings modal; both write s
   string compare against `YYYY-MM-DD`.
 - **An unmapped attendee id is invisible damage.** That rep's trips file under nobody, so they read
   as "never went" and sit at the top of the queue for good. The page lists any unrecognised id seen
-  on an out-of-town appointment. Before adding one to `ROOFR_USER_ID_TO_REP`, confirm it against the
-  attendee email on a real event — the `mode()` popularity heuristic has misattributed a user before.
+  on an out-of-town appointment. **Resolve it against `tools/production-map/roofr-users.json`** — a
+  full Roofr team dump, id → name + email, which answers in one lookup what correlating `job_owner`
+  across a rep's calendar only guesses at. It is a snapshot and goes stale, so an id missing from it
+  is newer than the file; only then fall back to correlation, and check the name's department in
+  `teams` before adding (`459345` looked like a rep by its calendar and is a Lead Center CSR).
   Ids that are correctly absent (office staff, ride-alongs) live in `ROOFR_NON_REP_USER_IDS` so the
   warning stays a real signal.
 - **`ROOFR_USER_ID_TO_REP` has a second copy** in `api/roofr-appointments.py`. Update both together.
