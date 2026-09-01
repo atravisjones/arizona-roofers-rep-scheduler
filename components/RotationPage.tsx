@@ -52,6 +52,38 @@ const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: st
 
 const SHOW_PHOENIX_KEY = 'rotation.showPhoenix';
 
+type SortKey = 'name' | 'lastTrip' | 'trips' | 'appts' | 'won' | 'wonValue';
+interface Sort { key: SortKey; dir: 'asc' | 'desc' }
+
+/**
+ * Which way a column sorts on its FIRST click. Numbers open biggest-first
+ * because "who has done the most of this" is the question you are asking when
+ * you reach for a number column; names open A-Z.
+ *
+ * "Last went" opens most-recent-first on purpose: oldest-first is already the
+ * rotation order, so opening that way would look like the click did nothing.
+ */
+const DEFAULT_DIR: Record<SortKey, 'asc' | 'desc'> = {
+    name: 'asc', lastTrip: 'desc', trips: 'desc', appts: 'desc', won: 'desc', wonValue: 'desc',
+};
+
+/** null sort = rotation order, which is the whole point of the page. */
+const applySort = (rows: RotationEntry[], sort?: Sort): RotationEntry[] => {
+    if (!sort) return rows;
+    const mul = sort.dir === 'asc' ? 1 : -1;
+    return [...rows].sort((a, b) => {
+        let primary: number;
+        if (sort.key === 'name') primary = a.repName.localeCompare(b.repName);
+        // A "never" is an empty string, so it lands at whichever end the
+        // direction puts it — the flip stays a true reversal.
+        else if (sort.key === 'lastTrip') primary = (a.lastTrip || '').localeCompare(b.lastTrip || '');
+        else primary = a[sort.key] - b[sort.key];
+        // Name breaks ties OUTSIDE the multiplier, so equal rows keep a stable
+        // A-Z order in both directions instead of flipping about.
+        return primary !== 0 ? primary * mul : a.repName.localeCompare(b.repName);
+    });
+};
+
 /** "Aug 29" / "never". Parsed as local parts — new Date('2026-08-29') is UTC. */
 const fmtDay = (day: string | null): string => {
     if (!day) return 'never';
@@ -86,6 +118,9 @@ const RotationPage: React.FC = () => {
         isRotationLoading, reloadRotation, rotationWindowDays,
     } = context;
     const [showExcluded, setShowExcluded] = useState(true);
+    // Per queue: each column sorts its own table, so you can rank Tucson by
+    // Sold while the corridor stays in turn order.
+    const [sorts, setSorts] = useState<Partial<Record<RotationQueueId, Sort>>>({});
     // Off by default, but remembered once you turn it on — it is a wide column
     // most people do not want, and re-ticking it every visit would be a chore.
     const [showPhoenix, setShowPhoenix] = useState(
@@ -95,6 +130,23 @@ const RotationPage: React.FC = () => {
     useEffect(() => {
         try { window.localStorage.setItem(SHOW_PHOENIX_KEY, showPhoenix ? '1' : '0'); } catch { /* private mode */ }
     }, [showPhoenix]);
+
+    /**
+     * Three-state cycle per column: default direction, flipped, then back to
+     * rotation order. That last step is the way home — without it there is no
+     * obvious way to undo a sort short of reloading.
+     */
+    const clickHeader = (queue: RotationQueueId, key: SortKey) => setSorts(prev => {
+        const cur = prev[queue];
+        if (cur?.key !== key) return { ...prev, [queue]: { key, dir: DEFAULT_DIR[key] } };
+        const flipped: 'asc' | 'desc' = cur.dir === 'asc' ? 'desc' : 'asc';
+        if (flipped === DEFAULT_DIR[key]) {
+            const next = { ...prev };
+            delete next[queue];
+            return next;
+        }
+        return { ...prev, [queue]: { key, dir: flipped } };
+    });
 
     const toggleSkip = (repKey: string, queue: RotationQueueId, skipped: boolean) => {
         const next = {
@@ -206,7 +258,26 @@ const RotationPage: React.FC = () => {
         </tr>
     );
 
-    const renderQueue = (q: typeof QUEUES[number], data: RotationQueue) => (
+    /** Up/down marker on the column currently driving the order, blank on the rest. */
+    const arrow = (queue: RotationQueueId, key: SortKey) => {
+        const s = sorts[queue];
+        if (s?.key !== key) return '';
+        return s.dir === 'asc' ? ' ▲' : ' ▼';
+    };
+
+    const sortableTh = (queue: RotationQueueId, key: SortKey, label: string, align: string, hint?: string) => (
+        <th
+            className={`py-1.5 pr-2 ${align} cursor-pointer select-none hover:text-text-secondary`}
+            onClick={() => clickHeader(queue, key)}
+            title={`${hint ? hint + '. ' : ''}Click to sort, again to reverse, once more for rotation order.`}
+        >
+            {label}{arrow(queue, key)}
+        </th>
+    );
+
+    const renderQueue = (q: typeof QUEUES[number], data: RotationQueue) => {
+        const rankOf = new Map(data.order.map((e, i) => [e.repKey, i + 1]));
+        return (
         <div key={q.id} className="flex-1 min-w-0 flex flex-col bg-bg-primary border border-border-primary rounded-lg overflow-hidden">
             <div className="flex-shrink-0 px-3 py-2 bg-bg-secondary border-b border-border-primary">
                 <h2 className="text-sm font-bold text-text-primary">{q.title}</h2>
@@ -237,17 +308,35 @@ const RotationPage: React.FC = () => {
                     <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-bg-primary">
                             <tr className="text-[9px] font-bold uppercase text-text-quaternary border-b border-border-secondary">
-                                <th className="py-1.5 pl-3 pr-2 text-right">#</th>
-                                <th className="py-1.5 pr-2 text-left">Rep</th>
-                                <th className="py-1.5 pr-2 text-left">Last went</th>
-                                <th className="py-1.5 pr-2 text-center" title="Distinct days driven out there">Days</th>
-                                <th className="py-1.5 pr-2 text-center" title="Appointments run here · how many sold">Appt · Won</th>
-                                <th className="py-1.5 pr-2 text-right" title="Contract value of those sales">Sold</th>
+                                <th className="py-1.5 pl-3 pr-2 text-right" title="Spot in the rotation. Stays put when you sort, so you can rank by any column and still see who is up next.">#</th>
+                                {sortableTh(q.id, 'name', 'Rep', 'text-left')}
+                                {sortableTh(q.id, 'lastTrip', 'Last went', 'text-left')}
+                                {sortableTh(q.id, 'trips', 'Days', 'text-center', 'Distinct days driven out there')}
+                                <th className="py-1.5 pr-2 text-center">
+                                    <span
+                                        onClick={() => clickHeader(q.id, 'appts')}
+                                        className="cursor-pointer select-none hover:text-text-secondary"
+                                        title="Appointments run here. Click to sort."
+                                    >
+                                        Appt{arrow(q.id, 'appts')}
+                                    </span>
+                                    <span className="mx-0.5">·</span>
+                                    <span
+                                        onClick={() => clickHeader(q.id, 'won')}
+                                        className="cursor-pointer select-none hover:text-text-secondary"
+                                        title="How many of them sold. Click to sort."
+                                    >
+                                        Won{arrow(q.id, 'won')}
+                                    </span>
+                                </th>
+                                {sortableTh(q.id, 'wonValue', 'Sold', 'text-right', 'Contract value of those sales')}
                                 <th className="py-1.5 pr-3"></th>
                             </tr>
                         </thead>
                         <tbody>
-                            {data.order.map((e, i) => renderRow(e, i + 1, q.id))}
+                            {/* Rank comes from the ROTATION order, not the row index, so
+                                sorting by Sold still shows each rep's spot in line. */}
+                            {applySort(data.order, sorts[q.id]).map(e => renderRow(e, rankOf.get(e.repKey) ?? null, q.id))}
                             {!data.order.length && (
                                 <tr><td colSpan={7} className="py-6 text-center text-text-tertiary">
                                     Nobody in the rotation. Load a schedule so the rep list is populated.
@@ -261,7 +350,7 @@ const RotationPage: React.FC = () => {
                                             Not in rotation
                                         </td>
                                     </tr>
-                                    {data.excluded.map(e => renderRow(e, null, q.id))}
+                                    {applySort(data.excluded, sorts[q.id]).map(e => renderRow(e, null, q.id))}
                                 </>
                             )}
                         </tbody>
@@ -269,7 +358,8 @@ const RotationPage: React.FC = () => {
                 </div>
             )}
         </div>
-    );
+        );
+    };
 
     return (
         <div className="h-full flex flex-col gap-3 min-h-0">
