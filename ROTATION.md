@@ -19,15 +19,22 @@ KPI Supabase calendar_events      ──► who was where, and when
 KPI Supabase jobs                 ──► lat/lng for each appointment
 ```
 
-1. Fetch the published service areas. They arrive in **precedence order**, and disabled areas are
-   dropped — the same rule the boundary editor shows.
+1. Fetch the published service areas. Disabled areas are dropped.
+
+   **Precedence is deliberately ignored here.** The editor's precedence answers "which single area
+   *names* this address" — what the CSR banner and the decline log need. The rotation asks "did the
+   rep actually drive out there", a plain geographic question about the shape. Honouring precedence
+   meant a corridor carve-out drawn inside Phoenix was invisible: Phoenix sits above it, claims every
+   corridor town, and the queue stayed empty while looking correctly configured. Making the corridor
+   outrank Phoenix would have renamed 13 towns in the scanner to satisfy a scheduler page. So
+   `Limited` is simply checked first, then `South`.
 2. Fetch `category = 'sales'` events for the window (`ROTATION_WINDOW_DAYS`, default 180). This
    **includes future-dated events**: a rep already booked south has taken their turn, and without
    that you would send them twice while planning the week.
 3. Resolve `calendar_events.attendees` (numeric Roofr user ids) through `ROOFR_USER_ID_TO_REP`.
    Every mapped attendee is credited — a ride-along to Tucson is still a day spent driving there.
-4. Classify each appointment's coordinates. The first polygon that contains the point wins, so an
-   area sitting above `Phoenix` in precedence is what makes a corridor job read as `Limited`.
+4. Classify each appointment's coordinates: inside `Limited` → corridor, else inside `South` →
+   Tucson, else neither. Limited wins any overlap because it is the more specific shape.
 5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn.
 
 `fetchRotationData()` does the network half; `buildRotation()` is pure, so toggling a skip re-orders

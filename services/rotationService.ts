@@ -73,22 +73,32 @@ export const pointInPolygon = (lat: number, lng: number, poly: [number, number][
 };
 
 /**
- * Which queue owns this point, or null. Precedence decides overlaps exactly as
- * the editor shows it: the area listed higher names the address. Every area is
- * considered, not just the two we care about — a corridor point that Phoenix
- * wins belongs to neither queue.
+ * Which queue owns this point, or null.
+ *
+ * This deliberately IGNORES the editor's precedence order, because the two
+ * tools ask different questions. Precedence answers "which single area names
+ * this address" — what the CSR banner and the decline log need. The rotation
+ * asks "did the rep actually drive out there", which is a plain geographic
+ * question about the shape.
+ *
+ * Honouring precedence here meant a corridor carve-out drawn INSIDE Phoenix
+ * was invisible: Phoenix sits above it, claims every corridor town, and the
+ * queue stays permanently empty while looking correctly configured. The fix
+ * is not to make Travis outrank Phoenix company-wide — that would rename 13
+ * towns in the scanner to satisfy a scheduler page. The corridor is a
+ * carve-out, so it is simply checked first.
+ *
+ * Limited wins over Tucson where they overlap: it is the more specific shape.
  */
 export const classifyPoint = (
     lat: number,
     lng: number,
     areas: RotationArea[],
 ): RotationQueueId | null => {
-    for (const area of areas) {
-        if (!pointInPolygon(lat, lng, area.poly)) continue;
-        if (area.name === ROTATION_AREA_NAMES.limited) return 'limited';
-        if (area.name === ROTATION_AREA_NAMES.tucson) return 'tucson';
-        return null;   // a higher-precedence area claimed it
-    }
+    const limited = areas.find(a => a.name === ROTATION_AREA_NAMES.limited);
+    if (limited && pointInPolygon(lat, lng, limited.poly)) return 'limited';
+    const tucson = areas.find(a => a.name === ROTATION_AREA_NAMES.tucson);
+    if (tucson && pointInPolygon(lat, lng, tucson.poly)) return 'tucson';
     return null;
 };
 
