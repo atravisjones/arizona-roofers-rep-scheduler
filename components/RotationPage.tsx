@@ -5,9 +5,9 @@ import { ROTATION_AREA_NAMES } from '../constants';
 import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
 
 /**
- * Whose turn it is to take the Limited corridor, and whose turn it is to take
- * Tucson. Two independent queues — a corridor run and a Tucson day are not the
- * same ask, so they rotate separately.
+ * Whose turn it is to take each long drive: the Limited corridor, Tucson, or up
+ * north. Three independent queues — a corridor run, a Tucson day and a Flagstaff
+ * day are not the same ask, so they rotate separately.
  *
  * Everything here is derived from appointments that actually happened (or are
  * already booked). Nothing has to be marked off by hand, which is the point:
@@ -25,6 +25,11 @@ const QUEUES: { id: RotationQueueId; title: string; blurb: string }[] = [
         id: 'tucson',
         title: 'Tucson',
         blurb: 'Reps sent south into Tucson and below',
+    },
+    {
+        id: 'north',
+        title: 'Up north',
+        blurb: `Reps sent into the "${ROTATION_AREA_NAMES.north}" service area`,
     },
 ];
 
@@ -78,6 +83,9 @@ const RotationPage: React.FC = () => {
         );
     }
 
+    const queueLabel = (queue: RotationQueueId) =>
+        QUEUES.find(q => q.id === queue)?.title.toLowerCase() ?? queue;
+
     const renderRow = (entry: RotationEntry, index: number, queue: RotationQueueId) => (
         <tr key={entry.repKey} className="border-b border-border-secondary last:border-0 hover:bg-bg-tertiary/50 transition">
             <td className="py-1.5 pl-3 pr-2 w-10 text-right tabular-nums text-text-tertiary font-semibold">{index + 1}</td>
@@ -98,7 +106,7 @@ const RotationPage: React.FC = () => {
                 <button
                     onClick={() => toggleSkip(entry.repKey, queue, true)}
                     className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-tag-red-border hover:text-tag-red-text transition"
-                    title={`Take ${entry.repName} out of the ${queue === 'limited' ? 'corridor' : 'Tucson'} rotation`}
+                    title={`Take ${entry.repName} out of the ${queueLabel(queue)} rotation`}
                 >
                     skip
                 </button>
@@ -190,7 +198,7 @@ const RotationPage: React.FC = () => {
         <div className="h-full flex flex-col gap-3 min-h-0">
             <div className="flex-shrink-0 flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
-                    <h1 className="text-base font-bold text-text-primary">South rotation</h1>
+                    <h1 className="text-base font-bold text-text-primary">Travel rotation</h1>
                     <div className="text-[11px] text-text-tertiary">
                         Who is up next. Ordered by how long since their last trip — a rep already
                         booked to go counts as having taken their turn.
@@ -244,7 +252,7 @@ const RotationPage: React.FC = () => {
                         {rotation.unmappedAttendeeIds.length} unrecognised attendee
                         {rotation.unmappedAttendeeIds.length > 1 ? ' ids' : ' id'}
                     </span>{' '}
-                    on southern appointments ({rotation.unmappedAttendeeIds.join(', ')}). Those trips
+                    on out-of-town appointments ({rotation.unmappedAttendeeIds.join(', ')}). Those trips
                     are not credited to anyone, so a rep may look emptier than they are. Add the id to
                     ROOFR_USER_ID_TO_REP once you have confirmed whose it is.
                 </div>

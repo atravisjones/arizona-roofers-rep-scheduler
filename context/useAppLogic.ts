@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId, ROTATION_QUEUE_IDS } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, ROTATION_MAX_BONUS } from '../constants';
 import { fetchRotationData, buildRotation, classifyPoint, RotationData } from '../services/rotationService';
@@ -900,10 +900,10 @@ export const useAppLogic = () => {
         setDraggedOverRepId(null);
     }, []);
 
-    // ---- South rotation ---------------------------------------------------
+    // ---- Travel rotation --------------------------------------------------
     // Loaded once per session: the polygons come from the boundary editor and
-    // the trip history is a 180-day window, neither of which moves during a
-    // planning session. buildRotation is pure, so a skip toggle re-orders the
+    // the trip history is a fixed rolling window, neither of which moves during
+    // a planning session. buildRotation is pure, so a skip toggle re-orders the
     // queues without touching the network.
     const [rotationData, setRotationData] = useState<RotationData | null>(null);
     const [rotationConfig, setRotationConfig] = useState<RotationConfig>(DEFAULT_ROTATION_CONFIG);
@@ -928,11 +928,11 @@ export const useAppLogic = () => {
 
     // repKey -> position/size per queue, for the auto-assign nudge.
     const rotationPositions = useMemo(() => {
-        const out: Record<RotationQueueId, Map<string, { pos: number; size: number }>> = {
-            limited: new Map(), tucson: new Map(),
-        };
+        const out = Object.fromEntries(
+            ROTATION_QUEUE_IDS.map(q => [q, new Map<string, { pos: number; size: number }>()]),
+        ) as Record<RotationQueueId, Map<string, { pos: number; size: number }>>;
         if (!rotation) return out;
-        (['limited', 'tucson'] as RotationQueueId[]).forEach(q => {
+        ROTATION_QUEUE_IDS.forEach(q => {
             const list = rotation[q].order;
             list.forEach((e, i) => out[q].set(e.repKey, { pos: i, size: list.length }));
         });
@@ -954,9 +954,11 @@ export const useAppLogic = () => {
     // rarely, and putting it in the dependency array would rebuild the callback
     // (and every memo that depends on it) on each load.
     const rotationAreasRef = useRef<RotationData['areas']>([]);
-    const rotationPositionsRef = useRef<Record<RotationQueueId, Map<string, { pos: number; size: number }>>>({
-        limited: new Map(), tucson: new Map(),
-    });
+    const rotationPositionsRef = useRef<Record<RotationQueueId, Map<string, { pos: number; size: number }>>>(
+        Object.fromEntries(
+            ROTATION_QUEUE_IDS.map(q => [q, new Map<string, { pos: number; size: number }>()]),
+        ) as Record<RotationQueueId, Map<string, { pos: number; size: number }>>,
+    );
     // The on/off switch is GLOBAL, not part of Settings — Settings is stored per
     // date_key, so a toggle there would silently switch itself back on tomorrow.
     const rotationInfluenceRef = useRef(true);
@@ -1189,11 +1191,11 @@ export const useAppLogic = () => {
         }
 
         // ============================================================
-        // SOUTH ROTATION: nudge whoever is up next for the Limited corridor
-        // or Tucson. Applied here as a bonus rather than as a ScoringWeights
-        // key on purpose — a new weight would change totalWeight and silently
-        // rescale timeframe, rank, skills and distance for EVERY job.
-        // Only southern jobs are touched; everything else scores as before.
+        // TRAVEL ROTATION: nudge whoever is up next for the Limited corridor,
+        // Tucson, or up north. Applied here as a bonus rather than as a
+        // ScoringWeights key on purpose — a new weight would change totalWeight
+        // and silently rescale timeframe, rank, skills and distance for EVERY
+        // job. Only out-of-town jobs are touched; Phoenix scores as before.
         // ============================================================
         if (rotationInfluenceRef.current && rotationAreasRef.current.length) {
             const coord = geoCache.get(job.address);
@@ -4018,7 +4020,7 @@ export const useAppLogic = () => {
         handleLoadFromSheet,
         isLoadingFromSheet,
 
-        // South rotation
+        // Travel rotation
         rotation,
         rotationConfig,
         updateRotationConfig,

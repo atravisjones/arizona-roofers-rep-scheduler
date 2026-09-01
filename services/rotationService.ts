@@ -1,5 +1,6 @@
 /**
- * South rotation — whose turn it is to take the Limited corridor or Tucson.
+ * Travel rotation — whose turn it is to take the Limited corridor, Tucson, or
+ * the long drive up north.
  *
  * Two halves, deliberately split:
  *   fetchRotationData()  the network part (polygons + trip history), cached
@@ -19,9 +20,11 @@ import {
     ROTATION_WINDOW_DAYS,
     ROOFR_USER_ID_TO_REP,
     ROOFR_NON_REP_USER_IDS,
+    ROTATION_NON_REP_ROWS,
 } from '../constants';
 import { normalizeName } from './googleSheetsService';
 import { isCommercialOnlyRep, isFieldSalesRep } from '../utils/repUtils';
+import { ROTATION_QUEUE_IDS } from '../types';
 import type {
     Rep,
     RotationConfig,
@@ -30,6 +33,10 @@ import type {
     RotationQueueId,
     RotationState,
 } from '../types';
+
+/** One empty value per queue, so adding a queue never leaves a record half-filled. */
+const byQueue = <T,>(make: () => T): Record<RotationQueueId, T> =>
+    Object.fromEntries(ROTATION_QUEUE_IDS.map(q => [q, make()])) as Record<RotationQueueId, T>;
 
 export interface RotationArea {
     name: string;
@@ -88,17 +95,24 @@ export const pointInPolygon = (lat: number, lng: number, poly: [number, number][
  * towns in the scanner to satisfy a scheduler page. The corridor is a
  * carve-out, so it is simply checked first.
  *
- * Limited wins over Tucson where they overlap: it is the more specific shape.
+ * Order is most-specific first: Limited is a carve-out, so it wins over Tucson
+ * and North wherever they overlap.
  */
+const QUEUE_BY_AREA: [RotationQueueId, string][] = [
+    ['limited', ROTATION_AREA_NAMES.limited],
+    ['tucson', ROTATION_AREA_NAMES.tucson],
+    ['north', ROTATION_AREA_NAMES.north],
+];
+
 export const classifyPoint = (
     lat: number,
     lng: number,
     areas: RotationArea[],
 ): RotationQueueId | null => {
-    const limited = areas.find(a => a.name === ROTATION_AREA_NAMES.limited);
-    if (limited && pointInPolygon(lat, lng, limited.poly)) return 'limited';
-    const tucson = areas.find(a => a.name === ROTATION_AREA_NAMES.tucson);
-    if (tucson && pointInPolygon(lat, lng, tucson.poly)) return 'tucson';
+    for (const [queue, areaName] of QUEUE_BY_AREA) {
+        const area = areas.find(a => a.name === areaName);
+        if (area && pointInPolygon(lat, lng, area.poly)) return queue;
+    }
     return null;
 };
 
@@ -200,17 +214,15 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
         }
     }
 
-    const seen: Record<RotationQueueId, Map<string, Set<string>>> = {
-        limited: new Map(), tucson: new Map(),
-    };
+    const seen = byQueue(() => new Map<string, Set<string>>());
     const unmapped = new Set<string>();
     for (const { jobId, day, reps, unknown } of wanted) {
         const c = coords.get(jobId);
         if (!c) continue;                       // no coordinates, no classification
         const queue = classifyPoint(c.lat, c.lng, areas);
         if (!queue) continue;
-        // Only ids seen on a SOUTHERN appointment are worth flagging — an
-        // unmapped id that never goes south costs this feature nothing.
+        // Only ids seen on an OUT-OF-TOWN appointment are worth flagging — an
+        // unmapped id that never leaves the valley costs this feature nothing.
         for (const id of unknown) unmapped.add(id);
         for (const repKey of reps) {
             if (!seen[queue].has(repKey)) seen[queue].set(repKey, new Set());
@@ -219,8 +231,8 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
     }
 
     const today = dayKey(new Date());
-    const trips = { limited: {}, tucson: {} } as RotationData['trips'];
-    (['limited', 'tucson'] as RotationQueueId[]).forEach(q => {
+    const trips = byQueue(() => ({})) as RotationData['trips'];
+    ROTATION_QUEUE_IDS.forEach(q => {
         for (const [repKey, days] of seen[q]) {
             const sorted = [...days].sort();
             const last = sorted[sorted.length - 1] || null;
@@ -234,8 +246,8 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
 export async function fetchRotationData(): Promise<RotationData> {
     const empty: RotationData = {
         areas: [],
-        areaPublished: { limited: false, tucson: false },
-        trips: { limited: {}, tucson: {} },
+        areaPublished: byQueue(() => false),
+        trips: byQueue(() => ({})),
         unmappedAttendeeIds: [],
         windowDays: ROTATION_WINDOW_DAYS,
         loadedAt: Date.now(),
@@ -246,10 +258,9 @@ export async function fetchRotationData(): Promise<RotationData> {
         return {
             ...empty,
             areas,
-            areaPublished: {
-                limited: areas.some(a => a.name === ROTATION_AREA_NAMES.limited),
-                tucson: areas.some(a => a.name === ROTATION_AREA_NAMES.tucson),
-            },
+            areaPublished: Object.fromEntries(
+                QUEUE_BY_AREA.map(([q, name]) => [q, areas.some(a => a.name === name)]),
+            ) as Record<RotationQueueId, boolean>,
             trips,
             unmappedAttendeeIds,
             loadedAt: Date.now(),
@@ -285,6 +296,9 @@ function buildQueue(
         if (rep.isMock) continue;
         const repKey = normalizeName(rep.name);
         if (!repKey) continue;
+        // Sheet rows that are not people never take a turn, and showing them as
+        // "held out" would imply someone decided to hold them out.
+        if (ROTATION_NON_REP_ROWS.has(repKey)) continue;
         const stat = data.trips[queue][repKey];
         const entry: RotationEntry = {
             repName: rep.name.trim(),
@@ -317,6 +331,7 @@ export function buildRotation(reps: Rep[], data: RotationData, config: RotationC
     return {
         limited: buildQueue(reps, 'limited', data, config),
         tucson: buildQueue(reps, 'tucson', data, config),
+        north: buildQueue(reps, 'north', data, config),
         areas: data.areas,
         unmappedAttendeeIds: data.unmappedAttendeeIds,
         windowDays: data.windowDays,

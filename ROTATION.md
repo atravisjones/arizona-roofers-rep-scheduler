@@ -1,12 +1,12 @@
-# South rotation
+# Travel rotation
 
-Whose turn it is to take the **Limited corridor** and whose turn it is to take **Tucson**.
-Two separate queues, at `/rotation`.
+Whose turn it is to take the **Limited corridor**, **Tucson**, or the drive **up north**.
+Three separate queues, at `/rotation`.
 
 ## Why it exists
 
-Southern trips were handed out ad hoc, so the same handful of reps absorbed the long drives while
-others had not been south in months. The queue makes the order visible and self-maintaining.
+Out-of-town trips were handed out ad hoc, so the same handful of reps absorbed the long drives while
+others had not left the valley in months. The queue makes the order visible and self-maintaining.
 
 ## Where the numbers come from
 
@@ -28,13 +28,21 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    corridor town, and the queue stayed empty while looking correctly configured. Making the corridor
    outrank Phoenix would have renamed 13 towns in the scanner to satisfy a scheduler page. So
    `Limited` is simply checked first, then `South`.
-2. Fetch `category = 'sales'` events for the window (`ROTATION_WINDOW_DAYS`, default 180). This
+2. Fetch `category = 'sales'` events for the window (`ROTATION_WINDOW_DAYS`, **360 days**). 180 was
+   too short: an up-north or Tucson run is rare enough that half a year left most reps tied on
+   "never", which is no order at all. This
    **includes future-dated events**: a rep already booked south has taken their turn, and without
    that you would send them twice while planning the week.
 3. Resolve `calendar_events.attendees` (numeric Roofr user ids) through `ROOFR_USER_ID_TO_REP`.
    Every mapped attendee is credited — a ride-along to Tucson is still a day spent driving there.
-4. Classify each appointment's coordinates: inside `Limited` → corridor, else inside `South` →
-   Tucson, else neither. Limited wins any overlap because it is the more specific shape.
+4. Classify each appointment's coordinates, most specific shape first: inside `Limited` → corridor,
+   else inside `South` → Tucson, else inside `North` → up north, else neither. Limited wins any
+   overlap because it is the carve-out.
+
+   **The queue only sees what the polygon covers.** As published on 2026-09-01 the `North` shape
+   spans roughly lat 34.08–34.84 / lng −112.65..−111.78 — Prescott, Cottonwood, Camp Verde, Sedona.
+   Flagstaff (lat 35.2) and Payson (lng −111.3) fall **outside** it, so trips there are not counted
+   as up-north turns. That is a boundary-editor edit, not a code change.
 5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn.
 
 `fetchRotationData()` does the network half; `buildRotation()` is pure, so toggling a skip re-orders
@@ -44,6 +52,15 @@ the queues without refetching.
 
 In: reps whose availability-sheet section is `PHOENIX` or `NORTHERN`, plus unsectioned floaters
 (they are already eligible for every region in auto-assign).
+
+Sheet rows that are not people are dropped outright — `ROTATION_NON_REP_ROWS` in `constants.ts`,
+currently just "Flex North", a coverage placeholder. They are not listed under **Not in rotation**,
+because that would read as a real rep somebody decided to hold out.
+
+`NORTHERN`-section reps are **not** treated as up-north residents the way `SOUTH`-section reps are
+treated as Tucson residents. Deliberate: the sheet's NORTHERN banner marks who covers the north, not
+who lives there, and a frequent goer sinks to the back of the queue on their own. Use the skip
+toggle if someone should be out of a queue entirely.
 
 Out, each shown under **Not in rotation** with its reason so exclusions stay auditable:
 
@@ -60,13 +77,13 @@ can do a corridor run but not a full Tucson day is skipped on **one** queue, not
 
 ## Auto-assign
 
-On a Limited or Tucson job only, the rep nearest the front of that queue gets a bonus of up to
+On a Limited, Tucson or North job only, the rep nearest the front of that queue gets a bonus of up to
 `ROTATION_MAX_BONUS` (10), applied **after** the weighted average — the same way the specialist
 bonus works. It is deliberately not a `ScoringWeights` key: adding one would change `totalWeight`
 and silently rescale timeframe, rank, skills and distance for every job in the app. It also sits
 below the timeframe weight, so a customer-requested window still wins.
 
-Every job outside those two areas scores exactly as it did before this feature existed.
+Every job outside those three areas scores exactly as it did before this feature existed.
 
 The switch is `scheduler_rotation_config.rotation_influence` — **one shared row, not per-day**.
 `Settings` is stored per `date_key`, so a toggle there would quietly switch itself back on tomorrow.
@@ -79,7 +96,7 @@ It is editable on `/rotation` and in the assignment settings modal; both write s
   string compare against `YYYY-MM-DD`.
 - **An unmapped attendee id is invisible damage.** That rep's trips file under nobody, so they read
   as "never went" and sit at the top of the queue for good. The page lists any unrecognised id seen
-  on a southern appointment. Before adding one to `ROOFR_USER_ID_TO_REP`, confirm it against the
+  on an out-of-town appointment. Before adding one to `ROOFR_USER_ID_TO_REP`, confirm it against the
   attendee email on a real event — the `mode()` popularity heuristic has misattributed a user before.
   Ids that are correctly absent (office staff, ride-alongs) live in `ROOFR_NON_REP_USER_IDS` so the
   warning stays a real signal.
@@ -95,9 +112,10 @@ It is editable on `/rotation` and in the assignment settings modal; both write s
 
 | File | Role |
 |---|---|
+| `types.ts` | `ROTATION_QUEUE_IDS` — the one list a fourth region would be added to |
 | `services/rotationService.ts` | fetch, classify, build the queues |
 | `components/RotationPage.tsx` | the `/rotation` page |
-| `constants.ts` | area names, window, bonus cap, the uid→rep map |
+| `constants.ts` | area names, window, bonus cap, non-rep sheet rows, the uid→rep map |
 | `services/supabaseService.ts` | `fetchRotationConfig` / `saveRotationConfig` |
 | `context/useAppLogic.ts` | loads it once per session; applies the auto-assign bonus |
 

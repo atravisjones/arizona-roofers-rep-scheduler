@@ -73,14 +73,26 @@ export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
 
 // Named service areas published by the boundary editor
 // (speed-to-leads.vercel.app/service-area.html -> GET /api/service-area).
-// Both queues classify a job by asking that API which area owns its coordinates,
-// so the shapes live in exactly one place. Rename an area there, change it here.
+// Every queue classifies a job by asking that API which area owns its
+// coordinates, so the shapes live in exactly one place. Rename an area there,
+// change it here.
 export const SERVICE_AREA_API = "https://speed-to-leads.vercel.app/api/service-area";
-export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as const;
+export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South", north: "North" } as const;
 
 // How far back a "last went" date is looked for. A rep with nothing in the
 // window reads as "never" and sorts to the front of the queue.
-export const ROTATION_WINDOW_DAYS = 180;
+//
+// 360 days, not 180: an up-north or Tucson run is rare enough that half a year
+// of history left most reps tied on "never", which is no order at all.
+export const ROTATION_WINDOW_DAYS = 360;
+
+// Availability-sheet rows that are not people. "Flex North" is a coverage
+// placeholder, so it can never take a turn — it is dropped from the queues
+// outright rather than listed under "Not in rotation", where it would read as a
+// real rep who had been held out. Keyed by normalizeName().
+export const ROTATION_NON_REP_ROWS = new Set<string>([
+  "flexnorth",   // "Flex North" — a slot on the sheet, not a rep
+]);
 
 // Auto-assign nudge, applied AFTER the weighted average like the specialist
 // bonus — adding a ScoringWeights key would change totalWeight and silently

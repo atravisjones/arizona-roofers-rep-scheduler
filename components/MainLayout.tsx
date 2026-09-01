@@ -751,7 +751,7 @@ const MainLayout: React.FC = () => {
           ? 'bg-brand-primary text-brand-text-on-primary'
           : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
           }`}
-        title="South rotation — whose turn it is for the Limited corridor and Tucson"
+        title="Travel rotation — whose turn it is for the Limited corridor, Tucson and up north"
       >
         <span>Rotation</span>
       </button>

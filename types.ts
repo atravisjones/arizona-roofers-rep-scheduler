@@ -108,10 +108,16 @@ export interface Settings {
 }
 
 // ---------------------------------------------------------------------------
-// South rotation
+// Travel rotation
 // ---------------------------------------------------------------------------
 
-export type RotationQueueId = 'limited' | 'tucson';
+/**
+ * One queue per long-drive region. Derived from this list rather than written
+ * out by hand in each place, so adding a fourth region is a one-line change.
+ */
+export const ROTATION_QUEUE_IDS = ['limited', 'tucson', 'north'] as const;
+
+export type RotationQueueId = typeof ROTATION_QUEUE_IDS[number];
 
 /** Why a rep is not in a queue. Shown in the UI so exclusions stay auditable. */
 export type RotationExclusion = 'tucson-resident' | 'commercial' | 'not-field-sales' | 'skipped';
@@ -145,11 +151,13 @@ export interface RotationConfig {
 export interface RotationState {
   limited: RotationQueue;
   tucson: RotationQueue;
+  north: RotationQueue;
   /** Polygons keyed by area name, in precedence order, for classifying a job. */
   areas: { name: string; poly: [number, number][] }[];
   /**
-   * Attendee ids on southern appointments that map to no rep. Surfaced rather
-   * than swallowed: an unmapped id makes a real rep look like they never go.
+   * Attendee ids on out-of-town appointments that map to no rep. Surfaced
+   * rather than swallowed: an unmapped id makes a real rep look like they
+   * never go.
    */
   unmappedAttendeeIds: string[];
   windowDays: number;

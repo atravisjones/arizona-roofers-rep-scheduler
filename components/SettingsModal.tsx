@@ -197,9 +197,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 state, so it cannot quietly reset overnight. */}
                             <div className="p-4 flex items-center justify-between border-t border-border-secondary">
                                 <div>
-                                    <label htmlFor="rotationInfluence" className="block text-sm font-semibold text-text-primary">South Rotation Nudge</label>
+                                    <label htmlFor="rotationInfluence" className="block text-sm font-semibold text-text-primary">Travel Rotation Nudge</label>
                                     <p className="text-xs text-text-tertiary mt-0.5">
-                                        On Limited-corridor and Tucson jobs, favour whoever is up next in the rotation.
+                                        On Limited-corridor, Tucson and up-north jobs, favour whoever is up next in the rotation.
                                         Every other job scores exactly as it does with this off. Shared setting, saves right away.
                                     </p>
                                 </div>
