@@ -68,7 +68,7 @@ export const DAY_VIEW_END_HOUR = 20;     // 8pm (exclusive, so last slot is 7:30
 export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
 
 // ---------------------------------------------------------------------------
-// South rotation — fair turns to the Limited corridor and to Tucson
+// Travel rotation — fair turns to the Limited corridor, Tucson and up north
 // ---------------------------------------------------------------------------
 
 // Named service areas published by the boundary editor
@@ -122,12 +122,21 @@ export const ROOFR_NON_REP_USER_IDS = new Set<string>([
   "372086",   // Brenda Ochoa - office/insurance
   "565310",   // Hadley Duffy - ride-along, pairs with nearly every rep
   "494624",   // shadow attendee
+  // Very high volume (80+ events, every region) but never the sole rep on his
+  // own job — always alongside a mapped rep. Attends KPI, hiring, adjuster and
+  // pre-build meetings: an ops function, not a fielded rep. The two jobs owned
+  // by "Marcus Ruppel" (Production) that have a calendar event both carry this
+  // id as sole attendee, so probably him. Non-rep either way.
+  "562516",   // likely Marcus Ruppel - Production/ops
 ]);
 
 export const ROOFR_USER_ID_TO_REP: Record<string, string> = {
   "355304": "Ashkan Etemadi",
   "352704": "Bradley Crohurst",
   "400700": "Brandon Cook",
+  // Confirmed 2026-09-01: sole attendee on job 11005176 (Tucson), whose
+  // job_owner reads "Carson Anderson"; teams roster has him Active, D2D Sales.
+  "536907": "Carson Anderson",
   "416699": "Chandler Duffy",
   "568255": "Chris Diamond",
   "356679": "Christian Noren",

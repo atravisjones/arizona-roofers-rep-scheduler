@@ -90,6 +90,9 @@ REP_BY_USER_ID = {
     # against the Roofr roster (tools/production-map/roofr-users.json) 2026-07-07.
     # Deliberately unmapped so she never resolves to a rep column.
     "400700": "Brandon Cook",
+    # Confirmed 2026-09-01 via the owner<->attendee correlation: sole attendee on
+    # job 11005176, whose job_owner reads "Carson Anderson"; Active, D2D Sales.
+    "536907": "Carson Anderson",
     "416699": "Chandler Duffy",
     "568255": "Chris Diamond",
     "356679": "Christian Noren",
@@ -110,10 +113,12 @@ REP_BY_USER_ID = {
     "352971": "Nick Williams",
     "407608": "Oliver Johnson",
     "472015": "Orlando Chavarria",
+    "594358": "Preston Burt",
     "355065": "Richard Hadsall",
     "592399": "Ryan Tempel",
     "525242": "Stephen Chaidez",
     "482761": "Tanner Broadbent",
+    "594355": "Troy Emerson",
     "451106": "William Ludewig",
 }
 
