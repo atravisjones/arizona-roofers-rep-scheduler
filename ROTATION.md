@@ -53,7 +53,9 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    sold. Won is counted as **distinct jobs** (`jobs.stage_category` in `won`/`completed`) — a second
    visit to one house is a second appointment but not a second sale. `won_at` is deliberately not the
    test: 204 jobs carry one and have since gone to lost, and counting a cancelled deal as a win would
-   flatter whoever sold it.
+   flatter whoever sold it. **Sold** is `jobs.value` summed over those same deduped job ids. Roughly
+   3% of won jobs carry no value; they count as a win worth $0 rather than dropping out of the win
+   count, because a sale with no number on it is still a sale.
 
 `fetchRotationData()` does the network half; `buildRotation()` is pure, so toggling a skip re-orders
 the queues without refetching.

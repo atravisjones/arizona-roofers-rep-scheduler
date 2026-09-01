@@ -133,6 +133,8 @@ export interface RotationEntry {
   appts: number;
   /** Distinct WON jobs among them — a second visit to one house is not a second sale. */
   won: number;
+  /** Summed contract value of those won jobs, in dollars. */
+  wonValue: number;
   /** lastTrip is today or later — already booked to go, so already at the back. */
   scheduled: boolean;
   excludedBy?: RotationExclusion;

@@ -49,6 +49,7 @@ interface TripStat {
     days: number;          // distinct days, not appointments
     appts: number;         // appointments run in the region
     won: number;           // distinct WON jobs among them (not appointments)
+    wonValue: number;      // summed jobs.value of those won jobs, in dollars
     scheduled: boolean;    // last is today or later — already booked to go
 }
 
@@ -211,11 +212,14 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
     // counting a cancelled deal as a win would flatter whoever sold it.
     const jobIds = [...new Set(wanted.map(w => w.jobId))];
     const coords = new Map<string, { lat: number; lng: number }>();
-    const wonJobIds = new Set<string>();
+    // job_id -> contract value in dollars. Only won jobs are in here. About 3%
+    // of won jobs carry no value, so they land as 0 rather than dropping the
+    // job from the win count — a sale with no number on it is still a sale.
+    const wonValueByJob = new Map<string, number>();
     for (let i = 0; i < jobIds.length; i += 200) {
         const chunk = jobIds.slice(i, i + 200);
         const resp = await fetch(
-            `${SUPABASE_URL}/rest/v1/jobs?select=job_id,latitude,longitude,stage_category&job_id=in.(${chunk.join(',')})`,
+            `${SUPABASE_URL}/rest/v1/jobs?select=job_id,latitude,longitude,stage_category,value&job_id=in.(${chunk.join(',')})`,
             { headers: sbHeaders },
         );
         if (!resp.ok) continue;
@@ -225,7 +229,8 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
                 coords.set(String(row.job_id), { lat, lng });
             }
             if (row.stage_category === 'won' || row.stage_category === 'completed') {
-                wonJobIds.add(String(row.job_id));
+                const v = Number(row.value);
+                wonValueByJob.set(String(row.job_id), Number.isFinite(v) ? v : 0);
             }
         }
     }
@@ -248,7 +253,7 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
             if (!seen[queue].has(repKey)) seen[queue].set(repKey, new Set());
             seen[queue].get(repKey)!.add(day);
             appts[queue].set(repKey, (appts[queue].get(repKey) || 0) + 1);
-            if (wonJobIds.has(jobId)) {
+            if (wonValueByJob.has(jobId)) {
                 if (!won[queue].has(repKey)) won[queue].set(repKey, new Set());
                 won[queue].get(repKey)!.add(jobId);
             }
@@ -261,11 +266,17 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
         for (const [repKey, days] of seen[q]) {
             const sorted = [...days].sort();
             const last = sorted[sorted.length - 1] || null;
+            const wonIds = won[q].get(repKey);
             trips[q][repKey] = {
                 last,
                 days: days.size,
                 appts: appts[q].get(repKey) || 0,
-                won: won[q].get(repKey)?.size || 0,
+                won: wonIds?.size || 0,
+                // Summed over the deduped job ids, so a job with two appointments
+                // contributes its value once.
+                wonValue: wonIds
+                    ? [...wonIds].reduce((sum, id) => sum + (wonValueByJob.get(id) || 0), 0)
+                    : 0,
                 scheduled: !!last && last >= today,
             };
         }
@@ -343,6 +354,7 @@ function buildQueue(
             trips: stat?.days ?? 0,
             appts: stat?.appts ?? 0,
             won: stat?.won ?? 0,
+            wonValue: stat?.wonValue ?? 0,
             scheduled: stat?.scheduled ?? false,
             excludedBy: exclusionFor(rep, queue, config),
         };

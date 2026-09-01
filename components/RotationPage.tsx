@@ -45,6 +45,14 @@ const fmtDay = (day: string | null): string => {
     return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
+/** $412k / $1.2M / —. Compact on purpose: the column is ~50px in a 3-up layout. */
+const fmtMoney = (n: number): string => {
+    if (!n) return '—';
+    if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+    if (n >= 1_000) return `$${Math.round(n / 1000)}k`;
+    return `$${Math.round(n)}`;
+};
+
 const daysAgo = (day: string | null): string => {
     if (!day) return '';
     const [y, m, d] = day.split('-').map(Number);
@@ -116,6 +124,16 @@ const RotationPage: React.FC = () => {
                     {entry.won}
                 </span>
             </td>
+            <td
+                className={`py-1.5 pr-2 tabular-nums text-right whitespace-nowrap ${
+                    entry.wonValue > 0 ? 'text-tag-green-text font-semibold' : 'text-text-quaternary'
+                }`}
+                title={entry.wonValue > 0
+                    ? `$${Math.round(entry.wonValue).toLocaleString()} sold here in the window`
+                    : 'Nothing sold here in the window'}
+            >
+                {fmtMoney(entry.wonValue)}
+            </td>
             <td className="py-1.5 pr-3 text-right">
                 <button
                     onClick={() => toggleSkip(entry.repKey, queue, true)}
@@ -155,7 +173,7 @@ const RotationPage: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto">
                     <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-bg-primary">
                             <tr className="text-[9px] font-bold uppercase text-text-quaternary border-b border-border-secondary">
@@ -164,13 +182,14 @@ const RotationPage: React.FC = () => {
                                 <th className="py-1.5 pr-2 text-left">Last went</th>
                                 <th className="py-1.5 pr-2 text-center" title="Distinct days driven out there">Days</th>
                                 <th className="py-1.5 pr-2 text-center" title="Appointments run here · how many sold">Appt · Won</th>
+                                <th className="py-1.5 pr-2 text-right" title="Contract value of those sales">Sold</th>
                                 <th className="py-1.5 pr-3"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.order.map((e, i) => renderRow(e, i, q.id))}
                             {!data.order.length && (
-                                <tr><td colSpan={6} className="py-6 text-center text-text-tertiary">
+                                <tr><td colSpan={7} className="py-6 text-center text-text-tertiary">
                                     Nobody in the rotation. Load a schedule so the rep list is populated.
                                 </td></tr>
                             )}
@@ -192,7 +211,7 @@ const RotationPage: React.FC = () => {
                                             </td>
                                             <td className="py-1.5 pr-2 tabular-nums text-[10px] text-text-quaternary">
                                                 {e.trips > 0
-                                                    ? `${e.trips}d · ${e.appts} appt · ${e.won} won · ${fmtDay(e.lastTrip)}`
+                                                    ? `${e.trips}d · ${e.appts} appt · ${e.won} won · ${fmtMoney(e.wonValue)} · ${fmtDay(e.lastTrip)}`
                                                     : ''}
                                             </td>
                                             <td className="py-1.5 pr-3 text-right">
