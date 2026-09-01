@@ -96,7 +96,10 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 const DEFAULT_UI_SETTINGS: UiSettings = {
-    theme: 'light',
+    // 'falls' is the house look. Only affects a browser that has never saved a
+    // choice — anyone who has picked a theme keeps it, since localStorage is
+    // spread over this default.
+    theme: 'falls',
     showUnplottedJobs: true,
     showUnassignedJobsColumn: true,
     schedulesViewMode: 'list',
