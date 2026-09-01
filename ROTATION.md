@@ -35,14 +35,19 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    that you would send them twice while planning the week.
 3. Resolve `calendar_events.attendees` (numeric Roofr user ids) through `ROOFR_USER_ID_TO_REP`.
    Every mapped attendee is credited — a ride-along to Tucson is still a day spent driving there.
-4. Classify each appointment's coordinates, most specific shape first: inside `Limited` → corridor,
-   else inside `South` → Tucson, else inside `North` → up north, else neither. Limited wins any
+4. Classify each appointment's coordinates, most specific first: inside `Limited` → corridor, else
+   inside `South` → Tucson, else **latitude ≥ 34.07** → up north, else neither. Limited wins any
    overlap because it is the carve-out.
 
-   **The queue only sees what the polygon covers.** As published on 2026-09-01 the `North` shape
-   spans roughly lat 34.08–34.84 / lng −112.65..−111.78 — Prescott, Cottonwood, Camp Verde, Sedona.
-   Flagstaff (lat 35.2) and Payson (lng −111.3) fall **outside** it, so trips there are not counted
-   as up-north turns. That is a boundary-editor edit, not a code change.
+   **Up north is a latitude rule, not a shape** (`ROTATION_NORTH_MIN_LAT`, Black Canyon City — the
+   same threshold the GPS region classifier uses). The published `North` service area stops at the
+   Verde Valley, but reps get sent to Sedona, Flagstaff, Payson and Show Low, and those are the
+   longest drives anyone does. This queue answers *who is putting miles on*, not *do we service this
+   address*, so widening the service area to make it work would tell the CSR scanner we sell in
+   Flagstaff — a different claim, and not one to make from a scheduler page.
+
+   Nothing in the valley reaches 34.07: Anthem 33.87, New River 33.92, Cave Creek 33.83. It is
+   checked last, so it can never take a point one of the two shapes already owns.
 5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn.
 
 `fetchRotationData()` does the network half; `buildRotation()` is pure, so toggling a skip re-orders
@@ -77,7 +82,7 @@ can do a corridor run but not a full Tucson day is skipped on **one** queue, not
 
 ## Auto-assign
 
-On a Limited, Tucson or North job only, the rep nearest the front of that queue gets a bonus of up to
+On a corridor, Tucson or up-north job only, the rep nearest the front of that queue gets a bonus of up to
 `ROTATION_MAX_BONUS` (10), applied **after** the weighted average — the same way the specialist
 bonus works. It is deliberately not a `ScoringWeights` key: adding one would change `totalWeight`
 and silently rescale timeframe, rank, skills and distance for every job in the app. It also sits
@@ -115,7 +120,7 @@ It is editable on `/rotation` and in the assignment settings modal; both write s
 | `types.ts` | `ROTATION_QUEUE_IDS` — the one list a fourth region would be added to |
 | `services/rotationService.ts` | fetch, classify, build the queues |
 | `components/RotationPage.tsx` | the `/rotation` page |
-| `constants.ts` | area names, window, bonus cap, non-rep sheet rows, the uid→rep map |
+| `constants.ts` | area names, the north latitude, window, bonus cap, non-rep sheet rows, uid→rep map |
 | `services/supabaseService.ts` | `fetchRotationConfig` / `saveRotationConfig` |
 | `context/useAppLogic.ts` | loads it once per session; applies the auto-assign bonus |
 

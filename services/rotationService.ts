@@ -17,6 +17,7 @@ import {
     SUPABASE_ANON_KEY,
     SERVICE_AREA_API,
     ROTATION_AREA_NAMES,
+    ROTATION_NORTH_MIN_LAT,
     ROTATION_WINDOW_DAYS,
     ROOFR_USER_ID_TO_REP,
     ROOFR_NON_REP_USER_IDS,
@@ -95,13 +96,17 @@ export const pointInPolygon = (lat: number, lng: number, poly: [number, number][
  * towns in the scanner to satisfy a scheduler page. The corridor is a
  * carve-out, so it is simply checked first.
  *
- * Order is most-specific first: Limited is a carve-out, so it wins over Tucson
- * and North wherever they overlap.
+ * Order is most-specific first: Limited is a carve-out, so it wins over Tucson.
+ *
+ * Up north is the exception — a plain latitude test, not a shape. See
+ * ROTATION_NORTH_MIN_LAT: the published "North" area stops at the Verde Valley,
+ * but Sedona, Flagstaff and Payson runs are the longest drives anyone does, and
+ * this queue exists to measure driving. Checked last, so it can never take a
+ * point one of the two shapes already owns.
  */
 const QUEUE_BY_AREA: [RotationQueueId, string][] = [
     ['limited', ROTATION_AREA_NAMES.limited],
     ['tucson', ROTATION_AREA_NAMES.tucson],
-    ['north', ROTATION_AREA_NAMES.north],
 ];
 
 export const classifyPoint = (
@@ -113,6 +118,7 @@ export const classifyPoint = (
         const area = areas.find(a => a.name === areaName);
         if (area && pointInPolygon(lat, lng, area.poly)) return queue;
     }
+    if (lat >= ROTATION_NORTH_MIN_LAT) return 'north';
     return null;
 };
 
@@ -258,9 +264,14 @@ export async function fetchRotationData(): Promise<RotationData> {
         return {
             ...empty,
             areas,
-            areaPublished: Object.fromEntries(
-                QUEUE_BY_AREA.map(([q, name]) => [q, areas.some(a => a.name === name)]),
-            ) as Record<RotationQueueId, boolean>,
+            areaPublished: {
+                ...Object.fromEntries(
+                    QUEUE_BY_AREA.map(([q, name]) => [q, areas.some(a => a.name === name)]),
+                ),
+                // Nothing to publish: up north is a latitude rule, so this queue
+                // works whether or not a "North" area exists on the map.
+                north: true,
+            } as Record<RotationQueueId, boolean>,
             trips,
             unmappedAttendeeIds,
             loadedAt: Date.now(),

@@ -15,21 +15,25 @@ import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
  * within a week.
  */
 
-const QUEUES: { id: RotationQueueId; title: string; blurb: string }[] = [
+const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: string }[] = [
     {
         id: 'limited',
         title: 'Limited corridor',
         blurb: `Reps sent into the "${ROTATION_AREA_NAMES.limited}" service area`,
+        areaName: ROTATION_AREA_NAMES.limited,
     },
     {
         id: 'tucson',
         title: 'Tucson',
         blurb: 'Reps sent south into Tucson and below',
+        areaName: ROTATION_AREA_NAMES.tucson,
     },
     {
+        // No areaName: this one is a latitude rule, not a published shape, so it
+        // can never hit the "area not published" empty state.
         id: 'north',
         title: 'Up north',
-        blurb: `Reps sent into the "${ROTATION_AREA_NAMES.north}" service area`,
+        blurb: 'Anything north of Black Canyon City — Prescott, Sedona, Flagstaff, Payson',
     },
 ];
 
@@ -125,7 +129,7 @@ const RotationPage: React.FC = () => {
                 <div className="flex-1 flex items-center justify-center p-6 text-center">
                     <div className="max-w-xs">
                         <div className="text-sm font-semibold text-text-secondary mb-1">
-                            No “{ROTATION_AREA_NAMES[q.id]}” area published
+                            No “{q.areaName}” area published
                         </div>
                         <div className="text-[11px] text-text-tertiary leading-relaxed">
                             Draw and publish it in the boundary editor at

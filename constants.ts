@@ -77,7 +77,20 @@ export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
 // coordinates, so the shapes live in exactly one place. Rename an area there,
 // change it here.
 export const SERVICE_AREA_API = "https://speed-to-leads.vercel.app/api/service-area";
-export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South", north: "North" } as const;
+export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as const;
+
+// Up north is a LATITUDE rule, not a service-area shape. The published "North"
+// area covers Prescott and the Verde Valley only, but reps get sent to Sedona,
+// Flagstaff and Payson too, and those are the longest drives of the lot. This
+// queue answers "who is putting miles on", not "do we service this address", so
+// widening the service area to make it work would tell the CSR scanner we sell
+// in Flagstaff — a different claim entirely, and not ours to make from here.
+//
+// 34.07 is Black Canyon City, the same threshold the GPS region classifier uses
+// (BCC 34.07 / Picacho 32.64). Nothing in the valley reaches it: Anthem 33.87,
+// New River 33.92, Cave Creek 33.83. Prescott 34.54, Payson 34.23, Sedona 34.87
+// and Flagstaff 35.20 all clear it.
+export const ROTATION_NORTH_MIN_LAT = 34.07;
 
 // How far back a "last went" date is looked for. A rep with nothing in the
 // window reads as "never" and sorts to the front of the queue.
