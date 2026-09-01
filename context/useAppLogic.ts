@@ -1,9 +1,11 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
-import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS } from '../constants';
+import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, ROTATION_MAX_BONUS } from '../constants';
+import { fetchRotationData, buildRotation, classifyPoint, RotationData } from '../services/rotationService';
+import { fetchRotationConfig, saveRotationConfig, DEFAULT_ROTATION_CONFIG } from '../services/supabaseService';
 import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching, normalizeName } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
 import { parseJobsFromText, assignJobsWithAi, fixAddressesWithAi, mapTimeframeToSlotId } from '../services/geminiService';
@@ -898,6 +900,73 @@ export const useAppLogic = () => {
         setDraggedOverRepId(null);
     }, []);
 
+    // ---- South rotation ---------------------------------------------------
+    // Loaded once per session: the polygons come from the boundary editor and
+    // the trip history is a 180-day window, neither of which moves during a
+    // planning session. buildRotation is pure, so a skip toggle re-orders the
+    // queues without touching the network.
+    const [rotationData, setRotationData] = useState<RotationData | null>(null);
+    const [rotationConfig, setRotationConfig] = useState<RotationConfig>(DEFAULT_ROTATION_CONFIG);
+    const [isRotationLoading, setIsRotationLoading] = useState(true);
+
+    const loadRotation = useCallback(async () => {
+        setIsRotationLoading(true);
+        const [data, config] = await Promise.all([fetchRotationData(), fetchRotationConfig()]);
+        setRotationData(data);
+        setRotationConfig(config);
+        setIsRotationLoading(false);
+        if (data.error) log(`Rotation data unavailable: ${data.error}`);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => { loadRotation(); }, [loadRotation]);
+
+    const rotation = useMemo(
+        () => (rotationData ? buildRotation(appState.reps, rotationData, rotationConfig) : null),
+        [appState.reps, rotationData, rotationConfig]
+    );
+
+    // repKey -> position/size per queue, for the auto-assign nudge.
+    const rotationPositions = useMemo(() => {
+        const out: Record<RotationQueueId, Map<string, { pos: number; size: number }>> = {
+            limited: new Map(), tucson: new Map(),
+        };
+        if (!rotation) return out;
+        (['limited', 'tucson'] as RotationQueueId[]).forEach(q => {
+            const list = rotation[q].order;
+            list.forEach((e, i) => out[q].set(e.repKey, { pos: i, size: list.length }));
+        });
+        return out;
+    }, [rotation]);
+
+    const updateRotationConfig = useCallback(async (next: RotationConfig) => {
+        setRotationConfig(next);                 // optimistic: the queues re-sort at once
+        const res = await saveRotationConfig(next);
+        if (!res.success) {
+            showToast(`Could not save rotation settings: ${res.error || 'unknown error'}`, 'error');
+            const restored = await fetchRotationConfig();
+            setRotationConfig(restored);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Read through refs inside calculateAssignmentScore: rotation data changes
+    // rarely, and putting it in the dependency array would rebuild the callback
+    // (and every memo that depends on it) on each load.
+    const rotationAreasRef = useRef<RotationData['areas']>([]);
+    const rotationPositionsRef = useRef<Record<RotationQueueId, Map<string, { pos: number; size: number }>>>({
+        limited: new Map(), tucson: new Map(),
+    });
+    // The on/off switch is GLOBAL, not part of Settings — Settings is stored per
+    // date_key, so a toggle there would silently switch itself back on tomorrow.
+    const rotationInfluenceRef = useRef(true);
+
+    useEffect(() => {
+        rotationAreasRef.current = rotationData?.areas || [];
+        rotationPositionsRef.current = rotationPositions;
+        rotationInfluenceRef.current = rotationConfig.rotationInfluence;
+    }, [rotationData, rotationPositions, rotationConfig.rotationInfluence]);
+
     const calculateAssignmentScore = useCallback((job: Job, rep: Rep, slotId: string, allSettings: Settings): { score: number, breakdown: ScoreBreakdown } => {
         const overrides = rep.scoringOverrides || {};
         const weights = { ...allSettings.scoringWeights, ...overrides };
@@ -1117,6 +1186,28 @@ export const useAppLogic = () => {
         // Specialist bonus
         if (isSpecialist) {
             finalScore = Math.min(100, finalScore + 15);
+        }
+
+        // ============================================================
+        // SOUTH ROTATION: nudge whoever is up next for the Limited corridor
+        // or Tucson. Applied here as a bonus rather than as a ScoringWeights
+        // key on purpose — a new weight would change totalWeight and silently
+        // rescale timeframe, rank, skills and distance for EVERY job.
+        // Only southern jobs are touched; everything else scores as before.
+        // ============================================================
+        if (rotationInfluenceRef.current && rotationAreasRef.current.length) {
+            const coord = geoCache.get(job.address);
+            if (coord) {
+                const queue = classifyPoint(coord.lat, coord.lon, rotationAreasRef.current);
+                if (queue) {
+                    const spot = rotationPositionsRef.current[queue].get(normalizeName(rep.name));
+                    if (spot && spot.size > 1) {
+                        // Full bonus at the front of the line, nothing at the back.
+                        finalScore = Math.min(100, finalScore +
+                            Math.round(ROTATION_MAX_BONUS * (1 - spot.pos / (spot.size - 1))));
+                    }
+                }
+            }
         }
 
         return {
@@ -3926,5 +4017,12 @@ export const useAppLogic = () => {
         // Load from Sheet
         handleLoadFromSheet,
         isLoadingFromSheet,
+
+        // South rotation
+        rotation,
+        rotationConfig,
+        updateRotationConfig,
+        isRotationLoading,
+        reloadRotation: loadRotation,
     };
 };

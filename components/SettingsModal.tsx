@@ -33,7 +33,7 @@ const SettingsSlider: React.FC<{
 );
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
-    const { settings, updateSettings, log } = useAppContext();
+    const { settings, updateSettings, log, rotationConfig, updateRotationConfig } = useAppContext();
     const [localSettings, setLocalSettings] = useState<Settings>(settings);
 
     useEffect(() => {
@@ -188,6 +188,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                     type="checkbox" id="allowRegionalRepsInPhoenix"
                                     checked={localSettings.allowRegionalRepsInPhoenix}
                                     onChange={e => handleChange('allowRegionalRepsInPhoenix', e.target.checked)}
+                                    className="h-5 w-5 rounded border-border-secondary text-brand-primary focus:ring-brand-primary transition cursor-pointer"
+                                />
+                            </div>
+
+                            {/* Saves immediately and applies to everyone, unlike the
+                                settings above — it is one shared row, not per-day
+                                state, so it cannot quietly reset overnight. */}
+                            <div className="p-4 flex items-center justify-between border-t border-border-secondary">
+                                <div>
+                                    <label htmlFor="rotationInfluence" className="block text-sm font-semibold text-text-primary">South Rotation Nudge</label>
+                                    <p className="text-xs text-text-tertiary mt-0.5">
+                                        On Limited-corridor and Tucson jobs, favour whoever is up next in the rotation.
+                                        Every other job scores exactly as it does with this off. Shared setting, saves right away.
+                                    </p>
+                                </div>
+                                <input
+                                    type="checkbox" id="rotationInfluence"
+                                    checked={rotationConfig.rotationInfluence}
+                                    onChange={e => updateRotationConfig({ ...rotationConfig, rotationInfluence: e.target.checked })}
                                     className="h-5 w-5 rounded border-border-secondary text-brand-primary focus:ring-brand-primary transition cursor-pointer"
                                 />
                             </div>

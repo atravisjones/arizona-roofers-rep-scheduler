@@ -67,3 +67,77 @@ export const DAY_VIEW_START_HOUR = 6;    // 6am
 export const DAY_VIEW_END_HOUR = 20;     // 8pm (exclusive, so last slot is 7:30pm)
 export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
 
+// ---------------------------------------------------------------------------
+// South rotation — fair turns to the Limited corridor and to Tucson
+// ---------------------------------------------------------------------------
+
+// Named service areas published by the boundary editor
+// (speed-to-leads.vercel.app/service-area.html -> GET /api/service-area).
+// Both queues classify a job by asking that API which area owns its coordinates,
+// so the shapes live in exactly one place. Rename an area there, change it here.
+export const SERVICE_AREA_API = "https://speed-to-leads.vercel.app/api/service-area";
+export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as const;
+
+// How far back a "last went" date is looked for. A rep with nothing in the
+// window reads as "never" and sorts to the front of the queue.
+export const ROTATION_WINDOW_DAYS = 180;
+
+// Auto-assign nudge, applied AFTER the weighted average like the specialist
+// bonus — adding a ScoringWeights key would change totalWeight and silently
+// rescale every existing factor. Kept under the timeframe weight so a
+// customer-requested window still wins.
+export const ROTATION_MAX_BONUS = 10;
+
+// Roofr numeric user id -> rep name, for reading who actually ran a past
+// appointment. calendar_events.attendees holds these ids; jobs.job_owner is NOT
+// a substitute (on a future appointment it is still the booking CSR).
+//
+// SECOND COPY LIVES IN api/roofr-appointments.py (REP_BY_USER_ID) — update both
+// together. Each api/*.py file is its own Vercel bundle and none of them import
+// a sibling module, so sharing one file is a deploy risk for 25 lines.
+//
+// An unmapped id is not an error you will see: that rep's trips quietly file
+// under whoever owns the job, so they read as "never went" and sit at the top of
+// the queue forever. Resolve new ids with the mode() query in roofr-appointments.py
+// and confirm against the attendee email before adding.
+//
+// Deliberately absent: 372086 (Brenda Ochoa, office), 565310 / 494624
+// (ride-along/shadow attendees — they would credit a turn to every rep they join).
+// Ids that are correctly absent from the map above. Kept explicit so the
+// rotation page's "unmapped" warning stays a real signal instead of always
+// listing the same known non-reps.
+export const ROOFR_NON_REP_USER_IDS = new Set<string>([
+  "372086",   // Brenda Ochoa - office/insurance
+  "565310",   // Hadley Duffy - ride-along, pairs with nearly every rep
+  "494624",   // shadow attendee
+]);
+
+export const ROOFR_USER_ID_TO_REP: Record<string, string> = {
+  "355304": "Ashkan Etemadi",
+  "352704": "Bradley Crohurst",
+  "400700": "Brandon Cook",
+  "416699": "Chandler Duffy",
+  "568255": "Chris Diamond",
+  "356679": "Christian Noren",
+  "568245": "Claude Springer",
+  "354859": "Cole Ludewig",
+  "500123": "Connor Hamby",
+  "568859": "Hunter Fairfield",
+  "596692": "Irving Lopez",
+  "497732": "James Chernek",
+  "441144": "Jonathan Marino",
+  "522189": "Josh Jewett",
+  "355180": "Justin Parker",
+  "512700": "KORY DUMONE",
+  "373987": "London smith",
+  "352971": "Nick Williams",
+  "407608": "Oliver Johnson",
+  "472015": "Orlando Chavarria",
+  "594358": "Preston Burt",
+  "355065": "Richard Hadsall",
+  "592399": "Ryan Tempel",
+  "525242": "Stephen Chaidez",
+  "482761": "Tanner Broadbent",
+  "594355": "Troy Emerson",
+  "451106": "William Ludewig",
+};

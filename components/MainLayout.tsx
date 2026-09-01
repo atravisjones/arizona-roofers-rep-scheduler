@@ -4,6 +4,7 @@ import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, 
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import TodayBoard from './TodayBoard';
+import RotationPage from './RotationPage';
 import ReviewQueue from './ReviewQueue';
 import JobsPanel from './JobsPanel';
 import RouteMapPanel from './RoutePanel';
@@ -55,6 +56,7 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
 };
 
 const TODAY_BOARD_PATH = '/today-board';
+const ROTATION_PATH = '/rotation';
 const REVIEW_PATH = '/review';
 const REVIEW_BOOKINGS_PATH = `${REVIEW_PATH}/bookings`;
 const REVIEW_OUTCOMES_PATH = `${REVIEW_PATH}/outcomes`;
@@ -128,6 +130,9 @@ const MainLayout: React.FC = () => {
   const [isUnplottedModalOpen, setIsUnplottedModalOpen] = useState(false);
   const [isDebugLogOpen, setIsDebugLogOpen] = useState(false);
   const [isAssignmentSettingsOpen, setIsAssignmentSettingsOpen] = useState(false);
+  const [showRotation, setShowRotation] = useState(
+    () => typeof window !== 'undefined' && window.location.pathname === ROTATION_PATH
+  );
   const [showTodayBoard, setShowTodayBoard] = useState(
     () => typeof window !== 'undefined' && window.location.pathname === TODAY_BOARD_PATH
   );
@@ -141,7 +146,7 @@ const MainLayout: React.FC = () => {
   const [showReviewRescue, setShowReviewRescue] = useState(
     () => typeof window !== 'undefined' && isRescuePath(window.location.pathname)
   );
-  const showPlanner = !showTodayBoard && !showReviewQueue;
+  const showPlanner = !showTodayBoard && !showReviewQueue && !showRotation;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -197,6 +202,7 @@ const MainLayout: React.FC = () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
     setShowTodayBoard(path === TODAY_BOARD_PATH);
+    setShowRotation(path === ROTATION_PATH);
     setShowReviewQueue(isReviewPath(path));
     setShowReviewOutcomes(isOutcomesPath(path));
     setShowReviewRescue(isRescuePath(path));
@@ -205,6 +211,7 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     const syncFromUrl = () => {
       setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
+      setShowRotation(window.location.pathname === ROTATION_PATH);
       setShowReviewQueue(isReviewPath(window.location.pathname));
       setShowReviewOutcomes(isOutcomesPath(window.location.pathname));
       setShowReviewRescue(isRescuePath(window.location.pathname));
@@ -739,6 +746,17 @@ const MainLayout: React.FC = () => {
       </button>
 
       <button
+        onClick={() => navigateTo(ROTATION_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showRotation
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="South rotation — whose turn it is for the Limited corridor and Tucson"
+      >
+        <span>Rotation</span>
+      </button>
+
+      <button
         onClick={() => navigateTo(REVIEW_BOOKINGS_PATH)}
         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showReviewQueue && !showReviewOutcomes && !showReviewRescue
           ? 'bg-brand-primary text-brand-text-on-primary'
@@ -986,6 +1004,10 @@ const MainLayout: React.FC = () => {
       {showReviewQueue ? (
         <div className="flex-grow min-h-0 p-4 overflow-hidden">
           <ReviewQueue onCountChange={setReviewNeedsCount} />
+        </div>
+      ) : showRotation ? (
+        <div className="flex-grow min-h-0 p-4 overflow-hidden">
+          <RotationPage />
         </div>
       ) : showTodayBoard ? (
         <div className="flex-grow min-h-0 p-4 overflow-hidden">

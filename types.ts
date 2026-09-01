@@ -107,6 +107,56 @@ export interface Settings {
   allowRegionalRepsInPhoenix: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// South rotation
+// ---------------------------------------------------------------------------
+
+export type RotationQueueId = 'limited' | 'tucson';
+
+/** Why a rep is not in a queue. Shown in the UI so exclusions stay auditable. */
+export type RotationExclusion = 'tucson-resident' | 'commercial' | 'not-field-sales' | 'skipped';
+
+export interface RotationEntry {
+  repName: string;
+  repKey: string;              // normalizeName(repName) — stable across sheet row shifts
+  /** Most recent trip day, YYYY-MM-DD. null = none inside the window. */
+  lastTrip: string | null;
+  /** Distinct DAYS with at least one appointment in the region, not appointments. */
+  trips: number;
+  /** lastTrip is today or later — already booked to go, so already at the back. */
+  scheduled: boolean;
+  excludedBy?: RotationExclusion;
+}
+
+export interface RotationQueue {
+  /** In turn order: longest since their last trip first, never-been at the top. */
+  order: RotationEntry[];
+  /** Everyone held out, each with a reason. */
+  excluded: RotationEntry[];
+  /** False when the area has not been published in the boundary editor yet. */
+  areaPublished: boolean;
+}
+
+export interface RotationConfig {
+  rotationInfluence: boolean;
+  skips: Record<string, Partial<Record<RotationQueueId, boolean>>>;
+}
+
+export interface RotationState {
+  limited: RotationQueue;
+  tucson: RotationQueue;
+  /** Polygons keyed by area name, in precedence order, for classifying a job. */
+  areas: { name: string; poly: [number, number][] }[];
+  /**
+   * Attendee ids on southern appointments that map to no rep. Surfaced rather
+   * than swallowed: an unmapped id makes a real rep look like they never go.
+   */
+  unmappedAttendeeIds: string[];
+  windowDays: number;
+  loadedAt: number;
+  error?: string;
+}
+
 export interface UiSettings {
   theme: 'light' | 'dark' | 'system' | 'midnight' | 'gruvbox' | 'falls' | 'aircall' | 'custom';
   showUnplottedJobs: boolean;
@@ -435,4 +485,11 @@ export interface AppContextType {
   // Load from Sheet
   handleLoadFromSheet: () => Promise<void>;
   isLoadingFromSheet: boolean;
+
+  // South rotation
+  rotation: RotationState | null;
+  rotationConfig: RotationConfig;
+  updateRotationConfig: (config: RotationConfig) => Promise<void>;
+  isRotationLoading: boolean;
+  reloadRotation: () => Promise<void>;
 }

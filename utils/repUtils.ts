@@ -134,9 +134,11 @@ export const isFieldSalesRep = (rep: Rep): boolean => {
         'canvass', 'canvas'
     ];
 
-    // Check if name matches any exclusion pattern
+    // Whole words only. A plain `includes` matched these acronyms inside ordinary
+    // surnames — "Brandon Cook" and "Cooper" both contain "coo", "Chad Leadbetter"
+    // contains "lead" — and quietly dropped real field reps from the readouts.
     for (const pattern of [...managementPatterns, ...doorKnockerPatterns]) {
-        if (nameLower.includes(pattern)) {
+        if (new RegExp(`\\b${pattern.trim()}\\b`).test(nameLower)) {
             return false;
         }
     }

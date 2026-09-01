@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { AppState, Rep, Job, DisplayJob, Settings, JobChange, ScheduledTimeSlot, TimeSlot } from '../types';
+import { AppState, Rep, Job, DisplayJob, Settings, JobChange, ScheduledTimeSlot, TimeSlot, RotationConfig } from '../types';
 import { TIME_SLOTS } from '../constants';
 
 // ============================================================================
@@ -611,4 +611,52 @@ export async function loadAllDailySchedules(
     success: results.some(r => r.success),
     results,
   };
+}
+
+// ============================================================================
+// South rotation config — one shared row, id = 1
+// ============================================================================
+// Deliberately NOT scheduler_settings: that table is keyed by date_key, so a
+// skip stored there would apply to one day and quietly vanish the next. And
+// deliberately not localStorage, which would make every browser disagree about
+// who is out of the rotation.
+
+export const DEFAULT_ROTATION_CONFIG: RotationConfig = { rotationInfluence: true, skips: {} };
+
+export async function fetchRotationConfig(): Promise<RotationConfig> {
+  try {
+    const { data, error } = await supabase
+      .from('scheduler_rotation_config')
+      .select('rotation_influence,skips')
+      .eq('id', 1)
+      .maybeSingle();
+    if (error || !data) return DEFAULT_ROTATION_CONFIG;
+    return {
+      rotationInfluence: data.rotation_influence !== false,
+      skips: (data.skips as RotationConfig['skips']) || {},
+    };
+  } catch {
+    return DEFAULT_ROTATION_CONFIG;
+  }
+}
+
+export async function saveRotationConfig(
+  config: RotationConfig,
+  updatedBy?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('scheduler_rotation_config')
+      .upsert({
+        id: 1,
+        rotation_influence: config.rotationInfluence,
+        skips: config.skips,
+        updated_at: new Date().toISOString(),
+        updated_by: updatedBy || null,
+      }, { onConflict: 'id' });
+    if (error) throw error;
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
