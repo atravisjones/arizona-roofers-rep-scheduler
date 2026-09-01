@@ -106,9 +106,9 @@ const RotationPage: React.FC = () => {
                 <button
                     onClick={() => toggleSkip(entry.repKey, queue, true)}
                     className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-tag-red-border hover:text-tag-red-text transition"
-                    title={`Take ${entry.repName} out of the ${queueLabel(queue)} rotation`}
+                    title={`Take ${entry.repName} out of the ${queueLabel(queue)} rotation. The other queues are unaffected.`}
                 >
-                    skip
+                    remove
                 </button>
             </td>
         </tr>
@@ -201,7 +201,10 @@ const RotationPage: React.FC = () => {
                     <h1 className="text-base font-bold text-text-primary">Travel rotation</h1>
                     <div className="text-[11px] text-text-tertiary">
                         Who is up next. Ordered by how long since their last trip — a rep already
-                        booked to go counts as having taken their turn.
+                        booked to go counts as having taken their turn. <span className="text-text-quaternary">
+                        &ldquo;Remove&rdquo; takes someone out of <em>that one</em> queue only, and holds until
+                        you put them back — for a rep who is too far away to be worth sending until a storm hits.
+                        </span>
                     </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">

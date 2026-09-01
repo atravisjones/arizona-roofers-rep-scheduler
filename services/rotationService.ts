@@ -344,5 +344,5 @@ export const EXCLUSION_LABELS: Record<NonNullable<RotationEntry['excludedBy']>, 
     'tucson-resident': 'Tucson resident',
     'commercial': 'Commercial only',
     'not-field-sales': 'Not field sales',
-    'skipped': 'Skipped by hand',
+    'skipped': 'Removed by hand',
 };
