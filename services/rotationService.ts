@@ -93,7 +93,14 @@ export const classifyPoint = (
 };
 
 async function fetchServiceAreas(): Promise<RotationArea[]> {
-    const resp = await fetch(SERVICE_AREA_API, { cache: 'no-store' });
+    // The endpoint is CDN-cached (max-age 60, stale-while-revalidate 300), and
+    // `cache: no-store` only governs the browser's own cache — the edge can
+    // still hand back a copy up to five minutes old. That is long enough to
+    // republish a boundary, reload this page, see nothing change and conclude
+    // it is broken. The 30s bucket keeps repeat loads cheap while capping how
+    // stale the answer can be.
+    const bucket = Math.floor(Date.now() / 30000);
+    const resp = await fetch(`${SERVICE_AREA_API}?t=${bucket}`, { cache: 'no-store' });
     if (!resp.ok) throw new Error(`service-area ${resp.status}`);
     const data = await resp.json();
     if (!data?.success) throw new Error('service-area payload');
