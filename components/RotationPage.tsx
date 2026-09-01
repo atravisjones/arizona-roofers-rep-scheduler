@@ -214,7 +214,10 @@ const RotationPage: React.FC = () => {
         [showPhoenix]
     );
 
-    if (isRotationLoading || !rotation) {
+    // Only the FIRST load blanks the page. A reload keeps the controls mounted:
+    // every refetch used to unmount the header, so setting the "from" date made
+    // the "to" input vanish under the cursor mid-edit.
+    if (!rotation) {
         return (
             <div className="h-full flex items-center justify-center text-sm text-text-tertiary">
                 Loading rotation…
@@ -500,9 +503,10 @@ const RotationPage: React.FC = () => {
                     </a>
                     <button
                         onClick={() => reloadRotation()}
-                        className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition"
+                        disabled={isRotationLoading}
+                        className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition disabled:opacity-50"
                     >
-                        Refresh
+                        {isRotationLoading ? 'Loading…' : 'Refresh'}
                     </button>
                 </div>
             </div>
@@ -514,7 +518,9 @@ const RotationPage: React.FC = () => {
                 </div>
             )}
 
-            <div className="flex-1 min-h-0 flex gap-3 flex-col lg:flex-row">
+            <div className={`flex-1 min-h-0 flex gap-3 flex-col lg:flex-row transition-opacity ${
+                isRotationLoading ? 'opacity-40 pointer-events-none' : ''
+            }`}>
                 {visibleQueues.map(q => renderQueue(q, rotation[q.id]))}
             </div>
 
