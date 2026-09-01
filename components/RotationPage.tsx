@@ -52,6 +52,7 @@ const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: st
 ];
 
 const SHOW_PHOENIX_KEY = 'rotation.showPhoenix';
+const SHOW_EXCLUDED_KEY = 'rotation.showExcluded';
 const CUSTOM = 'custom';
 
 type SortKey = 'name' | 'lastTrip' | 'trips' | 'appts' | 'won' | 'wonValue';
@@ -124,7 +125,12 @@ const RotationPage: React.FC = () => {
     const [preset, setPreset] = useState<string>(String(ROTATION_WINDOW_DAYS));
     const [from, setFrom] = useState(() => rollingRange(ROTATION_WINDOW_DAYS).from);
     const [to, setTo] = useState(() => dayKey(new Date()));
-    const [showExcluded, setShowExcluded] = useState(true);
+    // Off by default. Held-out reps are reference, not the queue — they push the
+    // rows you are actually choosing between further up the screen. Remembered
+    // once turned on, same as Phoenix.
+    const [showExcluded, setShowExcluded] = useState(
+        () => typeof window !== 'undefined' && window.localStorage.getItem(SHOW_EXCLUDED_KEY) === '1'
+    );
     // Per queue: each column sorts its own table, so you can rank Tucson by
     // Sold while the corridor stays in turn order.
     const [sorts, setSorts] = useState<Partial<Record<RotationQueueId, Sort>>>({});
@@ -137,6 +143,10 @@ const RotationPage: React.FC = () => {
     useEffect(() => {
         try { window.localStorage.setItem(SHOW_PHOENIX_KEY, showPhoenix ? '1' : '0'); } catch { /* private mode */ }
     }, [showPhoenix]);
+
+    useEffect(() => {
+        try { window.localStorage.setItem(SHOW_EXCLUDED_KEY, showExcluded ? '1' : '0'); } catch { /* private mode */ }
+    }, [showExcluded]);
 
     /**
      * Three-state cycle per column: default direction, flipped, then back to
