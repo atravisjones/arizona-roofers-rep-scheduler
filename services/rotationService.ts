@@ -252,7 +252,11 @@ async function fetchTrips(areas: RotationArea[], windowDays: number): Promise<Pi
         if (!queue) continue;
         // Only ids seen on an OUT-OF-TOWN appointment are worth flagging — an
         // unmapped id that never leaves the valley costs this feature nothing.
-        for (const id of unknown) unmapped.add(id);
+        // Phoenix is explicitly excluded: it covers nearly every appointment the
+        // company runs, so counting it turned a 1-id warning into a 17-id list
+        // of office and CSR accounts, which is how a real signal becomes noise
+        // nobody reads.
+        if (queue !== 'phoenix') for (const id of unknown) unmapped.add(id);
         for (const repKey of reps) {
             if (!seen[queue].has(repKey)) seen[queue].set(repKey, new Set());
             seen[queue].get(repKey)!.add(day);
