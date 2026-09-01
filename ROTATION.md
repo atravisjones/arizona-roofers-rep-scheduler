@@ -48,7 +48,12 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
 
    Nothing in the valley reaches 34.07: Anthem 33.87, New River 33.92, Cave Creek 33.83. It is
    checked last, so it can never take a point one of the two shapes already owns.
-5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn.
+5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn. The table also
+   shows **Appt · Won** for the same window: appointments run in that region, and how many of them
+   sold. Won is counted as **distinct jobs** (`jobs.stage_category` in `won`/`completed`) — a second
+   visit to one house is a second appointment but not a second sale. `won_at` is deliberately not the
+   test: 204 jobs carry one and have since gone to lost, and counting a cancelled deal as a win would
+   flatter whoever sold it.
 
 `fetchRotationData()` does the network half; `buildRotation()` is pure, so toggling a skip re-orders
 the queues without refetching.

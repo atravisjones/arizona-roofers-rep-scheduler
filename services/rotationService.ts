@@ -47,6 +47,8 @@ export interface RotationArea {
 interface TripStat {
     last: string | null;   // YYYY-MM-DD
     days: number;          // distinct days, not appointments
+    appts: number;         // appointments run in the region
+    won: number;           // distinct WON jobs among them (not appointments)
     scheduled: boolean;    // last is today or later — already booked to go
 }
 
@@ -202,13 +204,18 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
         wanted.push({ jobId: String(ev.job_id), day: String(ev.start_date).slice(0, 10), reps, unknown });
     }
 
-    // Coordinates. latitude/longitude are TEXT columns — guard before Number().
+    // Coordinates + outcome. latitude/longitude are TEXT columns — guard before
+    // Number(). stage_category is Roofr's own rollup; 'won' and 'completed'
+    // together are "sold", which is what the job reads as on the board. won_at
+    // is NOT the test: 204 jobs carry a won_at and have since gone to lost, and
+    // counting a cancelled deal as a win would flatter whoever sold it.
     const jobIds = [...new Set(wanted.map(w => w.jobId))];
     const coords = new Map<string, { lat: number; lng: number }>();
+    const wonJobIds = new Set<string>();
     for (let i = 0; i < jobIds.length; i += 200) {
         const chunk = jobIds.slice(i, i + 200);
         const resp = await fetch(
-            `${SUPABASE_URL}/rest/v1/jobs?select=job_id,latitude,longitude&job_id=in.(${chunk.join(',')})`,
+            `${SUPABASE_URL}/rest/v1/jobs?select=job_id,latitude,longitude,stage_category&job_id=in.(${chunk.join(',')})`,
             { headers: sbHeaders },
         );
         if (!resp.ok) continue;
@@ -217,10 +224,17 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
             if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
                 coords.set(String(row.job_id), { lat, lng });
             }
+            if (row.stage_category === 'won' || row.stage_category === 'completed') {
+                wonJobIds.add(String(row.job_id));
+            }
         }
     }
 
     const seen = byQueue(() => new Map<string, Set<string>>());
+    const appts = byQueue(() => new Map<string, number>());
+    // Distinct jobs, not appointments: a second visit to the same house is a
+    // second appointment but not a second sale.
+    const won = byQueue(() => new Map<string, Set<string>>());
     const unmapped = new Set<string>();
     for (const { jobId, day, reps, unknown } of wanted) {
         const c = coords.get(jobId);
@@ -233,6 +247,11 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
         for (const repKey of reps) {
             if (!seen[queue].has(repKey)) seen[queue].set(repKey, new Set());
             seen[queue].get(repKey)!.add(day);
+            appts[queue].set(repKey, (appts[queue].get(repKey) || 0) + 1);
+            if (wonJobIds.has(jobId)) {
+                if (!won[queue].has(repKey)) won[queue].set(repKey, new Set());
+                won[queue].get(repKey)!.add(jobId);
+            }
         }
     }
 
@@ -242,7 +261,13 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
         for (const [repKey, days] of seen[q]) {
             const sorted = [...days].sort();
             const last = sorted[sorted.length - 1] || null;
-            trips[q][repKey] = { last, days: days.size, scheduled: !!last && last >= today };
+            trips[q][repKey] = {
+                last,
+                days: days.size,
+                appts: appts[q].get(repKey) || 0,
+                won: won[q].get(repKey)?.size || 0,
+                scheduled: !!last && last >= today,
+            };
         }
     });
 
@@ -316,6 +341,8 @@ function buildQueue(
             repKey,
             lastTrip: stat?.last ?? null,
             trips: stat?.days ?? 0,
+            appts: stat?.appts ?? 0,
+            won: stat?.won ?? 0,
             scheduled: stat?.scheduled ?? false,
             excludedBy: exclusionFor(rep, queue, config),
         };

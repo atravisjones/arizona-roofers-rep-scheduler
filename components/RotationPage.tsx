@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { EXCLUSION_LABELS } from '../services/rotationService';
-import { ROTATION_AREA_NAMES } from '../constants';
+import { ROTATION_AREA_NAMES, SERVICE_AREA_MAP } from '../constants';
 import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
 
 /**
@@ -106,6 +106,16 @@ const RotationPage: React.FC = () => {
                 {entry.lastTrip && <span className="ml-1.5 text-[10px] text-text-quaternary">{daysAgo(entry.lastTrip)}</span>}
             </td>
             <td className="py-1.5 pr-2 tabular-nums text-text-tertiary text-center">{entry.trips}</td>
+            <td
+                className="py-1.5 pr-2 tabular-nums text-center whitespace-nowrap"
+                title={`${entry.appts} appointment${entry.appts === 1 ? '' : 's'} here, ${entry.won} sold`}
+            >
+                <span className="text-text-tertiary">{entry.appts}</span>
+                <span className="text-text-quaternary"> · </span>
+                <span className={entry.won > 0 ? 'text-tag-green-text font-semibold' : 'text-text-quaternary'}>
+                    {entry.won}
+                </span>
+            </td>
             <td className="py-1.5 pr-3 text-right">
                 <button
                     onClick={() => toggleSkip(entry.repKey, queue, true)}
@@ -132,9 +142,15 @@ const RotationPage: React.FC = () => {
                             No “{q.areaName}” area published
                         </div>
                         <div className="text-[11px] text-text-tertiary leading-relaxed">
-                            Draw and publish it in the boundary editor at
-                            speed-to-leads.vercel.app/service-area.html, then reload this page.
-                            The queue fills itself in from there.
+                            Draw and publish it on the{' '}
+                            <a
+                                href={SERVICE_AREA_MAP}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-semibold text-brand-primary hover:underline"
+                            >
+                                corridors map
+                            </a>, then reload this page. The queue fills itself in from there.
                         </div>
                     </div>
                 </div>
@@ -146,14 +162,15 @@ const RotationPage: React.FC = () => {
                                 <th className="py-1.5 pl-3 pr-2 text-right">#</th>
                                 <th className="py-1.5 pr-2 text-left">Rep</th>
                                 <th className="py-1.5 pr-2 text-left">Last went</th>
-                                <th className="py-1.5 pr-2 text-center">Trips</th>
+                                <th className="py-1.5 pr-2 text-center" title="Distinct days driven out there">Days</th>
+                                <th className="py-1.5 pr-2 text-center" title="Appointments run here · how many sold">Appt · Won</th>
                                 <th className="py-1.5 pr-3"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {data.order.map((e, i) => renderRow(e, i, q.id))}
                             {!data.order.length && (
-                                <tr><td colSpan={5} className="py-6 text-center text-text-tertiary">
+                                <tr><td colSpan={6} className="py-6 text-center text-text-tertiary">
                                     Nobody in the rotation. Load a schedule so the rep list is populated.
                                 </td></tr>
                             )}
@@ -174,7 +191,9 @@ const RotationPage: React.FC = () => {
                                                 {EXCLUSION_LABELS[e.excludedBy!]}
                                             </td>
                                             <td className="py-1.5 pr-2 tabular-nums text-[10px] text-text-quaternary">
-                                                {e.trips > 0 ? `${e.trips} trips · ${fmtDay(e.lastTrip)}` : ''}
+                                                {e.trips > 0
+                                                    ? `${e.trips}d · ${e.appts} appt · ${e.won} won · ${fmtDay(e.lastTrip)}`
+                                                    : ''}
                                             </td>
                                             <td className="py-1.5 pr-3 text-right">
                                                 {e.excludedBy === 'skipped' && (
@@ -230,6 +249,18 @@ const RotationPage: React.FC = () => {
                         />
                         Show excluded
                     </label>
+                    {/* The corridor and Tucson shapes are drawn here, and redrawing one
+                        changes who this page thinks went where. Up north is the exception
+                        — a latitude rule, not a shape on that map. */}
+                    <a
+                        href={SERVICE_AREA_MAP}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Boundary editor — where the Limited corridor and Tucson shapes are drawn. Up north is a latitude cut and is not on this map."
+                        className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition"
+                    >
+                        Corridors map ↗
+                    </a>
                     <button
                         onClick={reloadRotation}
                         className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition"

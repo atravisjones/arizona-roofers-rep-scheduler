@@ -77,6 +77,10 @@ export const DAY_VIEW_REP_COLUMN_WIDTH = 150;  // minimum width for rep columns
 // coordinates, so the shapes live in exactly one place. Rename an area there,
 // change it here.
 export const SERVICE_AREA_API = "https://speed-to-leads.vercel.app/api/service-area";
+// The editor behind that API — where the corridor and Tucson shapes are drawn.
+// Linked from /rotation because "why is this town not counting" is answered on
+// the map, not in the queue.
+export const SERVICE_AREA_MAP = "https://speed-to-leads.vercel.app/service-area.html";
 export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as const;
 
 // Up north is a LATITUDE rule, not a service-area shape. The published "North"

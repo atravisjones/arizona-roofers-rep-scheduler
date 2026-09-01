@@ -129,6 +129,10 @@ export interface RotationEntry {
   lastTrip: string | null;
   /** Distinct DAYS with at least one appointment in the region, not appointments. */
   trips: number;
+  /** Appointments run in the region inside the window. */
+  appts: number;
+  /** Distinct WON jobs among them — a second visit to one house is not a second sale. */
+  won: number;
   /** lastTrip is today or later — already booked to go, so already at the back. */
   scheduled: boolean;
   excludedBy?: RotationExclusion;
