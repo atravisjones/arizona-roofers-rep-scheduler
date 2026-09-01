@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { EXCLUSION_LABELS } from '../services/rotationService';
-import { ROTATION_AREA_NAMES, ROTATION_WINDOW_OPTIONS, SERVICE_AREA_MAP } from '../constants';
+import { ROTATION_AREA_NAMES, ROTATION_WINDOW_DAYS, ROTATION_WINDOW_OPTIONS, SERVICE_AREA_MAP } from '../constants';
+import { dayKey, rollingRange } from '../services/rotationService';
 import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
 
 /**
@@ -51,6 +52,7 @@ const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: st
 ];
 
 const SHOW_PHOENIX_KEY = 'rotation.showPhoenix';
+const CUSTOM = 'custom';
 
 type SortKey = 'name' | 'lastTrip' | 'trips' | 'appts' | 'won' | 'wonValue';
 interface Sort { key: SortKey; dir: 'asc' | 'desc' }
@@ -115,8 +117,13 @@ const RotationPage: React.FC = () => {
     const context = useAppContext();
     const {
         rotation, rotationConfig, updateRotationConfig,
-        isRotationLoading, reloadRotation, rotationWindowDays,
+        isRotationLoading, reloadRotation,
     } = context;
+    // The preset select and the two date inputs are one control with two modes.
+    // `preset` is what the dropdown shows; CUSTOM swaps in the date pair.
+    const [preset, setPreset] = useState<string>(String(ROTATION_WINDOW_DAYS));
+    const [from, setFrom] = useState(() => rollingRange(ROTATION_WINDOW_DAYS).from);
+    const [to, setTo] = useState(() => dayKey(new Date()));
     const [showExcluded, setShowExcluded] = useState(true);
     // Per queue: each column sorts its own table, so you can rank Tucson by
     // Sold while the corridor stays in turn order.
@@ -161,10 +168,46 @@ const RotationPage: React.FC = () => {
         updateRotationConfig(next);
     };
 
-    const windowLabel = useMemo(
-        () => (rotation ? `last ${rotation.windowDays} days` : ''),
-        [rotation]
-    );
+    /**
+     * "last 360 days" for a rolling window, "Mar 1 - Jun 30" for a fixed one.
+     * Read off what was actually loaded, not off the controls, so it can never
+     * claim a range the figures below it do not cover.
+     */
+    const windowLabel = useMemo(() => {
+        if (!rotation) return '';
+        const { from: f, to: t } = rotation.range;
+        if (t) return `${fmtDay(f)} – ${fmtDay(t)}`;
+        const [y, m, d] = f.split('-').map(Number);
+        const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(y, m - 1, d).getTime()) / 86400000);
+        return `last ${days} days`;
+    }, [rotation]);
+
+    const changePreset = (value: string) => {
+        setPreset(value);
+        if (value !== CUSTOM) {
+            reloadRotation(rollingRange(Number(value)));
+            return;
+        }
+        // Opening the custom pair pre-filled with the window you were already
+        // looking at, so the first thing you see is the same numbers.
+        const seed = rollingRange(Number(preset) || ROTATION_WINDOW_DAYS);
+        const today = dayKey(new Date());
+        setFrom(seed.from);
+        setTo(today);
+        reloadRotation({ from: seed.from, to: today });
+    };
+
+    const changeDate = (which: 'from' | 'to', value: string) => {
+        if (!value) return;
+        const nextFrom = which === 'from' ? value : from;
+        const nextTo = which === 'to' ? value : to;
+        setFrom(nextFrom);
+        setTo(nextTo);
+        // A backwards range would query nothing and read as "nobody has been
+        // anywhere", which looks like broken data rather than a bad input.
+        if (nextFrom > nextTo) return;
+        reloadRotation({ from: nextFrom, to: nextTo });
+    };
 
     const visibleQueues = useMemo(
         () => QUEUES.filter(q => !q.optional || showPhoenix),
@@ -381,16 +424,39 @@ const RotationPage: React.FC = () => {
                     <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
                         <span className="text-text-tertiary">Window</span>
                         <select
-                            value={rotationWindowDays}
-                            onChange={e => reloadRotation(Number(e.target.value))}
+                            value={preset}
+                            onChange={e => changePreset(e.target.value)}
                             className="px-1.5 py-1 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary cursor-pointer"
                             title="How far back to read. Everything on the page — last went, days, appointments, sold, and the running order — is measured inside this window."
                         >
                             {ROTATION_WINDOW_OPTIONS.map(o => (
-                                <option key={o.days} value={o.days}>{o.label}</option>
+                                <option key={o.days} value={String(o.days)}>{o.label}</option>
                             ))}
+                            <option value={CUSTOM}>Date range…</option>
                         </select>
                     </label>
+                    {preset === CUSTOM && (
+                        <span
+                            className="flex items-center gap-1 text-[11px] text-text-secondary"
+                            title="Both ends inclusive. A fixed range stops at its end date, so nothing shows as BOOKED — there is no such thing as already-booked inside a window that has closed."
+                        >
+                            <input
+                                type="date"
+                                value={from}
+                                max={to}
+                                onChange={e => changeDate('from', e.target.value)}
+                                className="px-1.5 py-1 text-[11px] rounded-md border border-border-secondary bg-bg-primary text-text-secondary"
+                            />
+                            <span className="text-text-quaternary">→</span>
+                            <input
+                                type="date"
+                                value={to}
+                                min={from}
+                                onChange={e => changeDate('to', e.target.value)}
+                                className="px-1.5 py-1 text-[11px] rounded-md border border-border-secondary bg-bg-primary text-text-secondary"
+                            />
+                        </span>
+                    )}
                     <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer">
                         <input
                             type="checkbox"

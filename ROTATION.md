@@ -28,14 +28,21 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    corridor town, and the queue stayed empty while looking correctly configured. Making the corridor
    outrank Phoenix would have renamed 13 towns in the scanner to satisfy a scheduler page. So
    `Limited` is simply checked first, then `South`.
-2. Fetch `category = 'sales'` events for the window — `ROTATION_WINDOW_DAYS` (**360 days**) by
-   default, changeable on the page via the Window select (`ROTATION_WINDOW_OPTIONS`, 30 days to 2
-   years). 180 was the wrong default: an up-north or Tucson run is rare enough that half a year left
-   most reps tied on "never", which is no order at all. **The window moves everything**, running
-   order included — "last went", days, appointments and sold are all measured inside it, so a
-   90-day view answers a different question than a 2-year one. This
+2. Fetch `category = 'sales'` events for the range. The Window select offers rolling presets
+   (`ROTATION_WINDOW_OPTIONS`, 30 days to 2 years, default `ROTATION_WINDOW_DAYS` = **360**) or
+   **Date range…**, which swaps in a from/to pair, both ends inclusive. 180 was the wrong default:
+   an up-north or Tucson run is rare enough that half a year left most reps tied on "never", which is
+   no order at all. **The range moves everything**, running order included — "last went", days,
+   appointments and sold are all measured inside it, so a 90-day view answers a different question
+   than a 2-year one.
+
+   A rolling window is `{ from, to: null }` — **open-ended at the top on purpose**. This
    **includes future-dated events**: a rep already booked south has taken their turn, and without
-   that you would send them twice while planning the week.
+   that you would send them twice while planning the week. A **fixed** range loses the `booked` flag,
+   correctly — nothing was "already booked" as of a window that closed in March.
+
+   The upper bound is emitted as `lt.<the next day>`, never `lte.<to>`: `start_date` is TEXT with a
+   time on it, so `lte.2026-08-21` would drop every appointment on the 21st.
 3. Resolve `calendar_events.attendees` (numeric Roofr user ids) through `ROOFR_USER_ID_TO_REP`.
    Every mapped attendee is credited — a ride-along to Tucson is still a day spent driving there.
 4. Classify each appointment's coordinates, most specific first: inside `Limited` → corridor, else

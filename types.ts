@@ -171,7 +171,8 @@ export interface RotationState {
    * never go.
    */
   unmappedAttendeeIds: string[];
-  windowDays: number;
+  /** The slice of history these figures cover. `to: null` = open-ended at today. */
+  range: { from: string; to: string | null };
   loadedAt: number;
   error?: string;
 }
@@ -507,10 +508,9 @@ export interface AppContextType {
 
   // South rotation
   rotation: RotationState | null;
-  /** Days of history the loaded rotation covers. Change it via reloadRotation(days). */
-  rotationWindowDays: number;
   rotationConfig: RotationConfig;
   updateRotationConfig: (config: RotationConfig) => Promise<void>;
   isRotationLoading: boolean;
-  reloadRotation: (days?: number) => Promise<void>;
+  /** No argument reloads the current range; pass one to change it. */
+  reloadRotation: (range?: { from: string; to: string | null }) => Promise<void>;
 }

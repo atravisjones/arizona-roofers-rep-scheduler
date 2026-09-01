@@ -44,6 +44,39 @@ export interface RotationArea {
     poly: [number, number][];   // [lat, lng] rings, in precedence order
 }
 
+/** Local YYYY-MM-DD. Never toISOString() — that shifts the day in MST. */
+export const dayKey = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * The slice of history the page is reading, both ends inclusive, YYYY-MM-DD.
+ *
+ * `to: null` means "no upper bound", which is what every rolling window uses —
+ * and it matters. Future-dated events are how a rep already booked south counts
+ * as having taken their turn; cap the range at today and that stops working.
+ * An explicit historical range loses the booked flag on purpose: nothing was
+ * "already booked" as of a window that closed in March.
+ */
+export interface RotationRange {
+    from: string;
+    to: string | null;
+}
+
+/** The last N days, open-ended at the top so future bookings still count. */
+export const rollingRange = (days: number): RotationRange => {
+    const from = new Date();
+    from.setDate(from.getDate() - days);
+    return { from: dayKey(from), to: null };
+};
+
+/** start_date is TEXT ('2026-03-12 13:00:00'), so an inclusive upper bound has
+ *  to be `lt. the next day` — `lte.2026-03-12` would drop everything with a
+ *  time on it, i.e. every appointment that day. */
+const nextDayKey = (key: string): string => {
+    const [y, m, d] = key.split('-').map(Number);
+    return dayKey(new Date(y, m - 1, d + 1));
+};
+
 interface TripStat {
     last: string | null;   // YYYY-MM-DD
     days: number;          // distinct days, not appointments
@@ -59,16 +92,12 @@ export interface RotationData {
     trips: Record<RotationQueueId, Record<string, TripStat>>;
     /** Attendee ids seen on southern appointments that map to no rep — see below. */
     unmappedAttendeeIds: string[];
-    windowDays: number;
+    range: RotationRange;
     loadedAt: number;
     error?: string;
 }
 
 const sbHeaders = { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` };
-
-/** Local YYYY-MM-DD. Never toISOString() — that shifts the day in MST. */
-export const dayKey = (d: Date): string =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /**
  * Ray casting, identical in behaviour to the boundary editor's own inPoly so a
@@ -173,14 +202,12 @@ async function fetchPaged(path: string): Promise<any[]> {
  * Future-dated events count. The scheduler plans tomorrow, so a rep already
  * booked south has taken their turn; without this you would send them twice.
  */
-async function fetchTrips(areas: RotationArea[], windowDays: number): Promise<Pick<RotationData, 'trips' | 'unmappedAttendeeIds'>> {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - windowDays);
-
-    // start_date is TEXT ('2026-03-12 13:00:00'), so this is a string compare.
+async function fetchTrips(areas: RotationArea[], range: RotationRange): Promise<Pick<RotationData, 'trips' | 'unmappedAttendeeIds'>> {
+    // start_date is TEXT ('2026-03-12 13:00:00'), so these are string compares.
+    const upper = range.to ? `&start_date=lt.${nextDayKey(range.to)}` : '';
     const events = await fetchPaged(
         `calendar_events?select=event_id,job_id,start_date,attendees` +
-        `&category=eq.sales&start_date=gte.${dayKey(cutoff)}&order=start_date.asc,event_id.asc`,
+        `&category=eq.sales&start_date=gte.${range.from}${upper}&order=start_date.asc,event_id.asc`,
     );
 
     // A LIST, not a map keyed by job_id: one job can carry several sales
@@ -293,18 +320,20 @@ async function fetchTrips(areas: RotationArea[], windowDays: number): Promise<Pi
     return { trips, unmappedAttendeeIds: [...unmapped].sort() };
 }
 
-export async function fetchRotationData(windowDays: number = ROTATION_WINDOW_DAYS): Promise<RotationData> {
+export async function fetchRotationData(
+    range: RotationRange = rollingRange(ROTATION_WINDOW_DAYS),
+): Promise<RotationData> {
     const empty: RotationData = {
         areas: [],
         areaPublished: byQueue(() => false),
         trips: byQueue(() => ({})),
         unmappedAttendeeIds: [],
-        windowDays,
+        range,
         loadedAt: Date.now(),
     };
     try {
         const areas = await fetchServiceAreas();
-        const { trips, unmappedAttendeeIds } = await fetchTrips(areas, windowDays);
+        const { trips, unmappedAttendeeIds } = await fetchTrips(areas, range);
         return {
             ...empty,
             areas,
@@ -394,7 +423,7 @@ export function buildRotation(reps: Rep[], data: RotationData, config: RotationC
         phoenix: buildQueue(reps, 'phoenix', data, config),
         areas: data.areas,
         unmappedAttendeeIds: data.unmappedAttendeeIds,
-        windowDays: data.windowDays,
+        range: data.range,
         loadedAt: data.loadedAt,
         error: data.error,
     };

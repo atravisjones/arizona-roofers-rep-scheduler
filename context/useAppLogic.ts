@@ -4,7 +4,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId, ROTATION_QUEUE_IDS } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, ROTATION_MAX_BONUS, ROTATION_NUDGED_QUEUES, ROTATION_WINDOW_DAYS } from '../constants';
-import { fetchRotationData, buildRotation, classifyPoint, RotationData } from '../services/rotationService';
+import { fetchRotationData, buildRotation, classifyPoint, rollingRange, RotationData, RotationRange } from '../services/rotationService';
 import { fetchRotationConfig, saveRotationConfig, DEFAULT_ROTATION_CONFIG } from '../services/supabaseService';
 import { fetchSheetData, fetchRoofrJobIds, fetchAppointmentsFromSheet, normalizeAddressForMatching, normalizeName } from '../services/googleSheetsService';
 import { fetchRoofrJobIdMap, fetchRoofrEnrichmentMap, fetchRoofrCustomerMap, RoofrJob } from '../services/roofrApiService';
@@ -911,18 +911,16 @@ export const useAppLogic = () => {
     const [rotationData, setRotationData] = useState<RotationData | null>(null);
     const [rotationConfig, setRotationConfig] = useState<RotationConfig>(DEFAULT_ROTATION_CONFIG);
     const [isRotationLoading, setIsRotationLoading] = useState(true);
-    // The window is a ref as well as state: loadRotation is a []-dep callback so
-    // its identity stays stable, and it still needs to know the current window
+    // The range is a ref as well as state: loadRotation is a []-dep callback so
+    // its identity stays stable, and it still needs to know the current range
     // when called with no argument (the Refresh button).
-    const [rotationWindowDays, setRotationWindowDays] = useState(ROTATION_WINDOW_DAYS);
-    const rotationWindowRef = useRef(ROTATION_WINDOW_DAYS);
+    const rotationRangeRef = useRef<RotationRange>(rollingRange(ROTATION_WINDOW_DAYS));
 
-    const loadRotation = useCallback(async (days?: number) => {
-        const windowDays = days ?? rotationWindowRef.current;
-        rotationWindowRef.current = windowDays;
-        setRotationWindowDays(windowDays);
+    const loadRotation = useCallback(async (range?: RotationRange) => {
+        const next = range ?? rotationRangeRef.current;
+        rotationRangeRef.current = next;
         setIsRotationLoading(true);
-        const [data, config] = await Promise.all([fetchRotationData(windowDays), fetchRotationConfig()]);
+        const [data, config] = await Promise.all([fetchRotationData(next), fetchRotationConfig()]);
         setRotationData(data);
         setRotationConfig(config);
         setIsRotationLoading(false);
@@ -4036,7 +4034,6 @@ export const useAppLogic = () => {
 
         // Travel rotation
         rotation,
-        rotationWindowDays,
         rotationConfig,
         updateRotationConfig,
         isRotationLoading,
