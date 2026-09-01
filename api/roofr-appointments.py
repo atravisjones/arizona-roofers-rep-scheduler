@@ -106,6 +106,11 @@ REP_BY_USER_ID = {
     "596692": "Irving Lopez",
     "497732": "James Chernek",
     "441144": "Jonathan Marino",
+    # Archived reps, kept mapped on purpose: their appointments are still inside
+    # the rotation window. Resolving to the name beats falling back to job_owner,
+    # which on one of Yost's jobs is a reassignment to a different rep.
+    "455485": "Joseph Simms",   # Archived - Retail Sales, South book, thru 2026-04-25
+    "450737": "William Yost",   # Archived - Retail Sales, thru 2026-01-05
     "522189": "Josh Jewett",
     "355180": "Justin Parker",
     "512700": "KORY DUMONE",

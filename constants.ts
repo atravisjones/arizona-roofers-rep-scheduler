@@ -147,6 +147,12 @@ export const ROOFR_USER_ID_TO_REP: Record<string, string> = {
   "596692": "Irving Lopez",
   "497732": "James Chernek",
   "441144": "Jonathan Marino",
+  // Archived reps, kept mapped on purpose: the 360-day window still contains
+  // their trips, and an unmapped id would put them back in the warning banner
+  // forever. They never appear in a queue — the queues are built from the
+  // availability sheet, which no longer lists them.
+  "455485": "Joseph Simms",   // Archived - Retail Sales, South book, thru 2026-04-25
+  "450737": "William Yost",   // Archived - Retail Sales, thru 2026-01-05
   "522189": "Josh Jewett",
   "355180": "Justin Parker",
   "512700": "KORY DUMONE",
