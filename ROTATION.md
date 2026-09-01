@@ -121,6 +121,12 @@ The switch is `scheduler_rotation_config.rotation_influence` — **one shared ro
 `Settings` is stored per `date_key`, so a toggle there would quietly switch itself back on tomorrow.
 It is editable on `/rotation` and in the assignment settings modal; both write straight through.
 
+`updateRotationConfig` takes a **patch**, and `saveRotationConfig` writes only the columns present in
+it. That is load-bearing, not tidiness: one shared row plus whole-object writes meant a browser
+holding a stale copy pushed its old `rotation_influence` back over a colleague's change the moment
+anyone clicked "remove" on a rep — last click wins, and the nudge switched itself off with nobody
+having touched it. The two fields are independent; write them independently.
+
 ## Gotchas
 
 - **`jobs.latitude` / `longitude` are TEXT columns.** Guard before `Number()`.

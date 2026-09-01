@@ -206,7 +206,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                                 <input
                                     type="checkbox" id="rotationInfluence"
                                     checked={rotationConfig.rotationInfluence}
-                                    onChange={e => updateRotationConfig({ ...rotationConfig, rotationInfluence: e.target.checked })}
+                                    onChange={e => updateRotationConfig({ rotationInfluence: e.target.checked })}
                                     className="h-5 w-5 rounded border-border-secondary text-brand-primary focus:ring-brand-primary transition cursor-pointer"
                                 />
                             </div>

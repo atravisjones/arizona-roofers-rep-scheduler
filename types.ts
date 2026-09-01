@@ -509,7 +509,8 @@ export interface AppContextType {
   // South rotation
   rotation: RotationState | null;
   rotationConfig: RotationConfig;
-  updateRotationConfig: (config: RotationConfig) => Promise<void>;
+  /** Patch — send only what changed; the row is shared and the fields are independent. */
+  updateRotationConfig: (patch: Partial<RotationConfig>) => Promise<void>;
   isRotationLoading: boolean;
   /** No argument reloads the current range; pass one to change it. */
   reloadRotation: (range?: { from: string; to: string | null }) => Promise<void>;

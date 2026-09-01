@@ -640,20 +640,30 @@ export async function fetchRotationConfig(): Promise<RotationConfig> {
   }
 }
 
+/**
+ * Writes ONLY the fields present in the patch.
+ *
+ * It used to take the whole config and upsert both columns every time, which
+ * made the two settings clobber each other: this is one shared row, so a browser
+ * holding a stale copy would push its old `rotation_influence` back over a
+ * colleague's change the moment somebody clicked "remove" on a rep. Whoever
+ * clicked last won, and the nudge quietly switched itself off.
+ */
 export async function saveRotationConfig(
-  config: RotationConfig,
+  patch: Partial<RotationConfig>,
   updatedBy?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const row: Record<string, unknown> = {
+      id: 1,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy || null,
+    };
+    if (patch.rotationInfluence !== undefined) row.rotation_influence = patch.rotationInfluence;
+    if (patch.skips !== undefined) row.skips = patch.skips;
     const { error } = await supabase
       .from('scheduler_rotation_config')
-      .upsert({
-        id: 1,
-        rotation_influence: config.rotationInfluence,
-        skips: config.skips,
-        updated_at: new Date().toISOString(),
-        updated_by: updatedBy || null,
-      }, { onConflict: 'id' });
+      .upsert(row, { onConflict: 'id' });
     if (error) throw error;
     return { success: true };
   } catch (err) {

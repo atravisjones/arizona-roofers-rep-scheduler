@@ -948,9 +948,12 @@ export const useAppLogic = () => {
         return out;
     }, [rotation]);
 
-    const updateRotationConfig = useCallback(async (next: RotationConfig) => {
-        setRotationConfig(next);                 // optimistic: the queues re-sort at once
-        const res = await saveRotationConfig(next);
+    // Takes a PATCH, not the whole config: the two settings live in one shared
+    // row, and sending both every time meant one browser's stale copy could
+    // revert the other's change.
+    const updateRotationConfig = useCallback(async (patch: Partial<RotationConfig>) => {
+        setRotationConfig(prev => ({ ...prev, ...patch }));   // optimistic: the queues re-sort at once
+        const res = await saveRotationConfig(patch);
         if (!res.success) {
             showToast(`Could not save rotation settings: ${res.error || 'unknown error'}`, 'error');
             const restored = await fetchRotationConfig();

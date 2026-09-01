@@ -156,16 +156,15 @@ const RotationPage: React.FC = () => {
     });
 
     const toggleSkip = (repKey: string, queue: RotationQueueId, skipped: boolean) => {
-        const next = {
-            ...rotationConfig,
-            skips: {
-                ...rotationConfig.skips,
-                [repKey]: { ...(rotationConfig.skips[repKey] || {}), [queue]: skipped },
-            },
+        const skips = {
+            ...rotationConfig.skips,
+            [repKey]: { ...(rotationConfig.skips[repKey] || {}), [queue]: skipped },
         };
-        if (!skipped) delete next.skips[repKey][queue];
-        if (next.skips[repKey] && Object.keys(next.skips[repKey]).length === 0) delete next.skips[repKey];
-        updateRotationConfig(next);
+        if (!skipped) delete skips[repKey][queue];
+        if (skips[repKey] && Object.keys(skips[repKey]).length === 0) delete skips[repKey];
+        // Skips only. Sending the whole config here is what used to knock the
+        // auto-assign nudge back off for everyone.
+        updateRotationConfig({ skips });
     };
 
     /**
@@ -479,7 +478,7 @@ const RotationPage: React.FC = () => {
                         <input
                             type="checkbox"
                             checked={rotationConfig.rotationInfluence}
-                            onChange={e => updateRotationConfig({ ...rotationConfig, rotationInfluence: e.target.checked })}
+                            onChange={e => updateRotationConfig({ rotationInfluence: e.target.checked })}
                             className="accent-brand-primary"
                         />
                         Nudge auto-assign
