@@ -104,8 +104,10 @@ export const pointInPolygon = (lat: number, lng: number, poly: [number, number][
  * Up north is the exception — a plain latitude test, not a shape. See
  * ROTATION_NORTH_MIN_LAT: the published "North" area stops at the Verde Valley,
  * but Sedona, Flagstaff and Payson runs are the longest drives anyone does, and
- * this queue exists to measure driving. Checked last, so it can never take a
- * point one of the two shapes already owns.
+ * this queue exists to measure driving.
+ *
+ * Phoenix is checked LAST, which is what makes it "the valley minus the
+ * corridor" for free: any corridor point was already claimed two steps earlier.
  */
 const QUEUE_BY_AREA: [RotationQueueId, string][] = [
     ['limited', ROTATION_AREA_NAMES.limited],
@@ -122,6 +124,8 @@ export const classifyPoint = (
         if (area && pointInPolygon(lat, lng, area.poly)) return queue;
     }
     if (lat >= ROTATION_NORTH_MIN_LAT) return 'north';
+    const phoenix = areas.find(a => a.name === ROTATION_AREA_NAMES.phoenix);
+    if (phoenix && pointInPolygon(lat, lng, phoenix.poly)) return 'phoenix';
     return null;
 };
 
@@ -169,9 +173,9 @@ async function fetchPaged(path: string): Promise<any[]> {
  * Future-dated events count. The scheduler plans tomorrow, so a rep already
  * booked south has taken their turn; without this you would send them twice.
  */
-async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'trips' | 'unmappedAttendeeIds'>> {
+async function fetchTrips(areas: RotationArea[], windowDays: number): Promise<Pick<RotationData, 'trips' | 'unmappedAttendeeIds'>> {
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - ROTATION_WINDOW_DAYS);
+    cutoff.setDate(cutoff.getDate() - windowDays);
 
     // start_date is TEXT ('2026-03-12 13:00:00'), so this is a string compare.
     const events = await fetchPaged(
@@ -285,18 +289,18 @@ async function fetchTrips(areas: RotationArea[]): Promise<Pick<RotationData, 'tr
     return { trips, unmappedAttendeeIds: [...unmapped].sort() };
 }
 
-export async function fetchRotationData(): Promise<RotationData> {
+export async function fetchRotationData(windowDays: number = ROTATION_WINDOW_DAYS): Promise<RotationData> {
     const empty: RotationData = {
         areas: [],
         areaPublished: byQueue(() => false),
         trips: byQueue(() => ({})),
         unmappedAttendeeIds: [],
-        windowDays: ROTATION_WINDOW_DAYS,
+        windowDays,
         loadedAt: Date.now(),
     };
     try {
         const areas = await fetchServiceAreas();
-        const { trips, unmappedAttendeeIds } = await fetchTrips(areas);
+        const { trips, unmappedAttendeeIds } = await fetchTrips(areas, windowDays);
         return {
             ...empty,
             areas,
@@ -307,6 +311,7 @@ export async function fetchRotationData(): Promise<RotationData> {
                 // Nothing to publish: up north is a latitude rule, so this queue
                 // works whether or not a "North" area exists on the map.
                 north: true,
+                phoenix: areas.some(a => a.name === ROTATION_AREA_NAMES.phoenix),
             } as Record<RotationQueueId, boolean>,
             trips,
             unmappedAttendeeIds,
@@ -382,6 +387,7 @@ export function buildRotation(reps: Rep[], data: RotationData, config: RotationC
         limited: buildQueue(reps, 'limited', data, config),
         tucson: buildQueue(reps, 'tucson', data, config),
         north: buildQueue(reps, 'north', data, config),
+        phoenix: buildQueue(reps, 'phoenix', data, config),
         areas: data.areas,
         unmappedAttendeeIds: data.unmappedAttendeeIds,
         windowDays: data.windowDays,

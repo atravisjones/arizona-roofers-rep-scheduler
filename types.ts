@@ -112,10 +112,14 @@ export interface Settings {
 // ---------------------------------------------------------------------------
 
 /**
- * One queue per long-drive region. Derived from this list rather than written
- * out by hand in each place, so adding a fourth region is a one-line change.
+ * One queue per region. Derived from this list rather than written out by hand
+ * in each place, so adding a region is a one-line change.
+ *
+ * `phoenix` is the odd one out: it is a comparison column, not a rotation —
+ * nobody takes turns going to the valley. It is hidden by default and never
+ * nudges auto-assign (see ROTATION_NUDGED_QUEUES).
  */
-export const ROTATION_QUEUE_IDS = ['limited', 'tucson', 'north'] as const;
+export const ROTATION_QUEUE_IDS = ['limited', 'tucson', 'north', 'phoenix'] as const;
 
 export type RotationQueueId = typeof ROTATION_QUEUE_IDS[number];
 
@@ -158,6 +162,7 @@ export interface RotationState {
   limited: RotationQueue;
   tucson: RotationQueue;
   north: RotationQueue;
+  phoenix: RotationQueue;
   /** Polygons keyed by area name, in precedence order, for classifying a job. */
   areas: { name: string; poly: [number, number][] }[];
   /**
@@ -502,8 +507,10 @@ export interface AppContextType {
 
   // South rotation
   rotation: RotationState | null;
+  /** Days of history the loaded rotation covers. Change it via reloadRotation(days). */
+  rotationWindowDays: number;
   rotationConfig: RotationConfig;
   updateRotationConfig: (config: RotationConfig) => Promise<void>;
   isRotationLoading: boolean;
-  reloadRotation: () => Promise<void>;
+  reloadRotation: (days?: number) => Promise<void>;
 }

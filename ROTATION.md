@@ -1,7 +1,7 @@
 # Travel rotation
 
 Whose turn it is to take the **Limited corridor**, **Tucson**, or the drive **up north**.
-Three separate queues, at `/rotation`.
+Three separate queues, at `/rotation`, plus an optional **Phoenix** column for comparison.
 
 ## Why it exists
 
@@ -28,9 +28,12 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    corridor town, and the queue stayed empty while looking correctly configured. Making the corridor
    outrank Phoenix would have renamed 13 towns in the scanner to satisfy a scheduler page. So
    `Limited` is simply checked first, then `South`.
-2. Fetch `category = 'sales'` events for the window (`ROTATION_WINDOW_DAYS`, **360 days**). 180 was
-   too short: an up-north or Tucson run is rare enough that half a year left most reps tied on
-   "never", which is no order at all. This
+2. Fetch `category = 'sales'` events for the window — `ROTATION_WINDOW_DAYS` (**360 days**) by
+   default, changeable on the page via the Window select (`ROTATION_WINDOW_OPTIONS`, 30 days to 2
+   years). 180 was the wrong default: an up-north or Tucson run is rare enough that half a year left
+   most reps tied on "never", which is no order at all. **The window moves everything**, running
+   order included — "last went", days, appointments and sold are all measured inside it, so a
+   90-day view answers a different question than a 2-year one. This
    **includes future-dated events**: a rep already booked south has taken their turn, and without
    that you would send them twice while planning the week.
 3. Resolve `calendar_events.attendees` (numeric Roofr user ids) through `ROOFR_USER_ID_TO_REP`.
@@ -46,8 +49,15 @@ KPI Supabase jobs                 ──► lat/lng for each appointment
    address*, so widening the service area to make it work would tell the CSR scanner we sell in
    Flagstaff — a different claim, and not one to make from a scheduler page.
 
-   Nothing in the valley reaches 34.07: Anthem 33.87, New River 33.92, Cave Creek 33.83. It is
-   checked last, so it can never take a point one of the two shapes already owns.
+   Nothing in the valley reaches 34.07: Anthem 33.87, New River 33.92, Cave Creek 33.83.
+
+   **Phoenix is checked last**, which is what makes it "the valley minus the corridor" for free:
+   a corridor point was already claimed two steps earlier. It is a comparison column, not a
+   rotation — nobody takes turns going to the valley. Hidden by default (remembered in
+   `localStorage`), and **never** nudges auto-assign: `ROTATION_NUDGED_QUEUES` omits it, because
+   nudging there would rescore every valley job by whose turn it is. It answers "is this rep light
+   overall, or only out of town" — a rep at the front of all three travel queues reads very
+   differently if their Phoenix column is full.
 5. A **trip is a DAY**, not an appointment. Three stops in Casa Grande is one turn. The table also
    shows **Appt · Won** for the same window: appointments run in that region, and how many of them
    sold. Won is counted as **distinct jobs** (`jobs.stage_category` in `won`/`completed`) — a second
@@ -74,7 +84,10 @@ treated as Tucson residents. Deliberate: the sheet's NORTHERN banner marks who c
 who lives there, and a frequent goer sinks to the back of the queue on their own. Use the skip
 toggle if someone should be out of a queue entirely.
 
-Out, each shown under **Not in rotation** with its reason so exclusions stay auditable:
+Out, each shown under **Not in rotation** with its reason so exclusions stay auditable. They are
+rendered in the **same columns** as the queue rather than a one-line summary, because their figures
+are worth reading against everyone else's — Richard Hadsall is the biggest producer in Tucson by a
+distance and is permanently excluded from it.
 
 | Reason | Source |
 |---|---|

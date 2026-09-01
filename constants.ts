@@ -81,7 +81,7 @@ export const SERVICE_AREA_API = "https://speed-to-leads.vercel.app/api/service-a
 // Linked from /rotation because "why is this town not counting" is answered on
 // the map, not in the queue.
 export const SERVICE_AREA_MAP = "https://speed-to-leads.vercel.app/service-area.html";
-export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as const;
+export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South", phoenix: "Phoenix" } as const;
 
 // Up north is a LATITUDE rule, not a service-area shape. The published "North"
 // area covers Prescott and the Verde Valley only, but reps get sent to Sedona,
@@ -96,12 +96,27 @@ export const ROTATION_AREA_NAMES = { limited: "Limited", tucson: "South" } as co
 // and Flagstaff 35.20 all clear it.
 export const ROTATION_NORTH_MIN_LAT = 34.07;
 
-// How far back a "last went" date is looked for. A rep with nothing in the
-// window reads as "never" and sorts to the front of the queue.
+// Default for how far back a "last went" date is looked for. A rep with nothing
+// in the window reads as "never" and sorts to the front of the queue.
 //
-// 360 days, not 180: an up-north or Tucson run is rare enough that half a year
-// of history left most reps tied on "never", which is no order at all.
+// 360, not 180: an up-north or Tucson run is rare enough that half a year of
+// history left most reps tied on "never", which is no order at all. The page
+// lets you narrow it to read a trend; the queue order narrows with it.
 export const ROTATION_WINDOW_DAYS = 360;
+
+export const ROTATION_WINDOW_OPTIONS: { days: number; label: string }[] = [
+  { days: 30, label: '30 days' },
+  { days: 60, label: '60 days' },
+  { days: 90, label: '90 days' },
+  { days: 180, label: '6 months' },
+  { days: 360, label: '1 year' },
+  { days: 720, label: '2 years' },
+];
+
+// Which queues may nudge auto-assign. Phoenix is deliberately absent: it is a
+// comparison column, and letting it nudge would score EVERY valley job by whose
+// turn it is — the whole board, not the handful of long drives this is for.
+export const ROTATION_NUDGED_QUEUES = new Set<string>(['limited', 'tucson', 'north']);
 
 // Availability-sheet rows that are not people. "Flex North" is a coverage
 // placeholder, so it can never take a turn — it is dropped from the queues

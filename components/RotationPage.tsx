@@ -1,13 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { EXCLUSION_LABELS } from '../services/rotationService';
-import { ROTATION_AREA_NAMES, SERVICE_AREA_MAP } from '../constants';
+import { ROTATION_AREA_NAMES, ROTATION_WINDOW_OPTIONS, SERVICE_AREA_MAP } from '../constants';
 import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
 
 /**
  * Whose turn it is to take each long drive: the Limited corridor, Tucson, or up
- * north. Three independent queues — a corridor run, a Tucson day and a Flagstaff
- * day are not the same ask, so they rotate separately.
+ * north. Independent queues — a corridor run, a Tucson day and a Flagstaff day
+ * are not the same ask, so they rotate separately.
+ *
+ * Phoenix is the exception: it is a comparison column, not a rotation. Nobody
+ * takes turns going to the valley, so it is off by default and never nudges
+ * auto-assign. It is here to answer "is this rep light overall, or only out of
+ * town" — a rep at the front of every travel queue reads very differently if
+ * their Phoenix column is full.
  *
  * Everything here is derived from appointments that actually happened (or are
  * already booked). Nothing has to be marked off by hand, which is the point:
@@ -15,7 +21,7 @@ import type { RotationEntry, RotationQueue, RotationQueueId } from '../types';
  * within a week.
  */
 
-const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: string }[] = [
+const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: string; optional?: boolean }[] = [
     {
         id: 'limited',
         title: 'Limited corridor',
@@ -35,7 +41,16 @@ const QUEUES: { id: RotationQueueId; title: string; blurb: string; areaName?: st
         title: 'Up north',
         blurb: 'Anything north of Black Canyon City — Prescott, Sedona, Flagstaff, Payson',
     },
+    {
+        id: 'phoenix',
+        title: 'Phoenix',
+        blurb: 'The valley, corridor excluded — not a rotation, just the comparison',
+        areaName: ROTATION_AREA_NAMES.phoenix,
+        optional: true,
+    },
 ];
+
+const SHOW_PHOENIX_KEY = 'rotation.showPhoenix';
 
 /** "Aug 29" / "never". Parsed as local parts — new Date('2026-08-29') is UTC. */
 const fmtDay = (day: string | null): string => {
@@ -45,7 +60,7 @@ const fmtDay = (day: string | null): string => {
     return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 };
 
-/** $412k / $1.2M / —. Compact on purpose: the column is ~50px in a 3-up layout. */
+/** $412k / $1.2M / —. Compact on purpose: the column is ~50px in a 4-up layout. */
 const fmtMoney = (n: number): string => {
     if (!n) return '—';
     if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
@@ -66,8 +81,20 @@ const daysAgo = (day: string | null): string => {
 
 const RotationPage: React.FC = () => {
     const context = useAppContext();
-    const { rotation, rotationConfig, updateRotationConfig, isRotationLoading, reloadRotation } = context;
+    const {
+        rotation, rotationConfig, updateRotationConfig,
+        isRotationLoading, reloadRotation, rotationWindowDays,
+    } = context;
     const [showExcluded, setShowExcluded] = useState(true);
+    // Off by default, but remembered once you turn it on — it is a wide column
+    // most people do not want, and re-ticking it every visit would be a chore.
+    const [showPhoenix, setShowPhoenix] = useState(
+        () => typeof window !== 'undefined' && window.localStorage.getItem(SHOW_PHOENIX_KEY) === '1'
+    );
+
+    useEffect(() => {
+        try { window.localStorage.setItem(SHOW_PHOENIX_KEY, showPhoenix ? '1' : '0'); } catch { /* private mode */ }
+    }, [showPhoenix]);
 
     const toggleSkip = (repKey: string, queue: RotationQueueId, skipped: boolean) => {
         const next = {
@@ -87,6 +114,11 @@ const RotationPage: React.FC = () => {
         [rotation]
     );
 
+    const visibleQueues = useMemo(
+        () => QUEUES.filter(q => !q.optional || showPhoenix),
+        [showPhoenix]
+    );
+
     if (isRotationLoading || !rotation) {
         return (
             <div className="h-full flex items-center justify-center text-sm text-text-tertiary">
@@ -98,14 +130,32 @@ const RotationPage: React.FC = () => {
     const queueLabel = (queue: RotationQueueId) =>
         QUEUES.find(q => q.id === queue)?.title.toLowerCase() ?? queue;
 
-    const renderRow = (entry: RotationEntry, index: number, queue: RotationQueueId) => (
-        <tr key={entry.repKey} className="border-b border-border-secondary last:border-0 hover:bg-bg-tertiary/50 transition">
-            <td className="py-1.5 pl-3 pr-2 w-10 text-right tabular-nums text-text-tertiary font-semibold">{index + 1}</td>
-            <td className="py-1.5 pr-2 text-text-primary font-medium">
+    /**
+     * One row, used for BOTH the queue and the excluded list. Held-out reps get
+     * the same columns rather than a squashed one-line summary — Richard Hadsall
+     * is the biggest producer in Tucson by a distance, and his figures are the
+     * ones you most want to read against everyone else's.
+     */
+    const renderRow = (entry: RotationEntry, rank: number | null, queue: RotationQueueId) => (
+        <tr
+            key={entry.repKey}
+            className={`border-b border-border-secondary last:border-0 transition ${
+                rank === null ? 'bg-bg-secondary/30' : 'hover:bg-bg-tertiary/50'
+            }`}
+        >
+            <td className="py-1.5 pl-3 pr-2 w-10 text-right tabular-nums text-text-tertiary font-semibold">
+                {rank === null ? '' : rank}
+            </td>
+            <td className={`py-1.5 pr-2 font-medium ${rank === null ? 'text-text-tertiary' : 'text-text-primary'}`}>
                 {entry.repName}
-                {entry.scheduled && (
+                {entry.scheduled && rank !== null && (
                     <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-tag-amber-bg text-tag-amber-text">
                         booked
+                    </span>
+                )}
+                {rank === null && entry.excludedBy && (
+                    <span className="ml-2 text-[9px] font-normal text-text-quaternary">
+                        {EXCLUSION_LABELS[entry.excludedBy]}
                     </span>
                 )}
             </td>
@@ -135,13 +185,23 @@ const RotationPage: React.FC = () => {
                 {fmtMoney(entry.wonValue)}
             </td>
             <td className="py-1.5 pr-3 text-right">
-                <button
-                    onClick={() => toggleSkip(entry.repKey, queue, true)}
-                    className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-tag-red-border hover:text-tag-red-text transition"
-                    title={`Take ${entry.repName} out of the ${queueLabel(queue)} rotation. The other queues are unaffected.`}
-                >
-                    remove
-                </button>
+                {rank !== null ? (
+                    <button
+                        onClick={() => toggleSkip(entry.repKey, queue, true)}
+                        className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-tag-red-border hover:text-tag-red-text transition"
+                        title={`Take ${entry.repName} out of the ${queueLabel(queue)} rotation. The other queues are unaffected.`}
+                    >
+                        remove
+                    </button>
+                ) : entry.excludedBy === 'skipped' ? (
+                    <button
+                        onClick={() => toggleSkip(entry.repKey, queue, false)}
+                        className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-brand-primary hover:text-brand-primary transition"
+                        title={`Put ${entry.repName} back in the ${queueLabel(queue)} rotation`}
+                    >
+                        put back
+                    </button>
+                ) : null}
             </td>
         </tr>
     );
@@ -187,50 +247,25 @@ const RotationPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {data.order.map((e, i) => renderRow(e, i, q.id))}
+                            {data.order.map((e, i) => renderRow(e, i + 1, q.id))}
                             {!data.order.length && (
                                 <tr><td colSpan={7} className="py-6 text-center text-text-tertiary">
                                     Nobody in the rotation. Load a schedule so the rep list is populated.
                                 </td></tr>
                             )}
+
+                            {showExcluded && data.excluded.length > 0 && (
+                                <>
+                                    <tr className="bg-bg-secondary/60">
+                                        <td colSpan={7} className="px-3 pt-2 pb-1 text-[9px] font-bold uppercase text-text-quaternary border-t border-border-primary">
+                                            Not in rotation
+                                        </td>
+                                    </tr>
+                                    {data.excluded.map(e => renderRow(e, null, q.id))}
+                                </>
+                            )}
                         </tbody>
                     </table>
-
-                    {showExcluded && data.excluded.length > 0 && (
-                        <div className="border-t border-border-primary bg-bg-secondary/40">
-                            <div className="px-3 pt-2 pb-1 text-[9px] font-bold uppercase text-text-quaternary">
-                                Not in rotation
-                            </div>
-                            <table className="w-full text-xs">
-                                <tbody>
-                                    {data.excluded.map(e => (
-                                        <tr key={e.repKey} className="border-b border-border-secondary last:border-0">
-                                            <td className="py-1.5 pl-3 pr-2 text-text-tertiary">{e.repName}</td>
-                                            <td className="py-1.5 pr-2 text-[10px] text-text-quaternary">
-                                                {EXCLUSION_LABELS[e.excludedBy!]}
-                                            </td>
-                                            <td className="py-1.5 pr-2 tabular-nums text-[10px] text-text-quaternary">
-                                                {e.trips > 0
-                                                    ? `${e.trips}d · ${e.appts} appt · ${e.won} won · ${fmtMoney(e.wonValue)} · ${fmtDay(e.lastTrip)}`
-                                                    : ''}
-                                            </td>
-                                            <td className="py-1.5 pr-3 text-right">
-                                                {e.excludedBy === 'skipped' && (
-                                                    <button
-                                                        onClick={() => toggleSkip(e.repKey, q.id, false)}
-                                                        className="px-1.5 py-0.5 text-[10px] font-semibold rounded border border-border-secondary text-text-quaternary hover:border-brand-primary hover:text-brand-primary transition"
-                                                        title={`Put ${e.repName} back in the rotation`}
-                                                    >
-                                                        put back
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
                 </div>
             )}
         </div>
@@ -250,6 +285,33 @@ const RotationPage: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">
+                    {/* Narrowing the window re-reads the whole page, order included:
+                        "last went" and the queue order are both window-relative, so a
+                        90-day view answers a different question than a 2-year one. */}
+                    <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+                        <span className="text-text-tertiary">Window</span>
+                        <select
+                            value={rotationWindowDays}
+                            onChange={e => reloadRotation(Number(e.target.value))}
+                            className="px-1.5 py-1 text-[11px] font-semibold rounded-md border border-border-secondary bg-bg-primary text-text-secondary cursor-pointer"
+                            title="How far back to read. Everything on the page — last went, days, appointments, sold, and the running order — is measured inside this window."
+                        >
+                            {ROTATION_WINDOW_OPTIONS.map(o => (
+                                <option key={o.days} value={o.days}>{o.label}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={showPhoenix}
+                            onChange={e => setShowPhoenix(e.target.checked)}
+                            className="accent-brand-primary"
+                        />
+                        <span title="The valley with the corridor carved out. A comparison column — it never nudges auto-assign.">
+                            Phoenix
+                        </span>
+                    </label>
                     <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer">
                         <input
                             type="checkbox"
@@ -275,13 +337,13 @@ const RotationPage: React.FC = () => {
                         href={SERVICE_AREA_MAP}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Boundary editor — where the Limited corridor and Tucson shapes are drawn. Up north is a latitude cut and is not on this map."
+                        title="Boundary editor — where the Limited corridor, Tucson and Phoenix shapes are drawn. Up north is a latitude cut and is not on this map."
                         className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition"
                     >
                         Corridors map ↗
                     </a>
                     <button
-                        onClick={reloadRotation}
+                        onClick={() => reloadRotation()}
                         className="px-2 py-1 text-[11px] font-semibold rounded-md border border-border-secondary text-text-tertiary hover:border-brand-primary hover:text-brand-primary transition"
                     >
                         Refresh
@@ -297,7 +359,7 @@ const RotationPage: React.FC = () => {
             )}
 
             <div className="flex-1 min-h-0 flex gap-3 flex-col lg:flex-row">
-                {QUEUES.map(q => renderQueue(q, rotation[q.id]))}
+                {visibleQueues.map(q => renderQueue(q, rotation[q.id]))}
             </div>
 
             {/* An unmapped attendee id is invisible damage: that rep's trips file
