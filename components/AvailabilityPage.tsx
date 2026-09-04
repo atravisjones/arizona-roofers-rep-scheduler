@@ -544,37 +544,38 @@ const Board: React.FC<BoardProps> = ({
 };
 
 const Legend: React.FC = () => {
-  const sample = 'flex h-6 w-8 items-center justify-center rounded border text-[11px] font-bold';
+  const sample = 'flex h-6 w-8 items-center justify-center rounded border-2 text-[11px] font-bold';
+  const label = 'text-[11px] font-semibold';
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border-secondary bg-bg-secondary/40 px-4 py-2.5 text-[11px] text-text-secondary">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border-secondary bg-bg-secondary/40 px-4 py-2.5">
       <span className="text-[10px] font-bold uppercase tracking-wide text-text-tertiary">
         Legend
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-green-border bg-tag-green-bg`} />
-        Available
+        <i className={`${sample} border-tag-green-text bg-tag-green-bg`} />
+        <span className={`${label} text-tag-green-text`}>Available</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-border-primary bg-bg-tertiary text-text-quaternary`} />
-        Off (standing pattern)
+        <i className={`${sample} border-text-quaternary bg-bg-tertiary`} />
+        <span className={`${label} text-text-tertiary`}>Off (standing pattern)</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-border-primary text-text-secondary ${HATCHED}`}>M</i>
-        Company meeting
+        <i className={`${sample} border-text-tertiary text-text-secondary ${HATCHED}`}>M</i>
+        <span className={`${label} text-text-secondary`}>Company meeting</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-amber-border bg-tag-amber-bg text-tag-amber-text`}>×</i>
-        Time off
+        <i className={`${sample} border-tag-amber-text bg-tag-amber-bg text-tag-amber-text`}>×</i>
+        <span className={`${label} text-tag-amber-text`}>Time off</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-blue-border bg-tag-blue-bg text-tag-blue-text`}>+</i>
-        Added coverage
+        <i className={`${sample} border-tag-blue-text bg-tag-blue-bg text-tag-blue-text`}>+</i>
+        <span className={`${label} text-tag-blue-text`}>Added coverage</span>
       </span>
       <span className="flex items-center gap-2">
         <i
-          className={`${sample} border-tag-green-border bg-tag-green-bg ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary`}
+          className={`${sample} border-tag-green-text bg-tag-green-bg ring-2 ring-tag-amber-text ring-offset-1 ring-offset-bg-primary`}
         />
-        Pending request
+        <span className={`${label} text-tag-amber-text`}>Pending request</span>
       </span>
     </div>
   );
