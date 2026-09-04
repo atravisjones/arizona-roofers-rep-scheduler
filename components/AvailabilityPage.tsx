@@ -14,6 +14,7 @@ import {
 import {
   SLOTS,
   SLOT_LABELS,
+  SLOT_START,
   WEEKDAYS,
   addWeeks,
   dateKey,
@@ -315,14 +316,18 @@ const Cell: React.FC<CellProps> = ({
           ? 'border border-tag-green-text/60 bg-tag-green-text/30 text-tag-green-text'
           : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
-  const contents = meeting
-    ? 'M'
-    : exception?.available === false
-      ? '×'
-      : exception?.available === true
-        ? '+'
-        : '';
-  const cellClass = `m-0.5 flex h-6 items-center justify-center rounded border text-[10px] font-bold ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  // Every cell shows its start time; state is carried by fill, border and text style.
+  const start = SLOT_START[slot] || '';
+  const contents = meeting ? (
+    'M'
+  ) : exception?.available === false ? (
+    <span className="line-through decoration-2">{start}</span>
+  ) : exception?.available === true ? (
+    <span className="underline decoration-2 underline-offset-2">{start}</span>
+  ) : (
+    start
+  );
+  const cellClass = `m-0.5 flex h-6 items-center justify-center rounded border text-[10px] font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
   const title = `${label}${exception?.note ? `\n${exception.note}` : ''}${exception?.created_by ? ` · set by ${exception.created_by}` : ''}`;
   if (editable && !meeting) {
     return (
@@ -394,7 +399,7 @@ const Board: React.FC<BoardProps> = ({
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
   const dayColumns = sundayCollapsed ? 25 : 28;
-  const gridColumns = `grid-cols-[190px_repeat(${dayColumns},minmax(28px,1fr))]`;
+  const gridColumns = `grid-cols-[190px_repeat(${dayColumns},minmax(34px,1fr))]`;
   return (
     <section
       className={`overflow-hidden rounded-lg border border-border-secondary bg-bg-primary ${editing ? 'border-t-2 border-t-brand-primary' : ''}`}
@@ -403,7 +408,8 @@ const Board: React.FC<BoardProps> = ({
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Rep coverage board</h2>
           <p className="text-[11px] text-text-tertiary">
-            Click a cell to cycle its dated exception. Select a rep for pattern details.
+            Cells show the slot's start time. Struck = time off, underlined = added coverage. Select
+            a rep for pattern details.
           </p>
         </div>
         <button
@@ -453,9 +459,9 @@ const Board: React.FC<BoardProps> = ({
                 : SLOTS.slice(0, 4).map((slot) => (
                     <div
                       key={`${day}-${slot}`}
-                      className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
+                      className="border-l border-border-secondary/60 py-1 text-[9px] font-bold text-text-quaternary"
                     >
-                      {slot.slice(1)}
+                      {SLOT_START[slot]}
                     </div>
                   )),
             )}
@@ -552,11 +558,13 @@ const Legend: React.FC = () => {
         Legend
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-green-text bg-tag-green-text/30`} />
+        <i className={`${sample} border-tag-green-text bg-tag-green-text/30 text-tag-green-text`}>
+          8a
+        </i>
         <span className={`${label} text-tag-green-text`}>Available</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-text-quaternary bg-bg-tertiary`} />
+        <i className={`${sample} border-text-quaternary bg-bg-tertiary text-text-quaternary`}>8a</i>
         <span className={`${label} text-text-tertiary`}>Off (standing pattern)</span>
       </span>
       <span className="flex items-center gap-2">
@@ -564,11 +572,19 @@ const Legend: React.FC = () => {
         <span className={`${label} text-text-secondary`}>Company meeting</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-amber-text bg-tag-amber-bg text-tag-amber-text`}>×</i>
+        <i
+          className={`${sample} border-tag-amber-text bg-tag-amber-bg text-tag-amber-text line-through decoration-2`}
+        >
+          8a
+        </i>
         <span className={`${label} text-tag-amber-text`}>Time off</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-blue-text bg-tag-blue-bg text-tag-blue-text`}>+</i>
+        <i
+          className={`${sample} border-tag-blue-text bg-tag-blue-bg text-tag-blue-text underline decoration-2 underline-offset-2`}
+        >
+          8a
+        </i>
         <span className={`${label} text-tag-blue-text`}>Added coverage</span>
       </span>
       <span className="flex items-center gap-2">

@@ -9,6 +9,14 @@ export const SLOT_LABELS: Record<string, string> = {
   s4: '5pm – 7pm',
   s5: 'Storm / flex',
 };
+// Short start-time labels that fit inside a board cell.
+export const SLOT_START: Record<string, string> = {
+  s1: '8a',
+  s2: '11a',
+  s3: '2p',
+  s4: '5p',
+  s5: '5p',
+};
 
 function fromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number);
