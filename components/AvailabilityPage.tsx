@@ -796,7 +796,7 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className="grid border-b border-border-secondary/70"
+                    className="grid border-b-2 border-border-primary"
                     style={gridStyle}
                   >
                     <button
