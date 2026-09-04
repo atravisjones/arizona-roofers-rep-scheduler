@@ -113,12 +113,18 @@ const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_
 
 
 
+export const BOARD_KIND_PATHS: Record<BoardKind, string> = { retail: '/retail', commercial: '/commercial', insurance: '/insurance' };
+export const boardKindFromPath = (path: string): BoardKind | null =>
+    (Object.keys(BOARD_KIND_PATHS) as BoardKind[]).find(k => BOARD_KIND_PATHS[k] === path) ?? null;
+
 export const useAppLogic = () => {
-    // Schedules section toggle (Retail / Commercial / Insurance). Remembered per browser;
-    // the old /insurance link opens straight onto Insurance.
+    // Schedules section toggle (Retail / Commercial / Insurance). Each section has its
+    // own URL (/retail, /commercial, /insurance; "/" = last-used section) so it's
+    // linkable and back/forward works; the choice is also remembered per browser.
     const [boardKind, setBoardKindState] = useState<BoardKind>(() => {
         try {
-            if (typeof window !== 'undefined' && window.location.pathname === '/insurance') return 'insurance';
+            const fromPath = typeof window !== 'undefined' ? boardKindFromPath(window.location.pathname) : null;
+            if (fromPath) return fromPath;
             const stored = localStorage.getItem('planner.boardKind');
             if (stored === 'retail' || stored === 'commercial' || stored === 'insurance') return stored;
         } catch { /* ignore */ }
@@ -127,6 +133,16 @@ export const useAppLogic = () => {
     const setBoardKind = useCallback((kind: BoardKind) => {
         setBoardKindState(kind);
         try { localStorage.setItem('planner.boardKind', kind); } catch { /* ignore */ }
+        // Only rewrite the URL while on the planner (not Today Board / Review / etc.).
+        const path = window.location.pathname;
+        if ((path === '/' || boardKindFromPath(path)) && path !== BOARD_KIND_PATHS[kind]) {
+            window.history.pushState({}, '', BOARD_KIND_PATHS[kind]);
+        }
+    }, []);
+    useEffect(() => {
+        const sync = () => { const k = boardKindFromPath(window.location.pathname); if (k) setBoardKindState(k); };
+        window.addEventListener('popstate', sync);
+        return () => window.removeEventListener('popstate', sync);
     }, []);
     // Retail = PHX/NORTH/SOUTH sections (+ Flex North/South, unknown); Commercial = COMMERCIAL
     // section; Insurance = door knockers (D2D, incl. Flex D2D) who take adjuster meetings.

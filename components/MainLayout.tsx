@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { DragHandleIcon, SummaryIcon, SaveIcon, UploadIcon, UndoIcon, RedoIcon, UserIcon, TagIcon, RepairIcon, RescheduleIcon, SettingsIcon, HistoryIcon, CloudUploadIcon, CloudDownloadIcon, PasteIcon, AutoAssignIcon, LoadingIcon, MapPinIcon, MinimizeIcon, MaximizeIcon, ChevronLeftIcon, ChevronRightIcon, RefreshIcon, CalendarIcon, GridIcon } from './icons';
+import { BOARD_KIND_PATHS } from '../context/useAppLogic';
 import DayTabs from './DayTabs';
 import SchedulesPanel from './SchedulesPanel';
 import TodayBoard from './TodayBoard';
@@ -729,7 +730,7 @@ const MainLayout: React.FC = () => {
   const navTabs = (
     <div className="flex items-center gap-1">
       <button
-        onClick={() => navigateTo('/')}
+        onClick={() => navigateTo(BOARD_KIND_PATHS[context.boardKind])}
         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showPlanner
           ? 'bg-brand-primary text-brand-text-on-primary'
           : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'

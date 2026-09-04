@@ -1,7 +1,8 @@
 # Schedules sections: Retail / Commercial / Insurance
 
-The Schedules column has a section toggle (remembered per browser as
-`planner.boardKind`; the old `/insurance` link opens on Insurance). It scopes the
+The Schedules column has a section toggle. Each section has its own URL
+(`/retail`, `/commercial`, `/insurance`; `/` opens the last-used one, remembered
+per browser as `planner.boardKind`). It scopes the
 rep columns, the Jobs list, and the map to one section — the per-day state,
 history, and cloud save stay shared.
 
