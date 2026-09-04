@@ -1,0 +1,252 @@
+import React, { useMemo, useState } from 'react';
+import { Exception, Pattern, Profile, saveAvailability } from '../services/availabilityApi';
+import { SLOT_LABELS, SLOTS, WEEKDAYS, nextMonday } from '../utils/availability';
+
+interface Props {
+  profile: Profile;
+  exceptions: Exception[];
+  pattern?: Pattern;
+  isManager: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}
+type PatternState = Record<number, Record<string, boolean>>;
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+const skillLabels = (skills?: Profile['skills'] | null) =>
+  Object.entries(skills || {})
+    .filter(([, value]) => value !== false && value !== 0 && value != null)
+    .slice(0, 6)
+    .map(([key, value]) => `${key.replace(/_/g, ' ')} ${value}`);
+const patternDefaults = (pattern?: Pattern): PatternState =>
+  Object.fromEntries(
+    WEEKDAYS.map((_, weekday) => [
+      weekday,
+      Object.fromEntries(
+        SLOTS.slice(0, 4).map((slot) => [
+          slot,
+          pattern?.slots.find((item) => item.weekday === weekday && item.slot === slot)
+            ?.available ?? true,
+        ]),
+      ),
+    ]),
+  ) as PatternState;
+
+const PatternEditor: React.FC<{ pattern?: Pattern; repId: string; onSaved: () => void }> = ({
+  pattern,
+  repId,
+  onSaved,
+}) => {
+  const [effectiveFrom, setEffectiveFrom] = useState(nextMonday());
+  const [slots, setSlots] = useState(() => patternDefaults(pattern));
+  const [saving, setSaving] = useState(false);
+  const savePattern = async () => {
+    setSaving(true);
+    try {
+      await saveAvailability({
+        action: 'set_pattern',
+        rep_id: repId,
+        effective_from: effectiveFrom,
+        slots: Object.entries(slots).flatMap(([weekday, daySlots]) =>
+          Object.entries(daySlots).map(([slot, available]) => ({
+            weekday: Number(weekday),
+            slot,
+            available,
+          })),
+        ),
+      });
+      onSaved();
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section className="rounded-md border border-border-secondary bg-bg-secondary p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">Standing pattern</h3>
+          <p className="text-[10px] text-text-tertiary">Set the weekly default from a Monday.</p>
+        </div>
+        <input
+          type="date"
+          value={effectiveFrom}
+          onChange={(event) => setEffectiveFrom(event.target.value)}
+          aria-label="Pattern effective date"
+          className="w-[126px] rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
+        />
+      </div>
+      <div className="space-y-1.5">
+        {WEEKDAYS.map((day, weekday) => (
+          <div key={day} className="flex items-center gap-2">
+            <span className="w-7 text-[10px] font-bold text-text-tertiary">{day}</span>
+            {SLOTS.slice(0, 4).map((slot) => {
+              const available = slots[weekday][slot];
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={() =>
+                    setSlots((current) => ({
+                      ...current,
+                      [weekday]: { ...current[weekday], [slot]: !available },
+                    }))
+                  }
+                  className={`h-7 flex-1 rounded border text-[9px] font-bold ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`}
+                  aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
+                >
+                  {available ? 'ON' : 'OFF'}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => void savePattern()}
+        disabled={saving}
+        className="mt-3 w-full rounded-md bg-brand-primary px-3 py-2 text-xs font-semibold text-brand-text-on-primary disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : 'Save standing pattern'}
+      </button>
+    </section>
+  );
+};
+
+const AvailabilityRepDrawer: React.FC<Props> = ({
+  profile,
+  exceptions,
+  pattern,
+  isManager,
+  onClose,
+  onSaved,
+}) => {
+  const history = useMemo(
+    () =>
+      [...exceptions].sort((a, b) =>
+        `${b.exception_date}${b.slot}`.localeCompare(`${a.exception_date}${a.slot}`),
+      ),
+    [exceptions],
+  );
+  const deleteException = async (item: Exception) => {
+    await saveAvailability({
+      action: 'set_exception',
+      rep_id: profile.id,
+      date: item.exception_date,
+      slot: item.slot,
+      available: null,
+    });
+    onSaved();
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-bg-primary/50"
+        aria-label="Close rep details"
+      />
+      <aside
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[390px] flex-col border-l border-border-primary bg-bg-primary shadow-2xl motion-safe:animate-[slide-in_200ms_ease-out]"
+        aria-label={`${profile.display_name} availability details`}
+      >
+        <div className="flex items-start justify-between border-b border-border-secondary px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-brand-primary text-xs font-bold text-brand-text-on-primary">
+              {initials(profile.display_name)}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-text-primary">{profile.display_name}</h2>
+              <p className="text-[11px] uppercase tracking-wider text-text-tertiary">
+                {profile.section}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-2 py-1 text-xl text-text-tertiary hover:bg-bg-tertiary"
+            aria-label="Close drawer"
+          >
+            ×
+          </button>
+        </div>
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          <div className="grid grid-cols-2 gap-3 text-[11px]">
+            <div className="rounded-md bg-bg-secondary p-3">
+              <span className="block text-text-quaternary">Home zip</span>
+              <strong className="text-text-primary">{profile.home_zip || '—'}</strong>
+            </div>
+            <div className="rounded-md bg-bg-secondary p-3">
+              <span className="block text-text-quaternary">Roofr ID</span>
+              <strong className="text-text-primary">{profile.roofr_user_id || 'Not linked'}</strong>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-text-quaternary">
+              Skills
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {skillLabels(profile.skills).map((skill) => (
+                <span
+                  key={skill}
+                  className="rounded border border-border-secondary bg-bg-secondary px-2 py-1 text-[10px] capitalize text-text-secondary"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+          {isManager && <PatternEditor pattern={pattern} repId={profile.id} onSaved={onSaved} />}
+          <section>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-text-primary">Exceptions history</h3>
+              <span className="text-[10px] tabular-nums text-text-quaternary">
+                {history.length} changes
+              </span>
+            </div>
+            {history.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border-secondary p-4 text-center text-[11px] text-text-tertiary">
+                No dated exceptions for this rep.
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {history.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded-md border border-border-secondary px-3 py-2"
+                  >
+                    <div>
+                      <p className="text-[11px] font-semibold text-text-secondary">
+                        {item.exception_date} · {SLOT_LABELS[item.slot] || item.slot}
+                      </p>
+                      <p className="text-[10px] text-text-tertiary">
+                        {item.available ? '+' : '×'} {item.note || 'No note'} ·{' '}
+                        {item.created_by || 'manager'}
+                      </p>
+                    </div>
+                    {isManager && (
+                      <button
+                        type="button"
+                        onClick={() => void deleteException(item)}
+                        className="rounded px-2 py-1 text-[10px] font-semibold text-text-quaternary hover:bg-tag-red-bg hover:text-tag-red-text"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </aside>
+    </>
+  );
+};
+export default AvailabilityRepDrawer;
