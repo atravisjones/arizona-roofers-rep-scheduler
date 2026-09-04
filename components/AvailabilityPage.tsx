@@ -454,8 +454,9 @@ const Cell: React.FC<CellProps> = ({
       ? false
       : item?.source === 'holiday' && exception?.available !== true;
   const available = exception?.available ?? item?.available ?? false;
-  const stateClass =
-    meeting || holiday
+  const stateClass = meeting
+    ? 'border-text-primary bg-text-primary text-bg-primary' // solid ink block, like the sheet
+    : holiday
       ? `${HATCHED} border-border-secondary text-text-tertiary`
       : exception?.available === false
         ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
@@ -952,7 +953,7 @@ const Legend: React.FC = () => {
         <span className={`${label} text-text-tertiary`}>Off (standing pattern)</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-text-tertiary text-text-secondary ${HATCHED}`}>M</i>
+        <i className={`${sample} border-text-primary bg-text-primary text-bg-primary`}>M</i>
         <span className={`${label} text-text-secondary`}>Company meeting</span>
       </span>
       <span className="flex items-center gap-2">
