@@ -415,6 +415,7 @@ const Board: React.FC<BoardProps> = ({
           <span className="ml-1">{showNonSelling ? '−' : '+'}</span>
         </button>
       </div>
+      <Legend />
       <div className="overflow-x-auto">
         <div className="min-w-[1050px]">
           <div
@@ -538,33 +539,46 @@ const Board: React.FC<BoardProps> = ({
           })}
         </div>
       </div>
-      <Legend />
     </section>
   );
 };
 
-const Legend: React.FC = () => (
-  <div className="flex flex-wrap items-center gap-4 border-t border-border-secondary px-4 py-3 text-[10px] text-text-tertiary">
-    <span className="font-semibold text-text-secondary">Legend</span>
-    <span className="flex items-center gap-1">
-      <i className="h-3 w-3 rounded border border-tag-green-border bg-tag-green-bg" />
-      Available
-    </span>
-    <span className="flex items-center gap-1">
-      <i className={`h-3 w-3 rounded border border-border-secondary ${HATCHED}`} />
-      Meeting
-    </span>
-    <span className="flex items-center gap-1">
-      <i className="h-3 w-3 rounded border border-tag-amber-border bg-tag-amber-bg" />
-      Time off ×
-    </span>
-    <span className="flex items-center gap-1">
-      <i className="h-3 w-3 rounded border border-tag-blue-border bg-tag-blue-bg" />
-      Added coverage +
-    </span>
-    <span className="text-text-quaternary">Amber ring = pending request</span>
-  </div>
-);
+const Legend: React.FC = () => {
+  const sample = 'flex h-6 w-8 items-center justify-center rounded border text-[11px] font-bold';
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border-secondary bg-bg-secondary/40 px-4 py-2.5 text-[11px] text-text-secondary">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-text-tertiary">
+        Legend
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-tag-green-border bg-tag-green-bg`} />
+        Available
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-border-primary bg-bg-tertiary text-text-quaternary`} />
+        Off (standing pattern)
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-border-primary text-text-secondary ${HATCHED}`}>M</i>
+        Company meeting
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-tag-amber-border bg-tag-amber-bg text-tag-amber-text`}>×</i>
+        Time off
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-tag-blue-border bg-tag-blue-bg text-tag-blue-text`}>+</i>
+        Added coverage
+      </span>
+      <span className="flex items-center gap-2">
+        <i
+          className={`${sample} border-tag-green-border bg-tag-green-bg ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary`}
+        />
+        Pending request
+      </span>
+    </div>
+  );
+};
 
 interface AddRepFormProps {
   onCancel: () => void;
