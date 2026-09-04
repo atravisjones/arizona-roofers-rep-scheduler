@@ -1011,7 +1011,7 @@ const Board: React.FC<BoardProps> = ({
                           return (
                             <div
                               key={`${profile.id}-off-${run.start}`}
-                              className="absolute z-[6] flex items-center justify-between gap-2 rounded-md border border-tag-amber-border bg-tag-amber-bg px-2 text-[10px] font-semibold text-tag-amber-text"
+                              className="pointer-events-none absolute z-[6] flex items-center justify-between gap-2 rounded-md border border-tag-amber-border bg-tag-amber-bg/90 px-2 text-[10px] font-semibold text-tag-amber-text"
                               style={{ top: 2, height: 18, left, width }}
                             >
                               <span className="truncate">
@@ -1021,7 +1021,7 @@ const Board: React.FC<BoardProps> = ({
                               <button
                                 type="button"
                                 onClick={() => onClearTimeOff(profile, runFrom, runTo)}
-                                className={`${FOCUS} shrink-0 rounded bg-bg-primary px-1.5 py-px text-[10px] font-bold text-tag-amber-text hover:brightness-95`}
+                                className={`${FOCUS} pointer-events-auto shrink-0 rounded bg-bg-primary px-1.5 py-px text-[10px] font-bold text-tag-amber-text hover:brightness-95`}
                                 title="Remove this time off (the rep is back)"
                               >
                                 Clear time off
