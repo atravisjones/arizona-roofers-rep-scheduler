@@ -18,11 +18,26 @@ const initials = (name: string) =>
     .join('')
     .slice(0, 2)
     .toUpperCase();
-const skillLabels = (skills?: Profile['skills'] | null) =>
-  Object.entries(skills || {})
-    .filter(([, value]) => value !== false && value !== 0 && value != null)
-    .slice(0, 6)
-    .map(([key, value]) => `${key.replace(/_/g, ' ')} ${value}`);
+// Skills are flat columns on rep_profiles (0-3 grades plus a few flags).
+const SKILL_FIELDS: Array<[string, string]> = [
+  ['tile', 'Tile'],
+  ['shingle', 'Shingle'],
+  ['flat', 'Flat'],
+  ['metal', 'Metal'],
+  ['insurance', 'Insurance'],
+  ['commercial', 'Commercial'],
+  ['two_story_ladder', '2-story ladder'],
+  ['spanish', 'Spanish'],
+  ['veteran', 'Veteran'],
+];
+const skillLabels = (profile: Profile) =>
+  SKILL_FIELDS.flatMap(([field, label]) => {
+    const value = (profile as unknown as Record<string, unknown>)[field];
+    if (value === true) return [label];
+    if (typeof value === 'number' && value > 0) return [`${label} ${value}`];
+    if (typeof value === 'string' && value.trim()) return [`${label}: ${value}`];
+    return [];
+  });
 const patternDefaults = (pattern?: Pattern): PatternState =>
   Object.fromEntries(
     WEEKDAYS.map((_, weekday) => [
@@ -192,7 +207,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
               Skills
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {skillLabels(profile.skills).map((skill) => (
+              {skillLabels(profile).map((skill) => (
                 <span
                   key={skill}
                   className="rounded border border-border-secondary bg-bg-secondary px-2 py-1 text-[10px] capitalize text-text-secondary"

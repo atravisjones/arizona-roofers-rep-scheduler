@@ -599,16 +599,12 @@ const AvailabilityPage: React.FC = () => {
   const visibleProfiles = useMemo(
     () =>
       (data?.profiles || [])
+        // The board always shows every selling section; the section selector
+        // only drives the capacity strip.
         .filter(
           (profile) => showNonSelling || SELLING_SECTIONS.includes(profile.section as Section),
-        )
-        .filter(
-          (profile) =>
-            section === 'All' ||
-            profile.section === section ||
-            (section === 'Commercial' && profile.section === 'COMMERCIAL'),
         ),
-    [data, section, showNonSelling],
+    [data, showNonSelling],
   );
   const runWrite = async (payload: Record<string, unknown>, success: string, after = true) => {
     await saveAvailability(payload);
