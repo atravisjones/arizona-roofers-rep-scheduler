@@ -384,6 +384,10 @@ function buildQueue(
         // Sheet rows that are not people never take a turn, and showing them as
         // "held out" would imply someone decided to hold them out.
         if (ROTATION_NON_REP_ROWS.has(repKey)) continue;
+        // Commercial reps, door knockers (Insurance section) and the Flex placeholder
+        // rows never travel on rotation — leave them off the page entirely rather
+        // than listing them as held out.
+        if (isCommercialOnlyRep(rep) || rep.region === 'D2D' || /^flex/i.test(rep.name.trim())) continue;
         const stat = data.trips[queue][repKey];
         const entry: RotationEntry = {
             repName: rep.name.trim(),
