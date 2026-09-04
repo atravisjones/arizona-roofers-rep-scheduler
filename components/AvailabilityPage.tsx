@@ -722,7 +722,7 @@ const Board: React.FC<BoardProps> = ({
   const gridStyle = { gridTemplateColumns };
   return (
     <section
-      className={`overflow-hidden rounded-lg border border-border-secondary bg-bg-primary ${editing ? 'border-t-2 border-t-brand-primary' : ''}`}
+      className={`overflow-clip rounded-lg border border-border-secondary bg-bg-primary ${editing ? 'border-t-2 border-t-brand-primary' : ''}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-secondary px-4 py-3">
         <div>
