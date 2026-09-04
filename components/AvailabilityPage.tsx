@@ -551,7 +551,9 @@ const offRuns = (
     if (allOff) {
       const note = cells
         .map((cell) => (cell?.note || '').trim())
-        .find((text) => text && !/^imported from/i.test(text));
+        .find(
+          (text) => text && !/^imported from/i.test(text) && !/^manager board edit$/i.test(text),
+        );
       const reason = note || 'Time off';
       if (current && current.start + current.length === index && current.reason === reason) {
         current.length += 1;
@@ -1309,7 +1311,7 @@ const AvailabilityPage: React.FC = () => {
                       exception_date: day,
                       slot,
                       available: next,
-                      note: 'Manager board edit',
+                      note: null,
                     },
                   ],
           }
@@ -1323,13 +1325,12 @@ const AvailabilityPage: React.FC = () => {
           date: day,
           slot,
           available: next,
-          note: next === null ? undefined : 'Manager board edit',
         },
         `${profile.display_name} ${next === null ? 'reverted to pattern' : next ? 'given added coverage' : 'marked off'}`,
         false,
       );
       setUndo({
-        label: 'Undo',
+        label: `${profile.display_name} · ${displayDate(day)} · ${SLOT_LABELS[slot] || slot}`,
         run: async () => {
           await runWrite(
             { action: 'set_exception', rep_id: profile.id, date: day, slot, available: previous },
