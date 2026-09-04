@@ -77,7 +77,7 @@ function holdRuleFromRow(row) {
 async function getData({ from, to, session }) {
   const dates = dateRange(from, to);
   const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults] = await Promise.all([
-    sb('rep_profiles?select=*'),
+    sb('rep_profiles?select=*&active=eq.true'),
     rpc('resolve_availability', { p_from: from, p_to: to }, { Range: '0-9999' }),
     sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}`
       + '&order=exception_date,slot'),
@@ -224,8 +224,11 @@ async function write(action, body, email) {
       const rows = await sb('rep_profiles?select=sort_order&order=sort_order.desc&limit=1');
       profile.sort_order = (rows[0]?.sort_order || 0) + 1;
     }
-    await sb(`rep_profiles${profile.id ? `?id=eq.${encodeURIComponent(profile.id)}` : ''}`, {
-      method: profile.id ? 'PATCH' : 'POST', headers: { Prefer: 'return=representation' },
+    // New reps upsert on display_name so re-adding a removed rep reactivates them in place.
+    if (!profile.id) profile.active = true;
+    await sb(`rep_profiles${profile.id ? `?id=eq.${encodeURIComponent(profile.id)}` : '?on_conflict=display_name'}`, {
+      method: profile.id ? 'PATCH' : 'POST',
+      headers: { Prefer: profile.id ? 'return=representation' : 'return=representation,resolution=merge-duplicates' },
       body: JSON.stringify(profile),
     });
   } else if (action === 'set_rep_active') {

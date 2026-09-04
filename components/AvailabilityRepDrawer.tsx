@@ -315,9 +315,71 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
               </div>
             )}
           </section>
+          {editable && !profile.is_placeholder && (
+            <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} />
+          )}
         </div>
       </aside>
     </>
+  );
+};
+
+// Two-step "Remove from schedule": deactivates the rep (history is kept; re-adding the same
+// name from "+ Add rep" reactivates them).
+const RemoveRep: React.FC<{ profile: Profile; onSaved: () => void; onClose: () => void }> = ({
+  profile,
+  onSaved,
+  onClose,
+}) => {
+  const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const remove = async () => {
+    setSaving(true);
+    try {
+      await saveAvailability({ action: 'set_rep_active', rep_id: profile.id, active: false });
+      onSaved();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <section className="border-t border-border-secondary pt-4">
+      {confirming ? (
+        <div className="rounded-md border border-tag-red-border bg-tag-red-bg p-3 text-[11px] text-tag-red-text">
+          <p className="font-semibold">Remove {profile.display_name} from the schedule?</p>
+          <p className="mt-1">
+            They disappear from the board and the generated sheet tabs. Their pattern and history
+            are kept, and adding the same name again brings them back.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void remove()}
+              className="rounded-md bg-tag-red-text px-3 py-1.5 text-[11px] font-semibold text-bg-primary"
+            >
+              {saving ? 'Removing…' : 'Yes, remove'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              className="rounded-md border border-border-secondary px-3 py-1.5 text-[11px] font-semibold text-text-secondary"
+            >
+              Keep
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="rounded-md border border-border-secondary px-3 py-1.5 text-[11px] font-semibold text-text-tertiary hover:border-tag-red-border hover:text-tag-red-text"
+        >
+          Remove from schedule
+        </button>
+      )}
+    </section>
   );
 };
 export default AvailabilityRepDrawer;
