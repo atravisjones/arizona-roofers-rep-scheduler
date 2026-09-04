@@ -102,6 +102,9 @@ const PatternEditor: React.FC<{
     <section className="rounded-md border border-border-secondary bg-bg-secondary p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
+          {editable && !profile.is_placeholder && (
+            <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} />
+          )}
           <h3 className="text-sm font-semibold text-text-primary">Standing pattern</h3>
           <p className="text-[10px] text-text-tertiary">Set the weekly default from a Monday.</p>
         </div>
@@ -315,9 +318,6 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
               </div>
             )}
           </section>
-          {editable && !profile.is_placeholder && (
-            <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} />
-          )}
         </div>
       </aside>
     </>
