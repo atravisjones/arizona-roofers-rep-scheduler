@@ -121,7 +121,8 @@ export const JobCard: React.FC<JobCardProps> = ({
         // Determine base background color. Install jobs take highest precedence.
         if (isInstallJob) {
             backgroundClasses = "bg-gradient-to-r from-amber-200 to-orange-300 border-orange-400 text-gray-900";
-        } else if (isPinned) {
+        } else if (isPinned || isAdjuster) {
+            // Adjuster meetings are indigo whether Roofr pinned them or they're waiting in Unassigned.
             backgroundClasses = isAdjuster
                 ? "bg-gradient-to-br from-indigo-500 to-indigo-600 border-indigo-700 text-white"
                 : "bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-700 text-white";
@@ -175,7 +176,7 @@ export const JobCard: React.FC<JobCardProps> = ({
         } else if (isInstallJob) {
             // Install jobs get a subtle shine effect
             highlightClasses = "ring-2 ring-orange-600/60 ring-offset-2 ring-offset-white shadow-lg shadow-orange-500/40";
-        } else if (isPinned) {
+        } else if (isPinned || isAdjuster) {
             // Pinned self-gen / follow-up: emerald shine. Adjuster meeting: indigo shine.
             highlightClasses = isAdjuster
                 ? "ring-2 ring-indigo-600/70 ring-offset-2 ring-offset-white shadow-lg shadow-indigo-500/40"
@@ -479,9 +480,9 @@ ${penaltyVal > 0 ? `• PENALTY (-${penaltyVal}): Deducted for scheduling confli
                         </span>
                     )}
 
-                    {isPinned && (
+                    {(isPinned || isAdjuster) && (
                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border text-white whitespace-nowrap leading-none shadow-sm flex items-center gap-0.5 ${isAdjuster ? 'bg-indigo-700 border-indigo-800' : 'bg-emerald-700 border-emerald-800'}`}>
-                            <LockIcon className="h-2.5 w-2.5" />
+                            {isPinned && <LockIcon className="h-2.5 w-2.5" />}
                             {pinnedKind === 'self_gen' ? 'SELF-GEN' : pinnedKind === 'followup' ? 'FOLLOW-UP' : isAdjuster ? 'ADJUSTER' : 'PINNED'}
                         </span>
                     )}

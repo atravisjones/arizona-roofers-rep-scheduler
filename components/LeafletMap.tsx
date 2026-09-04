@@ -336,8 +336,9 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
         let markerHtml: string;
         let iconSize: [number, number];
         let iconAnchor: [number, number];
-        const color = (job as any).isPinned
-            ? ((job as any).pinnedKind === 'adjuster' ? '#6366f1' /* indigo: adjuster meeting */ : '#059669' /* emerald: pinned self-gen/follow-up */)
+        const color = (job as any).pinnedKind === 'adjuster'
+            ? '#6366f1' /* indigo: adjuster meeting, assigned or not */
+            : (job as any).isPinned ? '#059669' /* emerald: pinned self-gen/follow-up */
             : getColorForRep(job.assignedRepName);
         const isPriority = job.notes.includes('#');
 
