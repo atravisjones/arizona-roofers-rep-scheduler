@@ -1,8 +1,21 @@
-# Insurance board (`/insurance`)
+# Schedules sections: Retail / Commercial / Insurance
+
+The Schedules column has a section toggle (remembered per browser as
+`planner.boardKind`; the old `/insurance` link opens on Insurance). It scopes the
+rep columns, the Jobs list, and the map to one section — the per-day state,
+history, and cloud save stay shared.
+
+| Section    | Reps (`region` from the sheet banner)          | Jobs                                  |
+|------------|------------------------------------------------|---------------------------------------|
+| Retail     | PHX / NORTH / SOUTH / unknown (+ Flex North/South) | sales appts without "commercial"  |
+| Commercial | COMMERCIAL (London Smith, Irving Lopez)         | sales appts whose notes say "commercial" (same test as the auto-assign router) |
+| Insurance  | D2D (Michael Hurff, Flex D2D)                   | adjuster meetings                     |
+
+Auto Assign still works on the whole day's unassigned pool regardless of the
+toggle (it routes commercial to London itself); the button is hidden on Insurance.
 
 Adjuster meetings are worked by door knockers (Michael Hurff today), not by the
-retail sales reps. The Insurance tab is the Planner with a different rep set and
-a different job set; it shares the per-day state, history, and cloud save.
+retail sales reps.
 
 ## Data flow
 - `api/roofr-appointments.py` returns EVERY `Adjuster meeting` calendar event for
@@ -19,8 +32,8 @@ a different job set; it shares the per-day state, history, and cloud save.
   A manual placement on a door knocker survives a reload.
 
 ## Board rules
-- `filteredReps`: Insurance shows only D2D reps; Planner hides them.
-- `JobsPanel`: Insurance lists only adjuster jobs; Planner hides them.
+- `isBoardRep` / `isBoardJob` in `useAppLogic.ts` define the sections above;
+  `allJobs`, `boardReps`, `filteredReps` and `JobsPanel` derive from them.
 - `handleJobDrop`: adjuster jobs drop only on D2D reps (or back to Unassigned);
   nothing else drops on a D2D rep. Roofr-pinned adjuster meetings stay locked.
 - Auto Assign: D2D reps are never candidates (`isJobValidForRepRegion`), adjuster

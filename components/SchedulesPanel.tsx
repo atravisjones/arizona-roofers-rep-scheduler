@@ -64,7 +64,7 @@ const getRepColorByPosition = (name: string, allNames: string[]): string => {
 
 const SchedulesPanel: React.FC = () => {
     const {
-        appState, boardReps, isLoadingReps, repsError, filteredReps,
+        appState, boardReps, boardKind, setBoardKind, isLoadingReps, repsError, filteredReps,
         expandedRepIds, draggedOverRepId, draggedJob,
         handleJobDrop, handleUnassignJob, handleToggleRepLock, handleUpdateJob, handleRemoveJob,
         handleToggleRepExpansion, handleToggleAllReps, handleShowRoute,
@@ -259,6 +259,24 @@ const SchedulesPanel: React.FC = () => {
                     </div>
 
                 </div>
+            </div>
+
+            {/* Section toggle — scopes rep columns, the Jobs list and the map */}
+            <div className="mb-2 flex-shrink-0 flex gap-1.5">
+                {([
+                    ['retail', 'Retail', 'Phoenix, Northern and Tucson reps'],
+                    ['commercial', 'Commercial', 'Commercial reps and commercial jobs'],
+                    ['insurance', 'Insurance', 'Door knockers taking adjuster meetings'],
+                ] as const).map(([kind, label, title]) => (
+                    <button
+                        key={kind}
+                        onClick={() => setBoardKind(kind)}
+                        title={title}
+                        className={`${chipBaseClass} flex-1 justify-center py-1 ${boardKind === kind ? chipActiveClass : chipInactiveClass}`}
+                    >
+                        {label}
+                    </button>
+                ))}
             </div>
 
             {/* Time Slot Filter Buttons */}

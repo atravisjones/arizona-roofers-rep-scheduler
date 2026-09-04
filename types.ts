@@ -343,11 +343,14 @@ export interface ItineraryItem {
   duration: string;
 }
 
+/** Schedules section toggle: which reps + jobs the planner, jobs list and map show. */
+export type BoardKind = 'retail' | 'commercial' | 'insurance';
+
 export interface AppContextType {
-  boardKind: 'planner' | 'insurance';
-  setBoardKind: (kind: 'planner' | 'insurance') => void;
-  boardReps: Rep[];               // appState.reps limited to this board (D2D on Insurance, everyone else on Planner)
-  isBoardJob: (job: Job) => boolean; // adjuster jobs on Insurance, everything else on Planner
+  boardKind: BoardKind;
+  setBoardKind: (kind: BoardKind) => void;
+  boardReps: Rep[];               // appState.reps limited to the toggled section
+  isBoardJob: (job: Job) => boolean; // jobs relevant to the toggled section
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   isLoadingReps: boolean;

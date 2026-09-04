@@ -1,7 +1,7 @@
 
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId, ROTATION_QUEUE_IDS } from '../types';
+import { Rep, Job, AppState, SortConfig, SortKey, DisplayJob, RouteInfo, Settings, ScoreBreakdown, UiSettings, JobChange, LoadOptionsModalState, BackupListItem, BACKUP_CONFIG, InstallJob, TimeSlot, RotationConfig, RotationQueueId, ROTATION_QUEUE_IDS, BoardKind } from '../types';
 import { ToastData, ToastType } from '../components/Toast';
 import { TIME_SLOTS, ROOF_KEYWORDS, TYPE_KEYWORDS, TAG_KEYWORDS, ROTATION_MAX_BONUS, ROTATION_NUDGED_QUEUES, ROTATION_WINDOW_DAYS } from '../constants';
 import { fetchRotationData, buildRotation, classifyPoint, rollingRange, RotationData, RotationRange } from '../services/rotationService';
@@ -114,10 +114,33 @@ const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_
 
 
 export const useAppLogic = () => {
-    const [boardKind, setBoardKind] = useState<'planner' | 'insurance'>('planner');
-    // Insurance board = door knockers (D2D) + adjuster meetings; Planner = everyone else.
-    const isBoardRep = useCallback((rep: Rep) => boardKind === 'insurance' ? rep.region === 'D2D' : rep.region !== 'D2D', [boardKind]);
-    const isBoardJob = useCallback((job: Job) => boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster', [boardKind]);
+    // Schedules section toggle (Retail / Commercial / Insurance). Remembered per browser;
+    // the old /insurance link opens straight onto Insurance.
+    const [boardKind, setBoardKindState] = useState<BoardKind>(() => {
+        try {
+            if (typeof window !== 'undefined' && window.location.pathname === '/insurance') return 'insurance';
+            const stored = localStorage.getItem('planner.boardKind');
+            if (stored === 'retail' || stored === 'commercial' || stored === 'insurance') return stored;
+        } catch { /* ignore */ }
+        return 'retail';
+    });
+    const setBoardKind = useCallback((kind: BoardKind) => {
+        setBoardKindState(kind);
+        try { localStorage.setItem('planner.boardKind', kind); } catch { /* ignore */ }
+    }, []);
+    // Retail = PHX/NORTH/SOUTH sections (+ Flex North/South, unknown); Commercial = COMMERCIAL
+    // section; Insurance = door knockers (D2D, incl. Flex D2D) who take adjuster meetings.
+    const isBoardRep = useCallback((rep: Rep) => {
+        if (boardKind === 'insurance') return rep.region === 'D2D';
+        if (boardKind === 'commercial') return rep.region === 'COMMERCIAL';
+        return rep.region !== 'D2D' && rep.region !== 'COMMERCIAL';
+    }, [boardKind]);
+    const isBoardJob = useCallback((job: Job) => {
+        if (boardKind === 'insurance') return job.pinnedKind === 'adjuster';
+        if (job.pinnedKind === 'adjuster') return false;
+        const commercial = /commercial/i.test(job.notes || ''); // same test the auto-assign router uses
+        return boardKind === 'commercial' ? commercial : !commercial;
+    }, [boardKind]);
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
     const [historyIndex, setHistoryIndex] = useState(0);
 
