@@ -82,6 +82,7 @@ export interface Holiday {
 
 export interface AvailabilityData {
   profiles: Profile[];
+  inactive?: Pick<Profile, 'id' | 'display_name' | 'section'>[];
   resolved: Resolved[];
   exceptions: Exception[];
   policy: Record<string, WeekPolicy>;

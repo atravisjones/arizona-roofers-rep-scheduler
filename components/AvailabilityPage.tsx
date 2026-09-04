@@ -1461,13 +1461,45 @@ const AvailabilityPage: React.FC = () => {
               }}
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-secondary`}
-            >
-              + Add rep
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-secondary`}
+              >
+                + Add rep
+              </button>
+              {(data?.inactive?.length || 0) > 0 && (
+                <details className="text-xs text-text-tertiary">
+                  <summary className="cursor-pointer select-none">
+                    Removed reps ({data?.inactive?.length})
+                  </summary>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {data?.inactive?.map((rep) => (
+                      <li
+                        key={rep.id}
+                        className="flex items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-2 py-1"
+                      >
+                        <span className="text-text-secondary">{rep.display_name}</span>
+                        <span className="text-[10px] text-text-quaternary">{rep.section}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void runWrite(
+                              { action: 'set_rep_active', rep_id: rep.id, active: true },
+                              `${rep.display_name} restored`,
+                            )
+                          }
+                          className={`${FOCUS} rounded px-2 py-0.5 text-[11px] font-semibold text-brand-primary hover:bg-brand-bg-light`}
+                        >
+                          Restore
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
           ))}
         {undo && (
           <div className="fixed bottom-5 right-5 z-50 flex items-center gap-3 rounded-lg border border-border-secondary bg-bg-primary px-4 py-3 text-xs text-text-secondary shadow-xl">

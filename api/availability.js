@@ -76,7 +76,7 @@ function holdRuleFromRow(row) {
 
 async function getData({ from, to, session }) {
   const dates = dateRange(from, to);
-  const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults] = await Promise.all([
+  const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults, inactive] = await Promise.all([
     sb('rep_profiles?select=*&active=eq.true'),
     rpc('resolve_availability', { p_from: from, p_to: to }, { Range: '0-9999' }),
     sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}`
@@ -89,6 +89,7 @@ async function getData({ from, to, session }) {
     sb('availability_pattern_slots?select=*'),
     sb('scheduler_settings?select=date_key,config&date_key=eq.availability_hold_rule&limit=1'),
     Promise.all(dates.map(async (date) => [date, await rpc('company_holiday', { p_date: date })])),
+    sb('rep_profiles?select=id,display_name,section,updated_at&active=eq.false&order=updated_at.desc'),
   ]);
   const slotByPattern = new Map();
   for (const slot of slots || []) {
@@ -96,7 +97,7 @@ async function getData({ from, to, session }) {
     slotByPattern.get(slot.pattern_id).push({ weekday: slot.weekday, slot: slot.slot, available: slot.available });
   }
   return {
-    profiles: profiles || [], resolved: resolved || [], exceptions: exceptions || [],
+    profiles: profiles || [], inactive: inactive || [], resolved: resolved || [], exceptions: exceptions || [],
     policy: Object.fromEntries((policy || []).map(row => [row.effective_week, {
       template_kind: row.template_kind, sales_meeting_mon: row.sales_meeting_mon,
       company_meeting_fri: row.company_meeting_fri,
