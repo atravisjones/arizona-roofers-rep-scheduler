@@ -115,6 +115,9 @@ const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_
 
 export const useAppLogic = () => {
     const [boardKind, setBoardKind] = useState<'planner' | 'insurance'>('planner');
+    // Insurance board = door knockers (D2D) + adjuster meetings; Planner = everyone else.
+    const isBoardRep = useCallback((rep: Rep) => boardKind === 'insurance' ? rep.region === 'D2D' : rep.region !== 'D2D', [boardKind]);
+    const isBoardJob = useCallback((job: Job) => boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster', [boardKind]);
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
     const [historyIndex, setHistoryIndex] = useState(0);
 
@@ -643,10 +646,11 @@ export const useAppLogic = () => {
 
     const allJobs = useMemo((): DisplayJob[] => {
         const jobs: DisplayJob[] = [];
-        appState.reps.forEach(rep => rep.schedule.forEach(slot => slot.jobs.forEach(job => jobs.push({ ...job, assignedRepName: rep.name, timeSlotLabel: slot.label }))));
-        appState.unassignedJobs.forEach(job => jobs.push({ ...job, assignedRepName: undefined, timeSlotLabel: job.originalTimeframe || 'Uncategorized' }));
+        appState.reps.filter(isBoardRep).forEach(rep => rep.schedule.forEach(slot => slot.jobs.forEach(job => jobs.push({ ...job, assignedRepName: rep.name, timeSlotLabel: slot.label }))));
+        appState.unassignedJobs.filter(isBoardJob).forEach(job => jobs.push({ ...job, assignedRepName: undefined, timeSlotLabel: job.originalTimeframe || 'Uncategorized' }));
         return jobs;
-    }, [appState.reps, appState.unassignedJobs]);
+    }, [appState.reps, appState.unassignedJobs, isBoardRep, isBoardJob]);
+    const boardReps = useMemo(() => appState.reps.filter(isBoardRep), [appState.reps, isBoardRep]);
 
     const assignedJobs = useMemo(() => allJobs.filter(job => job.assignedRepName), [allJobs]);
     const assignedJobsCount = useMemo(() => assignedJobs.length, [assignedJobs]);
@@ -1546,7 +1550,7 @@ export const useAppLogic = () => {
 
     const handleShowUnassignedJobsOnMap = useCallback(async (jobs?: Job[]) => {
         const requestId = ++mapRequestRef.current;
-        const targetJobs = jobs || appState.unassignedJobs;
+        const targetJobs = jobs || appState.unassignedJobs.filter(isBoardJob);
         log(`ACTION: Show Unassigned Jobs on Map (${targetJobs.length} items).`);
 
         if (targetJobs.length === 0) {
@@ -3391,7 +3395,7 @@ export const useAppLogic = () => {
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
-            if (boardKind === 'insurance' ? rep.region !== 'D2D' : rep.region === 'D2D') return false;
+            if (!isBoardRep(rep)) return false;
             // Show all reps including unavailable ones (they'll be visually desaturated)
             // This allows auto-assigned jobs with rep names to still appear on their column
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
@@ -3417,7 +3421,7 @@ export const useAppLogic = () => {
             return a.name.localeCompare(b.name);
         });
         return repsToSort;
-    }, [appState.reps, sortConfig, selectedDayString, boardKind]);
+    }, [appState.reps, sortConfig, selectedDayString, isBoardRep]);
 
     useEffect(() => {
         if (!hasInitializedMap && allJobs.length > 0) {
@@ -3980,7 +3984,7 @@ export const useAppLogic = () => {
 
 
     return {
-        appState, setAppState, boardKind, setBoardKind, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
+        appState, setAppState, boardKind, setBoardKind, boardReps, isBoardJob, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
         selectedRepId, usingMockData, activeSheetName, selectedDate, activeDayKeys, addActiveDay, removeActiveDay, setSelectedDate, expandedRepIds, getJobCountsForDay, getAppStateForDay,
         isOverrideActive, sortConfig, setSortConfig, debugLogs, log, aiThoughts, activeRoute, isRouting,
         draggedJob, setDraggedJob, draggedOverRepId, setDraggedOverRepId, handleJobDragEnd,

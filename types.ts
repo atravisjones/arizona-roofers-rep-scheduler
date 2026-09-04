@@ -346,6 +346,8 @@ export interface ItineraryItem {
 export interface AppContextType {
   boardKind: 'planner' | 'insurance';
   setBoardKind: (kind: 'planner' | 'insurance') => void;
+  boardReps: Rep[];               // appState.reps limited to this board (D2D on Insurance, everyone else on Planner)
+  isBoardJob: (job: Job) => boolean; // adjuster jobs on Insurance, everything else on Planner
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   isLoadingReps: boolean;

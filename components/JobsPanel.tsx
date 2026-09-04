@@ -18,7 +18,7 @@ const JobsPanel: React.FC = () => {
         handleParseJobs, handleAutoAssign,
         handleUpdateJob, handleRemoveJob, isLoadingReps, handleShowUnassignedJobsOnMap, handleJobDrop,
         setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs,
-        allJobs, installJobs, installsByRep, boardKind
+        allJobs, installJobs, installsByRep, isBoardJob
     } = useAppContext();
 
     const [jobSearchTerm, setJobSearchTerm] = useState('');
@@ -30,12 +30,8 @@ const JobsPanel: React.FC = () => {
     // Filter jobs based on active view tab
     // allJobs from context is unfiltered by schedule column filters (rep/time slot)
     // This ensures Jobs column only filters by its own tags/search
-    const boardUnassignedJobs = useMemo(() => appState.unassignedJobs.filter(job =>
-        boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster'
-    ), [appState.unassignedJobs, boardKind]);
-    const boardAllJobs = useMemo(() => allJobs.filter(job =>
-        boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster'
-    ), [allJobs, boardKind]);
+    const boardUnassignedJobs = useMemo(() => appState.unassignedJobs.filter(isBoardJob), [appState.unassignedJobs, isBoardJob]);
+    const boardAllJobs = allJobs; // already board-scoped in useAppLogic
     const jobsForFilter = useMemo(() => {
         return activeViewTab === 'unassigned' ? boardUnassignedJobs : boardAllJobs;
     }, [activeViewTab, boardUnassignedJobs, boardAllJobs]);

@@ -64,7 +64,7 @@ const getRepColorByPosition = (name: string, allNames: string[]): string => {
 
 const SchedulesPanel: React.FC = () => {
     const {
-        appState, isLoadingReps, repsError, filteredReps,
+        appState, boardReps, isLoadingReps, repsError, filteredReps,
         expandedRepIds, draggedOverRepId, draggedJob,
         handleJobDrop, handleUnassignJob, handleToggleRepLock, handleUpdateJob, handleRemoveJob,
         handleToggleRepExpansion, handleToggleAllReps, handleShowRoute,
@@ -310,7 +310,7 @@ const SchedulesPanel: React.FC = () => {
                 </div>
                 <div className="max-h-[100px] overflow-y-auto rounded-md border border-border-secondary bg-bg-primary p-2 custom-scrollbar">
                     <div className="flex flex-wrap gap-1.5 items-center">
-                        {appState.reps
+                        {boardReps
                             .filter(rep => {
                                 // Hide reps that are fully unavailable for this day (0 available slots, 0 jobs)
                                 const unavailableSlotsToday = getEffectiveUnavailableSlots(rep, selectedDay);
