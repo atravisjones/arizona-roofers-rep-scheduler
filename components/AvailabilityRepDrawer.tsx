@@ -7,6 +7,7 @@ interface Props {
   exceptions: Exception[];
   pattern?: Pattern;
   isManager: boolean;
+  editable: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -52,11 +53,12 @@ const patternDefaults = (pattern?: Pattern): PatternState =>
     ]),
   ) as PatternState;
 
-const PatternEditor: React.FC<{ pattern?: Pattern; repId: string; onSaved: () => void }> = ({
-  pattern,
-  repId,
-  onSaved,
-}) => {
+const PatternEditor: React.FC<{
+  pattern?: Pattern;
+  repId: string;
+  onSaved: () => void;
+  editable: boolean;
+}> = ({ pattern, repId, onSaved, editable }) => {
   const [effectiveFrom, setEffectiveFrom] = useState(nextMonday());
   const [slots, setSlots] = useState(() => patternDefaults(pattern));
   const [saving, setSaving] = useState(false);
@@ -111,7 +113,8 @@ const PatternEditor: React.FC<{ pattern?: Pattern; repId: string; onSaved: () =>
                       [weekday]: { ...current[weekday], [slot]: !available },
                     }))
                   }
-                  className={`h-7 flex-1 rounded border text-[9px] font-bold ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`}
+                  disabled={!editable}
+                  className={`h-7 flex-1 rounded border text-[9px] font-bold disabled:cursor-default disabled:opacity-60 ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`}
                   aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
                 >
                   {available ? 'ON' : 'OFF'}
@@ -124,7 +127,7 @@ const PatternEditor: React.FC<{ pattern?: Pattern; repId: string; onSaved: () =>
       <button
         type="button"
         onClick={() => void savePattern()}
-        disabled={saving}
+        disabled={saving || !editable}
         className="mt-3 w-full rounded-md bg-brand-primary px-3 py-2 text-xs font-semibold text-brand-text-on-primary disabled:opacity-50"
       >
         {saving ? 'Saving…' : 'Save standing pattern'}
@@ -138,6 +141,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
   exceptions,
   pattern,
   isManager,
+  editable,
   onClose,
   onSaved,
 }) => {
@@ -217,7 +221,14 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
               ))}
             </div>
           </div>
-          {isManager && <PatternEditor pattern={pattern} repId={profile.id} onSaved={onSaved} />}
+          {isManager && (
+            <PatternEditor
+              pattern={pattern}
+              repId={profile.id}
+              onSaved={onSaved}
+              editable={editable}
+            />
+          )}
           <section>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-text-primary">Exceptions history</h3>
@@ -245,7 +256,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
                         {item.created_by || 'manager'}
                       </p>
                     </div>
-                    {isManager && (
+                    {editable && (
                       <button
                         type="button"
                         onClick={() => void deleteException(item)}

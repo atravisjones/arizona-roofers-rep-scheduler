@@ -146,6 +146,7 @@ interface CapacityStripProps {
   editable: boolean;
   onSection: (section: string) => void;
   onSaveRule: (rule: AvailabilityData['hold_rule']) => Promise<void>;
+  sundayCollapsed: boolean;
 }
 const CapacityStrip: React.FC<CapacityStripProps> = ({
   days,
@@ -156,6 +157,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
   editable,
   onSection,
   onSaveRule,
+  sundayCollapsed,
 }) => {
   const inSection = (profile: Profile) =>
     section === 'All' ||
@@ -189,12 +191,26 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
+      <div
+        className={`grid grid-cols-2 gap-2 md:grid-cols-4 ${sundayCollapsed ? 'lg:grid-cols-[repeat(6,minmax(0,1fr))_28px]' : 'lg:grid-cols-7'}`}
+      >
         {days.map((day, index) => {
           const total = SLOTS.slice(0, 4).reduce(
             (sum, slot) => sum + netBookable(count(day, slot), rule),
             0,
           );
+          if (sundayCollapsed && index === 6) {
+            return (
+              <article
+                key={day}
+                className="flex min-h-[142px] min-w-[28px] flex-col items-center justify-center rounded-lg border border-border-secondary bg-bg-tertiary px-1 text-center opacity-60"
+                aria-label="Sunday compact stub"
+              >
+                <span className="text-[11px] font-bold uppercase text-text-tertiary">Sun</span>
+                <span className="mt-1 text-[10px] text-text-quaternary">No coverage</span>
+              </article>
+            );
+          }
           return (
             <DayCard
               key={day}
@@ -246,7 +262,7 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, count }) => 
         const heldWidth = available ? `${(held / available) * 100}%` : '0%';
         return (
           <div key={slot} className="flex items-center gap-2">
-            <span className="w-7 text-[9px] text-text-quaternary">{slot.toUpperCase()}</span>
+            <span className="w-7 text-[11px] text-text-quaternary">{slot.toUpperCase()}</span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary">
               <div className="relative h-full rounded-full bg-tag-green-text" style={{ width }}>
                 <span
@@ -255,7 +271,7 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, count }) => 
                 />
               </div>
             </div>
-            <span className="w-4 text-right text-[10px] font-semibold tabular-nums text-text-secondary">
+            <span className="w-4 text-right text-xs font-semibold tabular-nums text-text-secondary">
               {net}
             </span>
           </div>
@@ -274,6 +290,7 @@ interface CellProps {
   pending: boolean;
   editable: boolean;
   onCycle: () => void;
+  className?: string;
 }
 const Cell: React.FC<CellProps> = ({
   profile,
@@ -284,6 +301,7 @@ const Cell: React.FC<CellProps> = ({
   pending,
   editable,
   onCycle,
+  className: rowClassName = '',
 }) => {
   const meeting = item?.source === 'meeting';
   const available = exception?.available ?? item?.available ?? false;
@@ -294,30 +312,57 @@ const Cell: React.FC<CellProps> = ({
       : exception?.available === true
         ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
         : available
-          ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text'
+          ? 'border-2 border-tag-green-border bg-tag-green-bg text-tag-green-text'
           : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
+  const contents = meeting
+    ? 'M'
+    : exception?.available === false
+      ? '×'
+      : exception?.available === true
+        ? '+'
+        : '';
+  const cellClass = `m-0.5 flex h-6 items-center justify-center rounded border text-[10px] font-bold ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  const title = `${label}${exception?.note ? `\n${exception.note}` : ''}${exception?.created_by ? ` · set by ${exception.created_by}` : ''}`;
+  if (editable && !meeting) {
+    return (
+      <button
+        type="button"
+        onClick={onCycle}
+        className={`${FOCUS} ${cellClass}`}
+        aria-label={label}
+        title={title}
+      >
+        {contents}
+      </button>
+    );
+  }
   return (
-    <button
-      type="button"
-      disabled={!editable || meeting}
-      onClick={onCycle}
-      className={`${FOCUS} m-0.5 h-6 rounded border text-[10px] font-bold ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} hover:brightness-110`}
-      aria-label={label}
-      title={`${label}${exception?.note ? `\n${exception.note}` : ''}${exception?.created_by ? ` · set by ${exception.created_by}` : ''}`}
-    >
-      {meeting
-        ? 'M'
-        : exception?.available === false
-          ? '×'
-          : exception?.available === true
-            ? '+'
-            : available
-              ? '•'
-              : ''}
-    </button>
+    <div className={cellClass} aria-label={label} title={title}>
+      {contents}
+    </div>
   );
 };
+
+const SundayStub: React.FC = () => (
+  <div
+    className="m-0.5 h-6 rounded border border-border-secondary bg-bg-tertiary opacity-60"
+    aria-label="Sunday has no availability"
+  />
+);
+
+const isZeroAvailability = (
+  profile: Profile,
+  days: string[],
+  resolved: Map<string, Resolved>,
+  exceptions: Map<string, Exception>,
+) =>
+  !days.some((day) =>
+    SLOTS.slice(0, 4).some((slot) => {
+      const key = `${profile.id}:${day}:${slot}`;
+      return Boolean(resolved.get(key)?.available) || exceptions.has(key);
+    }),
+  );
 
 interface BoardProps {
   days: string[];
@@ -330,6 +375,8 @@ interface BoardProps {
   onRep: (profile: Profile) => void;
   onCycle: (profile: Profile, day: string, slot: string) => void;
   onToggleNonSelling: () => void;
+  sundayCollapsed: boolean;
+  editing: boolean;
 }
 const Board: React.FC<BoardProps> = ({
   days,
@@ -342,10 +389,16 @@ const Board: React.FC<BoardProps> = ({
   onRep,
   onCycle,
   onToggleNonSelling,
+  sundayCollapsed,
+  editing,
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
+  const dayColumns = sundayCollapsed ? 25 : 28;
+  const gridColumns = `grid-cols-[190px_repeat(${dayColumns},minmax(28px,1fr))]`;
   return (
-    <section className="overflow-hidden rounded-lg border border-border-secondary bg-bg-primary">
+    <section
+      className={`overflow-hidden rounded-lg border border-border-secondary bg-bg-primary ${editing ? 'border-t-2 border-t-brand-primary' : ''}`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-secondary px-4 py-3">
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Rep coverage board</h2>
@@ -364,31 +417,46 @@ const Board: React.FC<BoardProps> = ({
       </div>
       <div className="overflow-x-auto">
         <div className="min-w-[1050px]">
-          <div className="grid grid-cols-[190px_repeat(28,minmax(28px,1fr))] border-b border-border-secondary bg-bg-secondary text-center">
+          <div
+            className={`grid ${gridColumns} border-b border-border-secondary bg-bg-secondary text-center`}
+          >
             <div className="sticky left-0 z-10 bg-bg-secondary px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-text-quaternary">
               Rep / slot
             </div>
             {days.map((day, index) => (
               <div
                 key={day}
-                className={`col-span-4 border-l border-border-secondary px-1 py-2 ${day === today ? 'text-brand-primary' : 'text-text-tertiary'}`}
+                className={`${sundayCollapsed && index === 6 ? 'col-span-1' : 'col-span-4'} border-l border-border-secondary px-1 py-2 ${day === today ? 'text-brand-primary' : 'text-text-tertiary'}`}
               >
-                <div className="text-[10px] font-bold uppercase">{WEEKDAYS[index]}</div>
+                <div className="text-[10px] font-bold uppercase">
+                  {sundayCollapsed && index === 6 ? 'Sun' : WEEKDAYS[index]}
+                </div>
                 <div className="text-[10px] tabular-nums">{displayDate(day)}</div>
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-[190px_repeat(28,minmax(28px,1fr))] border-b border-border-secondary bg-bg-secondary/60 text-center">
+          <div
+            className={`grid ${gridColumns} border-b border-border-secondary bg-bg-secondary/60 text-center`}
+          >
             <div className="sticky left-0 z-10 bg-bg-secondary/60" />
-            {days.flatMap((day) =>
-              SLOTS.slice(0, 4).map((slot) => (
-                <div
-                  key={`${day}-${slot}`}
-                  className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
-                >
-                  {slot.slice(1)}
-                </div>
-              )),
+            {days.flatMap((day, index) =>
+              sundayCollapsed && index === 6
+                ? [
+                    <div
+                      key={`${day}-stub`}
+                      className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
+                    >
+                      —
+                    </div>,
+                  ]
+                : SLOTS.slice(0, 4).map((slot) => (
+                    <div
+                      key={`${day}-${slot}`}
+                      className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
+                    >
+                      {slot.slice(1)}
+                    </div>
+                  )),
             )}
           </div>
           {groups.map((group) => {
@@ -402,7 +470,7 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className="grid grid-cols-[190px_repeat(28,minmax(28px,1fr))] border-b border-border-secondary/70"
+                    className={`grid ${gridColumns} border-b border-border-secondary/70`}
                   >
                     <button
                       type="button"
@@ -412,35 +480,54 @@ const Board: React.FC<BoardProps> = ({
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-bg-light text-[9px] font-bold text-brand-text-light">
                         {initials(profile.display_name)}
                       </span>
-                      <span className="truncate text-[11px] font-semibold text-text-secondary">
+                      <span
+                        className={`truncate text-[11px] font-semibold ${profile.is_placeholder || isZeroAvailability(profile, days, resolved, exceptions) ? 'text-text-tertiary' : 'text-text-secondary'}`}
+                      >
                         {profile.display_name}
                       </span>
+                      {profile.is_placeholder ? (
+                        <span className="shrink-0 rounded border border-tag-blue-border bg-tag-blue-bg px-1 py-0.5 text-[9px] text-tag-blue-text">
+                          coverage slot
+                        </span>
+                      ) : isZeroAvailability(profile, days, resolved, exceptions) ? (
+                        <span className="shrink-0 rounded border border-border-secondary bg-bg-secondary px-1 py-0.5 text-[9px] text-text-quaternary">
+                          no availability
+                        </span>
+                      ) : null}
                     </button>
-                    {days.flatMap((day) =>
-                      SLOTS.slice(0, 4).map((slot) => {
-                        const key = `${profile.id}:${day}:${slot}`;
-                        const item = resolved.get(key);
-                        const exception = exceptions.get(key);
-                        const pending = requests.some(
-                          (request) =>
-                            request.rep_id === profile.id &&
-                            request.status === 'pending' &&
-                            (request.request_date === day || request.dates?.includes(day)),
-                        );
-                        return (
-                          <Cell
-                            key={key}
-                            profile={profile}
-                            day={day}
-                            slot={slot}
-                            item={item}
-                            exception={exception}
-                            pending={pending}
-                            editable={editable}
-                            onCycle={() => onCycle(profile, day, slot)}
-                          />
-                        );
-                      }),
+                    {days.flatMap((day, index) =>
+                      sundayCollapsed && index === 6
+                        ? [<SundayStub key={`${profile.id}-${day}-stub`} />]
+                        : SLOTS.slice(0, 4).map((slot) => {
+                            const key = `${profile.id}:${day}:${slot}`;
+                            const item = resolved.get(key);
+                            const exception = exceptions.get(key);
+                            const pending = requests.some(
+                              (request) =>
+                                request.rep_id === profile.id &&
+                                request.status === 'pending' &&
+                                (request.request_date === day || request.dates?.includes(day)),
+                            );
+                            return (
+                              <Cell
+                                key={key}
+                                profile={profile}
+                                day={day}
+                                slot={slot}
+                                item={item}
+                                exception={exception}
+                                pending={pending}
+                                editable={editable}
+                                onCycle={() => onCycle(profile, day, slot)}
+                                className={
+                                  profile.is_placeholder ||
+                                  isZeroAvailability(profile, days, resolved, exceptions)
+                                    ? 'opacity-60'
+                                    : ''
+                                }
+                              />
+                            );
+                          }),
                     )}
                   </div>
                 ))}
@@ -565,12 +652,21 @@ const AvailabilityPage: React.FC = () => {
   const [drawer, setDrawer] = useState<Profile | null>(null);
   const [adding, setAdding] = useState(false);
   const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  const [editMode, setEditMode] = useState(() => {
+    try {
+      return window.localStorage.getItem('availability.editMode') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const days = useMemo(() => weekDays(monday), [monday]);
   const policy = data?.policy[monday] || {
     template_kind: 'standard',
     sales_meeting_mon: true,
     company_meeting_fri: true,
   };
+  const isManager = Boolean(data?.me.is_manager);
+  const editable = isManager && editMode;
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -585,6 +681,14 @@ const AvailabilityPage: React.FC = () => {
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
+  useEffect(() => {
+    if (!isManager) setEditMode(false);
+    try {
+      window.localStorage.setItem('availability.editMode', String(isManager && editMode));
+    } catch {
+      // Storage can be unavailable in private browsing; editing still works for this session.
+    }
+  }, [editMode, isManager]);
   const maps = useMemo(() => {
     const resolved = new Map<string, Resolved>();
     const exceptions = new Map<string, Exception>();
@@ -596,6 +700,19 @@ const AvailabilityPage: React.FC = () => {
     );
     return { resolved, exceptions };
   }, [data]);
+  const sundayCollapsed = useMemo(
+    () =>
+      !(data?.profiles || []).some((profile) =>
+        SLOTS.slice(0, 4).some((slot) => {
+          const key = `${profile.id}:${days[6]}:${slot}`;
+          return (
+            Boolean(maps.resolved.get(key)?.available) ||
+            maps.exceptions.get(key)?.available === true
+          );
+        }),
+      ),
+    [data, days, maps.resolved],
+  );
   const visibleProfiles = useMemo(
     () =>
       (data?.profiles || [])
@@ -612,7 +729,7 @@ const AvailabilityPage: React.FC = () => {
     showToast(success, 'success');
   };
   const cycleCell = async (profile: Profile, day: string, slot: string) => {
-    if (!data?.me.is_manager) return;
+    if (!editable) return;
     const key = `${profile.id}:${day}:${slot}`;
     const current = maps.exceptions.get(key);
     const baseAvailable = maps.resolved.get(key)?.available ?? false;
@@ -724,10 +841,21 @@ const AvailabilityPage: React.FC = () => {
             onToday={() => setMonday(dateKey(mondayOf(new Date())))}
             onDate={(date) => setMonday(dateKey(mondayOf(new Date(`${date}T12:00:00`))))}
           />
+          {isManager && (
+            <label className="flex items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-[11px] font-semibold text-text-secondary">
+              <input
+                type="checkbox"
+                checked={editMode}
+                onChange={(event) => setEditMode(event.target.checked)}
+                className="accent-brand-primary"
+              />
+              Edit mode
+            </label>
+          )}
         </header>
         <PolicyChips
           policy={policy}
-          editable={Boolean(data?.me.is_manager)}
+          editable={editable}
           onChange={(field, value) =>
             void runWrite(
               { action: 'set_week_policy', monday, [field]: value },
@@ -742,7 +870,8 @@ const AvailabilityPage: React.FC = () => {
             profiles={data.profiles}
             resolved={maps.resolved}
             rule={data.hold_rule}
-            editable={data.me.is_manager}
+            editable={editable}
+            sundayCollapsed={sundayCollapsed}
             onSection={setSection}
             onSaveRule={async (rule) => {
               await runWrite({ action: 'set_hold_rule', ...rule }, 'Hold rule updated');
@@ -757,13 +886,15 @@ const AvailabilityPage: React.FC = () => {
             exceptions={maps.exceptions}
             requests={data.requests}
             showNonSelling={showNonSelling}
-            editable={data.me.is_manager}
+            editable={editable}
             onRep={setDrawer}
             onCycle={(profile, day, slot) => void cycleCell(profile, day, slot)}
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
+            sundayCollapsed={sundayCollapsed}
+            editing={editable}
           />
         )}
-        {data?.me.is_manager &&
+        {editable &&
           (adding ? (
             <AddRepForm
               onCancel={() => setAdding(false)}
@@ -798,7 +929,8 @@ const AvailabilityPage: React.FC = () => {
             profile={drawer}
             exceptions={data.exceptions.filter((item) => item.rep_id === drawer.id)}
             pattern={data.patterns.find((item) => item.rep_id === drawer.id)}
-            isManager={data.me.is_manager}
+            isManager={isManager}
+            editable={editable}
             onClose={() => setDrawer(null)}
             onSaved={() => void fetchData()}
           />
