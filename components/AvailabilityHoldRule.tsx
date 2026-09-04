@@ -21,7 +21,14 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (draft.per < 1 || draft.cap < 0 || draft.min_reps < 0) return;
+    if (
+      draft.per < 1 ||
+      draft.cap < 0 ||
+      draft.min_reps < 0 ||
+      draft.warn_below < 0 ||
+      draft.warn_below > 20
+    )
+      return;
     setSaving(true);
     try {
       await onSave(draft);
@@ -52,12 +59,13 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
           ×
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {(
           [
             ['per', '1 per'],
             ['cap', 'Cap'],
             ['min_reps', 'None ≤'],
+            ['warn_below', 'Warn below'],
           ] as const
         ).map(([field, label]) => (
           <label key={field} className="text-[10px] text-text-tertiary">
@@ -65,6 +73,7 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
             <input
               type="number"
               min={field === 'per' ? 1 : 0}
+              max={field === 'warn_below' ? 20 : undefined}
               value={draft[field]}
               onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })}
               className="mt-1 w-full rounded border border-border-secondary bg-bg-secondary px-2 py-1.5 text-xs text-text-primary"

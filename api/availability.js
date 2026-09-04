@@ -4,7 +4,7 @@ import { isManager, requireSession } from './_session.js';
 const SUPABASE_URL = (process.env.KPI_SUPABASE_URL || '').replace(/\/$/, '');
 const SERVICE_KEY = process.env.KPI_SUPABASE_SERVICE_KEY || '';
 const MAX_DAYS = 56;
-const DEFAULT_HOLD_RULE = { per: 4, cap: 3, min_reps: 2 };
+const DEFAULT_HOLD_RULE = { per: 4, cap: 3, min_reps: 2, warn_below: 2 };
 const SPREADSHEET_ID = '1cFFEZNl7wXt40riZHnuZxGc1Zfm5lTlOz0rDCWGZJ0g';
 const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
@@ -35,6 +35,24 @@ async function rpc(name, args, headers = {}) {
 function queryValue(value) { return Array.isArray(value) ? value[0] : value; }
 function validDate(value) { return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value); }
 
+function dateRange(from, to) {
+  const dates = [];
+  const cursor = new Date(`${from}T00:00:00Z`);
+  const end = new Date(`${to}T00:00:00Z`);
+  while (cursor <= end) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function holidayFromResult(date, result) {
+  const row = Array.isArray(result) ? result[0] : result;
+  if (!row) return null;
+  const name = typeof row === 'string' ? row : row.name || row.holiday_name || row.title;
+  return name ? { date, name } : null;
+}
+
 function range(req) {
   const from = queryValue(req.query?.from);
   const to = queryValue(req.query?.to);
@@ -57,7 +75,8 @@ function holdRuleFromRow(row) {
 }
 
 async function getData({ from, to, session }) {
-  const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings] = await Promise.all([
+  const dates = dateRange(from, to);
+  const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults] = await Promise.all([
     sb('rep_profiles?select=*'),
     rpc('resolve_availability', { p_from: from, p_to: to }, { Range: '0-9999' }),
     sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}`
@@ -69,6 +88,7 @@ async function getData({ from, to, session }) {
       + `&or=(effective_to.is.null,effective_to.gte.${from})&status=eq.active&order=effective_from.desc`),
     sb('availability_pattern_slots?select=*'),
     sb('scheduler_settings?select=date_key,config&date_key=eq.availability_hold_rule&limit=1'),
+    Promise.all(dates.map(async (date) => [date, await rpc('company_holiday', { p_date: date })])),
   ]);
   const slotByPattern = new Map();
   for (const slot of slots || []) {
@@ -81,6 +101,7 @@ async function getData({ from, to, session }) {
       template_kind: row.template_kind, sales_meeting_mon: row.sales_meeting_mon,
       company_meeting_fri: row.company_meeting_fri,
     }])),
+    holidays: holidayResults.map(([date, result]) => holidayFromResult(date, result)).filter(Boolean),
     requests: requests || [],
     patterns: (patterns || []).map(pattern => ({ ...pattern, slots: slotByPattern.get(pattern.id) || [] })),
     hold_rule: holdRuleFromRow(settings?.[0]),
@@ -214,12 +235,13 @@ async function write(action, body, email) {
       body: JSON.stringify({ active: body.active }),
     });
   } else if (action === 'set_hold_rule') {
-    const { per, cap, min_reps } = body;
-    if (![per, cap, min_reps].every(Number.isInteger)) throw new Error('hold rule values must be integers');
+    const { per, cap, min_reps, warn_below } = body;
+    if (![per, cap, min_reps, warn_below].every(Number.isInteger)) throw new Error('hold rule values must be integers');
     if (per < 1 || per > 10 || cap < 0 || cap > 10 || min_reps < 0 || min_reps > 10) {
       throw new Error('hold rule values are out of range');
     }
-    const rule = { per, cap, min_reps, updated_by: email };
+    if (warn_below < 0 || warn_below > 20) throw new Error('warn_below must be between 0 and 20');
+    const rule = { per, cap, min_reps, warn_below, updated_by: email };
     await sb('scheduler_settings?on_conflict=date_key', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({ date_key: 'availability_hold_rule', config: rule, updated_by: email }),

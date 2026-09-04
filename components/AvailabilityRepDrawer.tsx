@@ -82,6 +82,22 @@ const PatternEditor: React.FC<{
       setSaving(false);
     }
   };
+  const copyDay = (targets: number[]) =>
+    setSlots((current) => {
+      const monday = current[0];
+      return {
+        ...current,
+        ...Object.fromEntries(targets.map((weekday) => [weekday, { ...monday }])),
+      };
+    });
+  const copyRowToAll = (weekday: number) =>
+    setSlots((current) => {
+      const row = current[weekday];
+      return {
+        ...current,
+        ...Object.fromEntries(WEEKDAYS.map((_, target) => [target, { ...row }])),
+      };
+    });
   return (
     <section className="rounded-md border border-border-secondary bg-bg-secondary p-3">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -121,9 +137,38 @@ const PatternEditor: React.FC<{
                 </button>
               );
             })}
+            {editable && (
+              <button
+                type="button"
+                onClick={() => copyRowToAll(weekday)}
+                className="rounded px-1.5 py-1 text-[10px] text-text-tertiary hover:bg-bg-tertiary"
+                aria-label={`Copy ${day} to all weekdays`}
+                title={`Copy ${day} to all weekdays`}
+              >
+                ⧉
+              </button>
+            )}
           </div>
         ))}
       </div>
+      {editable && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => copyDay([1, 2, 3, 4])}
+            className="rounded border border-border-secondary bg-bg-primary px-2 py-1.5 text-[10px] font-semibold text-text-secondary"
+          >
+            Copy Mon → Tue–Fri
+          </button>
+          <button
+            type="button"
+            onClick={() => copyDay([1, 2, 3, 4, 5])}
+            className="rounded border border-border-secondary bg-bg-primary px-2 py-1.5 text-[10px] font-semibold text-text-secondary"
+          >
+            Copy Mon → Mon–Sat
+          </button>
+        </div>
+      )}
       <button
         type="button"
         onClick={() => void savePattern()}

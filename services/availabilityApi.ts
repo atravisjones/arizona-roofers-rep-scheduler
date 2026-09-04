@@ -66,6 +66,7 @@ export interface HoldRule {
   per: number;
   cap: number;
   min_reps: number;
+  warn_below: number;
 }
 
 export interface WeekPolicy {
@@ -74,11 +75,17 @@ export interface WeekPolicy {
   company_meeting_fri?: boolean;
 }
 
+export interface Holiday {
+  date: string;
+  name: string;
+}
+
 export interface AvailabilityData {
   profiles: Profile[];
   resolved: Resolved[];
   exceptions: Exception[];
   policy: Record<string, WeekPolicy>;
+  holidays: Holiday[];
   requests: Request[];
   patterns: Pattern[];
   hold_rule: HoldRule;
@@ -90,7 +97,7 @@ interface ApiResponse {
   error?: string;
 }
 
-async function request<T extends ApiResponse>(url: string, init?: RequestInit): Promise<T> {
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const session = getAuthUser();
   const headers = new Headers(init?.headers);
 
@@ -98,7 +105,7 @@ async function request<T extends ApiResponse>(url: string, init?: RequestInit): 
   headers.set('Content-Type', 'application/json');
 
   const response = await fetch(url, { ...init, headers });
-  const body = (await response.json()) as T;
+  const body = (await response.json()) as T & ApiResponse;
   if (!response.ok || body.ok === false) {
     throw new Error(body.error || `Availability request failed (${response.status})`);
   }

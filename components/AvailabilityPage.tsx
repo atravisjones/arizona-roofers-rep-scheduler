@@ -32,6 +32,20 @@ const HATCHED =
 const FOCUS =
   'transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary';
 const today = dateKey(new Date());
+type AvailabilityFilters = {
+  section: 'All' | Section;
+  hasException: boolean;
+  pendingRequest: boolean;
+  noAvailability: boolean;
+  search: string;
+};
+const DEFAULT_FILTERS: AvailabilityFilters = {
+  section: 'All',
+  hasException: false,
+  pendingRequest: false,
+  noAvailability: false,
+  search: '',
+};
 
 const initials = (name: string) =>
   name
@@ -41,6 +55,7 @@ const initials = (name: string) =>
     .slice(0, 2);
 const sourceLabel = (item?: Resolved) => {
   if (item?.source === 'meeting') return 'Meeting';
+  if (item?.source === 'holiday') return 'Company holiday';
   if (item?.source === 'manager') return 'Manager exception';
   return 'Standing pattern';
 };
@@ -92,10 +107,11 @@ const WeekNav: React.FC<WeekNavProps> = ({ monday, days, onMove, onToday, onDate
 
 interface PolicyChipsProps {
   policy: AvailabilityData['policy'][string];
+  holidays: AvailabilityData['holidays'];
   editable: boolean;
   onChange: (field: string, value: boolean | string) => void;
 }
-const PolicyChips: React.FC<PolicyChipsProps> = ({ policy, editable, onChange }) => (
+const PolicyChips: React.FC<PolicyChipsProps> = ({ policy, holidays, editable, onChange }) => (
   <section className="flex flex-wrap items-center gap-2 rounded-lg border border-border-secondary bg-bg-primary px-4 py-3">
     <span className="mr-1 text-[10px] font-bold uppercase tracking-wider text-text-quaternary">
       Week policy
@@ -119,6 +135,15 @@ const PolicyChips: React.FC<PolicyChipsProps> = ({ policy, editable, onChange })
         </button>
       );
     })}
+    {holidays.map((holiday) => (
+      <span
+        key={holiday.date}
+        className="rounded-full border border-tag-blue-border bg-tag-blue-bg px-3 py-1.5 text-[11px] font-semibold text-tag-blue-text"
+      >
+        {new Date(`${holiday.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })} ·{' '}
+        {holiday.name}
+      </span>
+    ))}
     <div className="flex rounded-md border border-border-secondary bg-bg-secondary p-0.5">
       {(['standard', 'storm'] as const).map((kind) => (
         <button
@@ -143,17 +168,27 @@ interface CapacityStripProps {
   section: string;
   profiles: Profile[];
   resolved: Map<string, Resolved>;
+  exceptions: Map<string, Exception>;
   rule: AvailabilityData['hold_rule'];
   editable: boolean;
   onSection: (section: string) => void;
   onSaveRule: (rule: AvailabilityData['hold_rule']) => Promise<void>;
   sundayCollapsed: boolean;
 }
+interface CapacityBreakdown {
+  standing: number;
+  exception: number;
+  meeting: number;
+  holiday: number;
+  added: number;
+  available: number;
+}
 const CapacityStrip: React.FC<CapacityStripProps> = ({
   days,
   section,
   profiles,
   resolved,
+  exceptions,
   rule,
   editable,
   onSection,
@@ -164,9 +199,24 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
     section === 'All' ||
     profile.section === section ||
     (section === 'Commercial' && profile.section === 'COMMERCIAL');
-  const count = (day: string, slot: string) =>
-    profiles.filter((rep) => inSection(rep) && resolved.get(`${rep.id}:${day}:${slot}`)?.available)
-      .length;
+  const breakdown = (day: string, slot: string): CapacityBreakdown =>
+    profiles.reduce(
+      (result, rep) => {
+        if (!inSection(rep)) return result;
+        const key = `${rep.id}:${day}:${slot}`;
+        const item = resolved.get(key);
+        const exception = exceptions.get(key);
+        const available = exception?.available ?? item?.available ?? false;
+        if (exception?.available === true) result.added += 1;
+        else if (exception?.available === false) result.exception += 1;
+        else if (item?.source === 'meeting') result.meeting += 1;
+        else if (item?.source === 'holiday') result.holiday += 1;
+        else if (available) result.standing += 1;
+        result.available += available ? 1 : 0;
+        return result;
+      },
+      { standing: 0, exception: 0, meeting: 0, holiday: 0, added: 0, available: 0 },
+    );
   return (
     <section>
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -197,7 +247,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
       >
         {days.map((day, index) => {
           const total = SLOTS.slice(0, 4).reduce(
-            (sum, slot) => sum + netBookable(count(day, slot), rule),
+            (sum, slot) => sum + netBookable(breakdown(day, slot).available, rule),
             0,
           );
           if (sundayCollapsed && index === 6) {
@@ -219,7 +269,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
               index={index}
               total={total}
               rule={rule}
-              count={(slot) => count(day, slot)}
+              breakdown={(slot) => breakdown(day, slot)}
             />
           );
         })}
@@ -233,11 +283,12 @@ interface DayCardProps {
   index: number;
   total: number;
   rule: AvailabilityData['hold_rule'];
-  count: (slot: string) => number;
+  breakdown: (slot: string) => CapacityBreakdown;
 }
-const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, count }) => (
+const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown }) => (
   <article
-    className={`rounded-lg border bg-bg-primary p-3 ${day === today ? 'border-brand-primary ring-2 ring-brand-primary/20' : 'border-border-secondary'} ${index === 6 ? 'opacity-60' : ''}`}
+    tabIndex={0}
+    className={`group relative rounded-lg border bg-bg-primary p-3 ${day === today ? 'border-brand-primary ring-2 ring-brand-primary/20' : 'border-border-secondary'} ${index === 6 ? 'opacity-60' : ''}`}
   >
     <div className="flex items-start justify-between">
       <div>
@@ -254,30 +305,86 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, count }) => 
     </div>
     <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{total}</p>
     <p className="text-[10px] text-text-quaternary">bookable slots</p>
+    {SLOTS.slice(0, 4).some(
+      (slot) => netBookable(breakdown(slot).available, rule) < rule.warn_below,
+    ) && (
+      <span className="mt-1 inline-flex rounded-full border border-tag-red-border bg-tag-red-bg px-1.5 py-0.5 text-[9px] font-semibold text-tag-red-text">
+        Low coverage
+      </span>
+    )}
     <div className="mt-3 space-y-2">
       {SLOTS.slice(0, 4).map((slot) => {
-        const available = count(slot);
+        const details = breakdown(slot);
+        const available = details.available;
         const held = heldFor(available, rule);
         const net = available - held;
+        const low = net < rule.warn_below;
         const width = `${Math.min(100, available * 12.5)}%`;
         const heldWidth = available ? `${(held / available) * 100}%` : '0%';
         return (
           <div key={slot} className="flex items-center gap-2">
             <span className="w-7 text-[11px] text-text-quaternary">{slot.toUpperCase()}</span>
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary">
-              <div className="relative h-full rounded-full bg-tag-green-text" style={{ width }}>
+              <div
+                className={`relative h-full rounded-full ${low ? 'bg-tag-red-text' : 'bg-tag-green-text'}`}
+                style={{ width }}
+              >
                 <span
                   className="absolute right-0 top-0 h-full bg-tag-amber-text/70"
                   style={{ width: heldWidth }}
                 />
               </div>
             </div>
-            <span className="w-4 text-right text-xs font-semibold tabular-nums text-text-secondary">
+            <span
+              className={`w-4 text-right text-xs font-semibold tabular-nums ${low ? 'text-tag-red-text' : 'text-text-secondary'}`}
+            >
               {net}
             </span>
           </div>
         );
       })}
+    </div>
+    <div className="pointer-events-none invisible absolute left-2 right-2 top-full z-20 mt-2 rounded-md border border-border-secondary bg-bg-primary p-3 text-[10px] shadow-xl group-hover:visible group-focus-within:visible">
+      <p className="mb-2 font-semibold text-text-primary">Capacity breakdown</p>
+      <table className="w-full tabular-nums">
+        <thead>
+          <tr className="text-left text-text-quaternary">
+            <th>Slot</th>
+            <th>Standing</th>
+            <th>− Off</th>
+            <th>− Meeting</th>
+            <th>− Holiday</th>
+            <th>+ Added</th>
+            <th>− Hold</th>
+            <th>= Bookable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {SLOTS.slice(0, 4).map((slot) => {
+            const d = breakdown(slot);
+            const hold = heldFor(d.available, rule);
+            return (
+              <tr key={slot} className="border-t border-border-secondary text-text-secondary">
+                <td className="py-1 pr-1">{slot.toUpperCase()}</td>
+                <td>{d.standing}</td>
+                <td>{d.exception}</td>
+                <td>{d.meeting}</td>
+                <td>{d.holiday}</td>
+                <td>{d.added}</td>
+                <td>{hold}</td>
+                <td className="font-semibold">{d.available - hold}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-border-secondary font-semibold text-text-primary">
+            <td className="pt-1">Total</td>
+            <td colSpan={6} />
+            <td>{total}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   </article>
 );
@@ -304,22 +411,26 @@ const Cell: React.FC<CellProps> = ({
   onCycle,
   className: rowClassName = '',
 }) => {
-  const meeting = item?.source === 'meeting';
+  const meeting = item?.source === 'meeting' && !exception;
+  const holiday = item?.source === 'holiday' && !exception;
   const available = exception?.available ?? item?.available ?? false;
-  const stateClass = meeting
-    ? `${HATCHED} border-border-secondary text-text-tertiary`
-    : exception?.available === false
-      ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
-      : exception?.available === true
-        ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
-        : available
-          ? 'border border-tag-green-text/60 bg-tag-green-text/30 text-tag-green-text'
-          : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
+  const stateClass =
+    meeting || holiday
+      ? `${HATCHED} border-border-secondary text-text-tertiary`
+      : exception?.available === false
+        ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
+        : exception?.available === true
+          ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
+          : available
+            ? 'border border-tag-green-text/60 bg-tag-green-text/30 text-tag-green-text'
+            : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
   // Every cell shows its start time; state is carried by fill, border and text style.
   const start = SLOT_START[slot] || '';
   const contents = meeting ? (
     'M'
+  ) : holiday ? (
+    'H'
   ) : exception?.available === false ? (
     <span className="line-through decoration-2">{start}</span>
   ) : exception?.available === true ? (
@@ -368,6 +479,14 @@ const isZeroAvailability = (
       return Boolean(resolved.get(key)?.available) || exceptions.has(key);
     }),
   );
+const exceptionsForProfile = (
+  profile: Profile,
+  days: string[],
+  exceptions: Map<string, Exception>,
+) =>
+  days.some((day) =>
+    SLOTS.slice(0, 4).some((slot) => exceptions.has(`${profile.id}:${day}:${slot}`)),
+  );
 
 interface BoardProps {
   days: string[];
@@ -382,7 +501,76 @@ interface BoardProps {
   onToggleNonSelling: () => void;
   sundayCollapsed: boolean;
   editing: boolean;
+  filters: AvailabilityFilters;
+  onFilters: (filters: AvailabilityFilters) => void;
 }
+const FilterBar: React.FC<{
+  filters: AvailabilityFilters;
+  total: number;
+  shown: number;
+  onChange: (filters: AvailabilityFilters) => void;
+}> = ({ filters, total, shown, onChange }) => {
+  const set = (patch: Partial<AvailabilityFilters>) => onChange({ ...filters, ...patch });
+  const clear = () => onChange(DEFAULT_FILTERS);
+  const active =
+    filters.hasException ||
+    filters.pendingRequest ||
+    filters.noAvailability ||
+    filters.search ||
+    filters.section !== 'All';
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border-secondary bg-bg-secondary/40 px-4 py-2.5">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-text-tertiary">
+        Filters
+      </span>
+      <select
+        value={filters.section}
+        onChange={(event) => set({ section: event.target.value as AvailabilityFilters['section'] })}
+        aria-label="Filter by section"
+        className="rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
+      >
+        {['All', ...SELLING_SECTIONS].map((value) => (
+          <option key={value}>{value}</option>
+        ))}
+      </select>
+      {(
+        [
+          ['hasException', 'Has exception'],
+          ['pendingRequest', 'Pending request'],
+          ['noAvailability', 'No availability'],
+        ] as const
+      ).map(([field, label]) => (
+        <button
+          key={field}
+          type="button"
+          onClick={() => set({ [field]: !filters[field] })}
+          className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold ${filters[field] ? 'border-brand-primary bg-brand-primary/10 text-brand-primary' : 'border-border-secondary bg-bg-primary text-text-tertiary'}`}
+        >
+          {label}
+        </button>
+      ))}
+      <input
+        value={filters.search}
+        onChange={(event) => set({ search: event.target.value })}
+        placeholder="Search reps"
+        aria-label="Search reps"
+        className="min-w-[130px] rounded border border-border-secondary bg-bg-primary px-2.5 py-1 text-[10px] text-text-secondary"
+      />
+      <span className="ml-auto text-[10px] tabular-nums text-text-tertiary">
+        {shown} of {total} reps
+      </span>
+      {active && (
+        <button
+          type="button"
+          onClick={clear}
+          className="text-[10px] font-semibold text-brand-primary"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+};
 const Board: React.FC<BoardProps> = ({
   days,
   profiles,
@@ -396,8 +584,31 @@ const Board: React.FC<BoardProps> = ({
   onToggleNonSelling,
   sundayCollapsed,
   editing,
+  filters,
+  onFilters,
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
+  const eligibleProfiles = profiles.filter(
+    (profile) => showNonSelling || SELLING_SECTIONS.includes(profile.section as Section),
+  );
+  const filteredProfiles = eligibleProfiles.filter((profile) => {
+    const matchesSection = filters.section === 'All' || profile.section === filters.section;
+    const matchesSearch =
+      !filters.search.trim() ||
+      profile.display_name.toLowerCase().includes(filters.search.trim().toLowerCase());
+    const hasException = exceptionsForProfile(profile, days, exceptions);
+    const pending = requests.some(
+      (request) => request.rep_id === profile.id && request.status === 'pending',
+    );
+    const noAvailability = isZeroAvailability(profile, days, resolved, exceptions);
+    return (
+      matchesSection &&
+      matchesSearch &&
+      (!filters.hasException || hasException) &&
+      (!filters.pendingRequest || pending) &&
+      (!filters.noAvailability || noAvailability)
+    );
+  });
   const dayColumns = sundayCollapsed ? 25 : 28;
   const gridColumns = `grid-cols-[190px_repeat(${dayColumns},minmax(34px,1fr))]`;
   return (
@@ -422,6 +633,12 @@ const Board: React.FC<BoardProps> = ({
         </button>
       </div>
       <Legend />
+      <FilterBar
+        filters={filters}
+        total={eligibleProfiles.length}
+        shown={filteredProfiles.length}
+        onChange={onFilters}
+      />
       <div className="overflow-x-auto">
         <div className="min-w-[1050px]">
           <div
@@ -467,7 +684,7 @@ const Board: React.FC<BoardProps> = ({
             )}
           </div>
           {groups.map((group) => {
-            const reps = profiles.filter((profile) => profile.section === group);
+            const reps = filteredProfiles.filter((profile) => profile.section === group);
             if (!reps.length) return null;
             return (
               <React.Fragment key={group}>
@@ -570,6 +787,10 @@ const Legend: React.FC = () => {
       <span className="flex items-center gap-2">
         <i className={`${sample} border-text-tertiary text-text-secondary ${HATCHED}`}>M</i>
         <span className={`${label} text-text-secondary`}>Company meeting</span>
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-text-tertiary text-text-tertiary ${HATCHED}`}>H</i>
+        <span className={`${label} text-text-tertiary`}>Company holiday</span>
       </span>
       <span className="flex items-center gap-2">
         <i
@@ -684,6 +905,16 @@ const AvailabilityPage: React.FC = () => {
   const [showNonSelling, setShowNonSelling] = useState(false);
   const [drawer, setDrawer] = useState<Profile | null>(null);
   const [adding, setAdding] = useState(false);
+  const [filters, setFilters] = useState<AvailabilityFilters>(() => {
+    try {
+      return {
+        ...DEFAULT_FILTERS,
+        ...JSON.parse(window.localStorage.getItem('availability.filters') || '{}'),
+      };
+    } catch {
+      return DEFAULT_FILTERS;
+    }
+  });
   const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
   const [editMode, setEditMode] = useState(() => {
     try {
@@ -722,6 +953,13 @@ const AvailabilityPage: React.FC = () => {
       // Storage can be unavailable in private browsing; editing still works for this session.
     }
   }, [editMode, isManager]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('availability.filters', JSON.stringify(filters));
+    } catch {
+      /* optional persistence */
+    }
+  }, [filters]);
   const maps = useMemo(() => {
     const resolved = new Map<string, Resolved>();
     const exceptions = new Map<string, Exception>();
@@ -888,6 +1126,7 @@ const AvailabilityPage: React.FC = () => {
         </header>
         <PolicyChips
           policy={policy}
+          holidays={(data?.holidays || []).filter((holiday) => days.includes(holiday.date))}
           editable={editable}
           onChange={(field, value) =>
             void runWrite(
@@ -902,6 +1141,7 @@ const AvailabilityPage: React.FC = () => {
             section={section}
             profiles={data.profiles}
             resolved={maps.resolved}
+            exceptions={maps.exceptions}
             rule={data.hold_rule}
             editable={editable}
             sundayCollapsed={sundayCollapsed}
@@ -925,6 +1165,8 @@ const AvailabilityPage: React.FC = () => {
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
             sundayCollapsed={sundayCollapsed}
             editing={editable}
+            filters={filters}
+            onFilters={setFilters}
           />
         )}
         {editable &&
