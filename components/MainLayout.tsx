@@ -59,6 +59,7 @@ const COLUMN_CONFIG: Record<ColumnId, { minWidth: number; maxWidth: number; flex
 const TODAY_BOARD_PATH = '/today-board';
 const ROTATION_PATH = '/rotation';
 const AVAILABILITY_PATH = '/availability';
+const INSURANCE_PATH = '/insurance';
 const REVIEW_PATH = '/review';
 const REVIEW_BOOKINGS_PATH = `${REVIEW_PATH}/bookings`;
 const REVIEW_OUTCOMES_PATH = `${REVIEW_PATH}/outcomes`;
@@ -151,7 +152,10 @@ const MainLayout: React.FC = () => {
   const [showReviewRescue, setShowReviewRescue] = useState(
     () => typeof window !== 'undefined' && isRescuePath(window.location.pathname)
   );
-  const showPlanner = !showTodayBoard && !showReviewQueue && !showRotation && !showAvailability;
+  const [showInsurance, setShowInsurance] = useState(
+    () => typeof window !== 'undefined' && window.location.pathname === INSURANCE_PATH
+  );
+  const showPlanner = !showTodayBoard && !showReviewQueue && !showRotation && !showAvailability && !showInsurance;
   const [reviewNeedsCount, setReviewNeedsCount] = useState(0);
   const settingsRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -209,6 +213,7 @@ const MainLayout: React.FC = () => {
     setShowTodayBoard(path === TODAY_BOARD_PATH);
     setShowRotation(path === ROTATION_PATH);
     setShowAvailability(path === AVAILABILITY_PATH);
+    setShowInsurance(path === INSURANCE_PATH);
     setShowReviewQueue(isReviewPath(path));
     setShowReviewOutcomes(isOutcomesPath(path));
     setShowReviewRescue(isRescuePath(path));
@@ -219,6 +224,7 @@ const MainLayout: React.FC = () => {
       setShowTodayBoard(window.location.pathname === TODAY_BOARD_PATH);
       setShowRotation(window.location.pathname === ROTATION_PATH);
       setShowAvailability(window.location.pathname === AVAILABILITY_PATH);
+      setShowInsurance(window.location.pathname === INSURANCE_PATH);
       setShowReviewQueue(isReviewPath(window.location.pathname));
       setShowReviewOutcomes(isOutcomesPath(window.location.pathname));
       setShowReviewRescue(isRescuePath(window.location.pathname));
@@ -226,6 +232,10 @@ const MainLayout: React.FC = () => {
     window.addEventListener('popstate', syncFromUrl);
     return () => window.removeEventListener('popstate', syncFromUrl);
   }, []);
+
+  useEffect(() => {
+    context.setBoardKind(showInsurance ? 'insurance' : 'planner');
+  }, [context.setBoardKind, showInsurance]);
 
   useEffect(() => {
     if (context.isAiAssigning || context.aiThoughts.length > 0) {
@@ -741,6 +751,17 @@ const MainLayout: React.FC = () => {
       </button>
 
       <button
+        onClick={() => navigateTo(INSURANCE_PATH)}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showInsurance
+          ? 'bg-brand-primary text-brand-text-on-primary'
+          : 'bg-bg-secondary/50 text-text-tertiary hover:bg-bg-tertiary hover:text-brand-primary'
+          }`}
+        title="Adjuster meetings — door-knocker board"
+      >
+        <span>Insurance</span>
+      </button>
+
+      <button
         onClick={() => navigateTo(TODAY_BOARD_PATH)}
         className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-md transition ${showTodayBoard
           ? 'bg-brand-primary text-brand-text-on-primary'
@@ -841,7 +862,7 @@ const MainLayout: React.FC = () => {
           {settingsControl}
         </div>
 
-        {showPlanner && (
+        {(showPlanner || showInsurance) && (
         /* Planner-only utility bar: paste/load/auto-assign, history, alerts,
            reports, file/cloud state, day tabs. flex-wrap so narrow windows
            wrap instead of overflowing. */
@@ -868,7 +889,7 @@ const MainLayout: React.FC = () => {
                 <span>{context.isLoadingFromSheet ? 'Loading...' : 'Load'}</span>
               </button>
 
-              <button
+              {showPlanner && <button
                 onClick={context.handleAutoAssign}
                 disabled={context.isLoadingReps || context.isAutoAssigning || context.isParsing || context.appState.unassignedJobs.length === 0}
                 className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand-primary bg-brand-primary px-2.5 text-[11px] font-semibold text-brand-text-on-primary transition-colors duration-150 hover:bg-brand-secondary disabled:cursor-not-allowed disabled:border-border-secondary disabled:bg-bg-quaternary disabled:text-text-tertiary"
@@ -876,7 +897,7 @@ const MainLayout: React.FC = () => {
               >
                 {context.isAutoAssigning ? <LoadingIcon /> : <AutoAssignIcon className="h-3.5 w-3.5" />}
                 <span>{context.isAutoAssigning ? 'Assigning...' : 'Auto Assign'}</span>
-              </button>
+              </button>}
             </div>
 
             <div className="flex items-center gap-0.5 rounded-md border border-border-secondary bg-bg-secondary p-0.5">

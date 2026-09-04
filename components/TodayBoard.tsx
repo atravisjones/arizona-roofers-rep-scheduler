@@ -914,6 +914,9 @@ const TodayBoard: React.FC = () => {
             // Live board hides D2D reps (door-knock events clutter it). Tentative view
             // is the user's own deliberate plan, so show every rep they assigned to.
             if (dataSource !== 'tentative' && departmentGroup === 'D2D') return;
+            // Adjuster meetings are worked on the Insurance board (door knockers), not by
+            // sales reps — keep them off the live sales board.
+            if (dataSource !== 'tentative' && appointment.kind === 'adjuster') return;
 
             const group = byRep.get(repName) || { departmentGroup, appointments: [] };
             group.appointments.push({
@@ -950,6 +953,9 @@ const TodayBoard: React.FC = () => {
             // Live board hides D2D reps (door-knock events clutter it). Tentative view
             // is the user's own deliberate plan, so show every rep they assigned to.
             if (dataSource !== 'tentative' && departmentGroup === 'D2D') return;
+            // Adjuster meetings are worked on the Insurance board (door knockers), not by
+            // sales reps — keep them off the live sales board.
+            if (dataSource !== 'tentative' && appointment.kind === 'adjuster') return;
 
             const group = byRep.get(repName) || { departmentGroup, appointments: [] };
             group.appointments.push({ ...appointment, status: 'cancelled' });

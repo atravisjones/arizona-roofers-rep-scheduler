@@ -868,9 +868,12 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
             else if (sectionBanner.includes('NORTHERN')) currentRegion = 'NORTH';
             else if (sectionBanner.includes('TUCSON')) currentRegion = 'SOUTH';
             else if (sectionBanner.includes('COMMERCIAL')) currentRegion = 'COMMERCIAL';
-            else if (sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO') || sectionBanner.includes('INSURANCE')) currentRegion = null; // INSURANCE section (2026-09-04): not auto-assign eligible yet
+            // Door knockers (live tabs say "Insurance", the template says "Door To Door"):
+            // Insurance-board columns only — never auto-assign candidates.
+            else if (sectionBanner.includes('DOOR TO DOOR') || sectionBanner.includes('D2D') || sectionBanner.includes('INSURANCE')) currentRegion = 'D2D';
+            else if (sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO')) currentRegion = null;
             if (sectionBanner.includes('PHOENIX') || sectionBanner.includes('NORTHERN') || sectionBanner.includes('TUCSON') ||
-                sectionBanner.includes('COMMERCIAL') || sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO') || sectionBanner.includes('INSURANCE')) {
+                sectionBanner.includes('COMMERCIAL') || sectionBanner.includes('DOOR TO DOOR') || sectionBanner.includes('D2D') || sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO') || sectionBanner.includes('INSURANCE')) {
                 currentRepContext = null;
                 continue;
             }

@@ -18,7 +18,7 @@ const JobsPanel: React.FC = () => {
         handleParseJobs, handleAutoAssign,
         handleUpdateJob, handleRemoveJob, isLoadingReps, handleShowUnassignedJobsOnMap, handleJobDrop,
         setDraggedJob, handleJobDragEnd, setDraggedOverRepId, activeRoute, setFilteredUnassignedJobs,
-        allJobs, installJobs, installsByRep
+        allJobs, installJobs, installsByRep, boardKind
     } = useAppContext();
 
     const [jobSearchTerm, setJobSearchTerm] = useState('');
@@ -30,9 +30,15 @@ const JobsPanel: React.FC = () => {
     // Filter jobs based on active view tab
     // allJobs from context is unfiltered by schedule column filters (rep/time slot)
     // This ensures Jobs column only filters by its own tags/search
+    const boardUnassignedJobs = useMemo(() => appState.unassignedJobs.filter(job =>
+        boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster'
+    ), [appState.unassignedJobs, boardKind]);
+    const boardAllJobs = useMemo(() => allJobs.filter(job =>
+        boardKind === 'insurance' ? job.pinnedKind === 'adjuster' : job.pinnedKind !== 'adjuster'
+    ), [allJobs, boardKind]);
     const jobsForFilter = useMemo(() => {
-        return activeViewTab === 'unassigned' ? appState.unassignedJobs : allJobs;
-    }, [activeViewTab, appState.unassignedJobs, allJobs]);
+        return activeViewTab === 'unassigned' ? boardUnassignedJobs : boardAllJobs;
+    }, [activeViewTab, boardUnassignedJobs, boardAllJobs]);
 
     // Apply search filter on top of tab-filtered jobs
     const filteredJobs = useMemo(() => {
@@ -80,8 +86,8 @@ const JobsPanel: React.FC = () => {
         onComplete();
     };
 
-    const unassignedCount = appState.unassignedJobs.length;
-    const allJobsCount = allJobs.length;
+    const unassignedCount = boardUnassignedJobs.length;
+    const allJobsCount = boardAllJobs.length;
     const installsCount = installJobs.length;
 
     // Build a set of top-value install IDs per rep for highlighting

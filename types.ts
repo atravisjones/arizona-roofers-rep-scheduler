@@ -198,7 +198,7 @@ export interface Rep {
   isMock?: boolean; // Flag to indicate if this is sample data
   unavailableSlots?: Record<string, string[]>; // e.g. { "Monday": ["ts-3", "ts-4"] }
   skills?: Record<string, number>; // e.g. { "Tile": 3, "Shingle": 2 }
-  region?: 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'UNKNOWN';
+  region?: 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'D2D' | 'UNKNOWN';
   zipCodes?: string[];
   isLocked?: boolean;
   isOptimized?: boolean;
@@ -344,6 +344,8 @@ export interface ItineraryItem {
 }
 
 export interface AppContextType {
+  boardKind: 'planner' | 'insurance';
+  setBoardKind: (kind: 'planner' | 'insurance') => void;
   appState: AppState;
   setAppState: React.Dispatch<React.SetStateAction<AppState>>;
   isLoadingReps: boolean;

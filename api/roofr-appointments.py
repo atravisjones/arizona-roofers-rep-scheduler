@@ -26,11 +26,11 @@ EXCLUDED_TITLE_PREFIXES = ("D2D Sales appointment",)
 EXCLUDED_SUBTYPES = ("D2D Sales appointment",)
 SELF_GEN_SUBTYPE = "Self-gen appointment"
 FOLLOWUP_SUBTYPE = "Sales followup"
-# Adjuster meetings live under category='general'. One pins to a sales rep's
-# column ONLY when that rep is explicitly tagged as an attendee — insurance
-# staff attendees are ignored, and the job owner is never used as a fallback
-# (on Insurance jobs the owner is an insurance rep, not the tagged sales rep).
+# Adjuster meetings live under category='general'. They are resolved only against
+# the door-knocker map, never sales reps or job owners; unmatched meetings land in
+# Insurance unassigned.
 ADJUSTER_SUBTYPE = "Adjuster meeting"
+DOOR_KNOCKER_BY_USER_ID = {"507565": "Michael Hurff"}
 
 
 def is_excluded_title(title):
@@ -166,7 +166,7 @@ def resolve_board_rep_names(raw_attendees):
     deduped list, order preserved. No job_owner fallback on purpose.
     """
     parts = [p.strip() for p in str(raw_attendees or "").split(",") if p.strip()]
-    names = [REP_BY_USER_ID[p] for p in parts if p in REP_BY_USER_ID]
+    names = [DOOR_KNOCKER_BY_USER_ID[p] for p in parts if p in DOOR_KNOCKER_BY_USER_ID]
     return list(dict.fromkeys(names))
 
 
@@ -189,8 +189,7 @@ def get_from_supabase(date_str):
     # which misses D2D events that carry a normal address title).
     events = [e for e in events if not is_excluded_subtype(e.get("event_subtype"))]
 
-    # Adjuster meetings (category='general') — kept only when a known sales rep
-    # is tagged as an attendee; everyone else at the meeting is ignored.
+    # Fetch every adjuster meeting; attendee resolution below is door-knocker-only.
     adj_path = (
         f"calendar_events"
         f"?select=event_id,job_id,title,start_date,end_date,all_day,category,attendees,event_subtype"
@@ -199,7 +198,7 @@ def get_from_supabase(date_str):
         f"&start_date=lt.{quote(next_day + ' 00:00:00', safe=':')}"
         f"&order=start_date.asc"
     )
-    adjuster_events = [e for e in sb_fetch(adj_path) if resolve_board_rep_names(e.get("attendees"))]
+    adjuster_events = sb_fetch(adj_path)
 
     if not events and not adjuster_events:
         return []
@@ -245,10 +244,8 @@ def get_from_supabase(date_str):
             "lng": job.get("longitude"),
         })
 
-    # Adjuster meetings: one row per tagged sales rep (so a two-rep meeting
-    # blocks both columns). Roofr sometimes carries duplicate events for the
-    # same meeting — dedupe on (job, start, rep). jobOwner is intentionally
-    # blank: the frontend must never fall back to the insurance job owner.
+    # Adjuster meetings: one row per matched door knocker, or one unassigned row.
+    # Roofr duplicates are deduped on (job, start, rep); unmatched uses ''.
     seen_adj = set()
     for evt in adjuster_events:
         job = jobs_map.get(str(evt.get("job_id", "")), {})
@@ -257,7 +254,8 @@ def get_from_supabase(date_str):
         if not address and ":" in title:
             # Titles look like "Adjuster meeting: 8939 W Maryland Ave, Glendale..."
             address = title.split(":", 1)[1].strip()
-        for rep_name in resolve_board_rep_names(evt.get("attendees")):
+        matched_names = resolve_board_rep_names(evt.get("attendees"))
+        for rep_name in (matched_names or [""]):
             key = (str(evt.get("job_id") or title), evt.get("start_date"), rep_name)
             if key in seen_adj:
                 continue
@@ -274,7 +272,7 @@ def get_from_supabase(date_str):
                 "type": "",
                 "eventSubtype": evt.get("event_subtype", "") or "",
                 "kind": "adjuster",
-                "pinned": True,
+                "pinned": bool(rep_name),
                 "attendees": rep_name,
                 "customerName": job.get("customer") or job.get("name", ""),
                 "masterAddress": job.get("address", ""),

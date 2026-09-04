@@ -114,6 +114,7 @@ const EMPTY_STATE: AppState = { reps: [], unassignedJobs: [], settings: DEFAULT_
 
 
 export const useAppLogic = () => {
+    const [boardKind, setBoardKind] = useState<'planner' | 'insurance'>('planner');
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
     const [historyIndex, setHistoryIndex] = useState(0);
 
@@ -560,6 +561,8 @@ export const useAppLogic = () => {
     }, []);
 
     const isJobValidForRepRegion = useCallback((job: Job, rep: Rep): boolean => {
+        // Door knockers (Insurance board) never take auto-assigned sales appointments.
+        if (rep.region === 'D2D') return false;
         // London Smith runs commercial ONLY — never auto-assign him residential, any region (incl. Flagstaff).
         // Commercial is EXCLUSIVELY his: auto-assign never routes a commercial job to anyone else.
         // Manual drag-drop bypasses this, so residential can still be placed on him by hand.
@@ -1282,10 +1285,14 @@ export const useAppLogic = () => {
         if (target === 'unassigned') { handleUnassignJob(jobId); return; }
 
         const targetRepInfo = appState.reps.find(r => r.id === target.repId);
+        const jobToDrop = appState.unassignedJobs.find(j => j.id === jobId) || appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
+        // Door knockers (Insurance board) take adjuster meetings only, and adjuster
+        // meetings never go on a sales rep's column.
+        if (targetRepInfo?.region === 'D2D' && jobToDrop?.pinnedKind !== 'adjuster') { showToast("Door knockers only take adjuster meetings.", 'warning'); return; }
+        if (targetRepInfo && targetRepInfo.region !== 'D2D' && jobToDrop?.pinnedKind === 'adjuster') { showToast("Adjuster meetings go to a door knocker on the Insurance board.", 'warning'); return; }
         if (targetRepInfo?.isOptimized) { showToast("Cannot modify an optimized schedule.", 'warning'); return; }
 
         const dateKey = formatDateToKey(selectedDate);
-        const jobToDrop = appState.unassignedJobs.find(j => j.id === jobId) || appState.reps.flatMap(r => r.schedule.flatMap(s => s.jobs)).find(j => j.id === jobId);
         // Pinned self-gen / follow-up appointments can't be moved to a different rep (same-rep slot moves are fine).
         if ((jobToDrop as Job | undefined)?.isPinned) {
             const sourceRep = appState.reps.find(r => r.schedule.some(s => s.jobs.some(j => j.id === jobId)));
@@ -1984,8 +1991,12 @@ export const useAppLogic = () => {
             const newDayState = JSON.parse(JSON.stringify(baseState)) as AppState;
 
             // Build a lookup of rep names (lowercase) to rep objects for attendee matching
+            // Sales reps first so a shared first name ("michael") keeps pointing at the
+            // sales rep; door knockers (D2D) still match on their full name. Which board
+            // a job may land on is decided per appointment by repFitsKind below.
             const repNameMap = new Map<string, Rep>();
-            for (const rep of newDayState.reps) {
+            const repsForMatching = [...newDayState.reps].sort((a, b) => Number(a.region === 'D2D') - Number(b.region === 'D2D'));
+            for (const rep of repsForMatching) {
                 // Store by full name and by first name for flexible matching
                 repNameMap.set(rep.name.toLowerCase(), rep);
                 const firstName = rep.name.split(' ')[0]?.toLowerCase();
@@ -2195,21 +2206,24 @@ export const useAppLogic = () => {
                 const namesToTry = apt.attendees
                     ? apt.attendees.split(',').map(n => n.trim().toLowerCase())
                     : [];
-                if (apt.jobOwner) namesToTry.push(apt.jobOwner.trim().toLowerCase());
+                if (apt.kind !== 'adjuster' && apt.jobOwner) namesToTry.push(apt.jobOwner.trim().toLowerCase());
+                // Adjuster meetings only ever pin to door knockers (Insurance board);
+                // everything else only to sales reps (Planner).
+                const repFitsKind = (r: Rep) => (apt.kind === 'adjuster') === (r.region === 'D2D');
 
                 for (const attendeeName of namesToTry) {
                     if (!attendeeName) continue;
                     const match = repNameMap.get(attendeeName) ||
                         repNameMap.get(attendeeName.split(' ').slice(0, 2).join(' ')) ||
                         repNameMap.get(normalizeName(attendeeName));
-                    if (match) {
+                    if (match && repFitsKind(match)) {
                         assignedRep = match;
                         break;
                     }
                     const firstName = attendeeName.split(' ')[0];
                     if (firstName) {
                         const firstNameMatch = repNameMap.get(firstName);
-                        if (firstNameMatch) {
+                        if (firstNameMatch && repFitsKind(firstNameMatch)) {
                             assignedRep = firstNameMatch;
                             break;
                         }
@@ -2217,9 +2231,9 @@ export const useAppLogic = () => {
                 }
 
                 // If no rep found from attendees/owner, scan the title for rep names
-                if (!assignedRep && title) {
+                if (!assignedRep && apt.kind !== 'adjuster' && title) {
                     const titleLower = title.toLowerCase();
-                    for (const rep of newDayState.reps) {
+                    for (const rep of newDayState.reps.filter(r => r.region !== 'D2D')) {
                         const cleanedName = rep.name.toLowerCase()
                             .replace(/"/g, '')
                             .replace(/\s+\(.*\)$/, '')
@@ -2249,26 +2263,19 @@ export const useAppLogic = () => {
                     }
                 }
 
-                // Adjuster meetings only exist to block a tagged rep's column.
-                // If that rep isn't on today's board (or the meeting can't map to
-                // a time slot), drop it entirely — never show it in Unassigned.
-                if (job.pinnedKind === 'adjuster') {
-                    continue;
-                }
-
                 // Sheet didn't resolve a rep — preserve prior manual placement if this job
                 // already existed (so re-loading the sheet doesn't wipe Travis's assignments)
                 if (previousRepId && previousSlotId) {
                     const rep = newDayState.reps.find(r => r.id === previousRepId);
                     const slot = rep?.schedule.find(s => s.id === previousSlotId);
-                    if (rep && slot) {
+                    if (rep && slot && (job.pinnedKind !== 'adjuster' || rep.region === 'D2D')) {
                         slot.jobs.push(job as DisplayJob);
                         assignedCount++;
                         continue;
                     }
                 }
 
-                newDayState.unassignedJobs.push(job);
+                newDayState.unassignedJobs.push({ ...job, isPinned: job.pinnedKind === 'adjuster' ? false : job.isPinned });
                 unassignedCount++;
             }
 
@@ -2946,7 +2953,7 @@ export const useAppLogic = () => {
 
                 for (const job of jobsToAssign) {
                     // pinned appts are locked to their rep — never auto-route to a non-owner; preserve as-is
-                    if ((job as Job).isPinned) { newState.unassignedJobs.push(job); continue; }
+                    if ((job as Job).isPinned || job.pinnedKind === 'adjuster') { newState.unassignedJobs.push(job); continue; }
                     let bestAssignment: { repId: string; slotId: string; score: number; breakdown: ScoreBreakdown } | null = null;
 
                     // Pinned self-gen/follow-ups don't count toward a rep's daily quota (additive)
@@ -3384,6 +3391,7 @@ export const useAppLogic = () => {
 
     const filteredReps = useCallback((repSearchTerm: string, cityFilters: Set<string>, lockFilter: 'all' | 'locked' | 'unlocked') => {
         const repsToSort = appState.reps.filter(rep => {
+            if (boardKind === 'insurance' ? rep.region !== 'D2D' : rep.region === 'D2D') return false;
             // Show all reps including unavailable ones (they'll be visually desaturated)
             // This allows auto-assigned jobs with rep names to still appear on their column
             if (cityFilters.size > 0 && !rep.schedule.some(slot => slot.jobs.some(job => job.city && cityFilters.has(job.city)))) return false;
@@ -3409,7 +3417,7 @@ export const useAppLogic = () => {
             return a.name.localeCompare(b.name);
         });
         return repsToSort;
-    }, [appState.reps, sortConfig, selectedDayString]);
+    }, [appState.reps, sortConfig, selectedDayString, boardKind]);
 
     useEffect(() => {
         if (!hasInitializedMap && allJobs.length > 0) {
@@ -3972,7 +3980,7 @@ export const useAppLogic = () => {
 
 
     return {
-        appState, setAppState, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
+        appState, setAppState, boardKind, setBoardKind, isLoadingReps, repsError, isParsing, isAutoAssigning, isDistributing, isAiAssigning, isAiFixingAddresses, isTryingVariations, parsingError,
         selectedRepId, usingMockData, activeSheetName, selectedDate, activeDayKeys, addActiveDay, removeActiveDay, setSelectedDate, expandedRepIds, getJobCountsForDay, getAppStateForDay,
         isOverrideActive, sortConfig, setSortConfig, debugLogs, log, aiThoughts, activeRoute, isRouting,
         draggedJob, setDraggedJob, draggedOverRepId, setDraggedOverRepId, handleJobDragEnd,
