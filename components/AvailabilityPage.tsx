@@ -478,7 +478,7 @@ const Cell: React.FC<CellProps> = ({
   ) : (
     start
   );
-  const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] justify-start px-2 text-[10px]' : 'm-0.5 flex h-6 justify-center'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] w-[calc(100%-4px)] justify-start px-2 text-left text-[10px]' : 'm-0.5 flex h-6 justify-center'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
   const holidayStyle =
     holiday && holidayInfo
       ? (() => {
@@ -671,7 +671,7 @@ const Board: React.FC<BoardProps> = ({
   const dayColumns = sundayCollapsed ? 25 : 28;
   const gridTemplateColumns =
     layout === 'stacked'
-      ? `190px repeat(6, minmax(64px, 1fr)) minmax(${sundayCollapsed ? '34px' : '64px'}, 1fr)`
+      ? `190px repeat(6, minmax(64px, 1fr)) ${sundayCollapsed ? '40px' : 'minmax(64px, 1fr)'}`
       : `190px repeat(${dayColumns}, minmax(34px, 1fr))`;
   const gridStyle = { gridTemplateColumns };
   return (
