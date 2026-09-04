@@ -599,6 +599,7 @@ interface BoardProps {
   editable: boolean;
   onRep: (profile: Profile) => void;
   onCycle: (profile: Profile, day: string, slot: string) => void;
+  onClearTimeOff: (profile: Profile, from: string, to: string) => void;
   onToggleNonSelling: () => void;
   sundayCollapsed: boolean;
   editing: boolean;
@@ -685,6 +686,7 @@ const Board: React.FC<BoardProps> = ({
   editable,
   onRep,
   onCycle,
+  onClearTimeOff,
   onToggleNonSelling,
   sundayCollapsed,
   editing,
@@ -1000,16 +1002,38 @@ const Board: React.FC<BoardProps> = ({
                               : 28;
                         const perDay = layout === 'stacked' ? 1 : 4;
                         const unit = `((100% - 190px - ${trailing}) / ${units})`;
+                        const left = `calc(190px + ${run.start * perDay} * ${unit} + 4px)`;
+                        const width = `calc(${span * perDay} * ${unit} - 8px)`;
+                        const runFrom = days[run.start];
+                        const runTo = days[run.start + span - 1];
+                        // Edit mode: a slim strip above the cells (cells stay clickable) with a one-click clear.
+                        if (editable) {
+                          return (
+                            <div
+                              key={`${profile.id}-off-${run.start}`}
+                              className="absolute z-[6] flex items-center justify-between gap-2 rounded-md border border-tag-amber-border bg-tag-amber-bg px-2 text-[10px] font-semibold text-tag-amber-text"
+                              style={{ top: 2, height: 18, left, width }}
+                            >
+                              <span className="truncate">
+                                {run.reason}
+                                {span > 1 ? ` · ${span} days` : ''}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => onClearTimeOff(profile, runFrom, runTo)}
+                                className={`${FOCUS} shrink-0 rounded bg-bg-primary px-1.5 py-px text-[10px] font-bold text-tag-amber-text hover:brightness-95`}
+                                title="Remove this time off (the rep is back)"
+                              >
+                                Clear time off
+                              </button>
+                            </div>
+                          );
+                        }
                         return (
                           <div
                             key={`${profile.id}-off-${run.start}`}
                             className="pointer-events-none absolute z-[5] flex items-center justify-center rounded-md border border-tag-amber-border bg-bg-primary/70 px-2 text-center text-[11px] font-semibold text-tag-amber-text backdrop-blur-[1px]"
-                            style={{
-                              top: 6,
-                              bottom: 6,
-                              left: `calc(190px + ${run.start * perDay} * ${unit} + 4px)`,
-                              width: `calc(${span * perDay} * ${unit} - 8px)`,
-                            }}
+                            style={{ top: 6, bottom: 6, left, width }}
                             aria-hidden="true"
                           >
                             {run.reason}
@@ -1442,6 +1466,12 @@ const AvailabilityPage: React.FC = () => {
             editable={editable}
             onRep={setDrawer}
             onCycle={(profile, day, slot) => void cycleCell(profile, day, slot)}
+            onClearTimeOff={(profile, from, to) =>
+              void runWrite(
+                { action: 'clear_exceptions', rep_id: profile.id, from, to },
+                `${profile.display_name} time off cleared`,
+              )
+            }
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
             layout={layout}
             onLayout={setLayout}

@@ -232,6 +232,12 @@ async function write(action, body, email) {
       headers: { Prefer: profile.id ? 'return=representation' : 'return=representation,resolution=merge-duplicates' },
       body: JSON.stringify(profile),
     });
+  } else if (action === 'clear_exceptions') {
+    // Remove every time-off exception for a rep across a date range (e.g. "the rep came back").
+    if (!body.rep_id || !body.from || !body.to) throw new Error('rep_id, from and to are required');
+    await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(body.rep_id)}`
+      + `&exception_date=gte.${encodeURIComponent(body.from)}&exception_date=lte.${encodeURIComponent(body.to)}`
+      + '&available=eq.false', { method: 'DELETE', headers: { Prefer: 'return=representation' } });
   } else if (action === 'set_rep_active') {
     if (!body.rep_id || typeof body.active !== 'boolean') throw new Error('rep_id and active are required');
     await sb(`rep_profiles?id=eq.${encodeURIComponent(body.rep_id)}`, {
