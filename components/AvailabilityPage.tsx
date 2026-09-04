@@ -278,6 +278,11 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
   );
 };
 
+// A slot blocked for everyone by a meeting or holiday is not "low coverage"; it is closed.
+const isLowCoverage = (d: CapacityBreakdown, rule: AvailabilityData['hold_rule']) =>
+  !(d.available === 0 && (d.meeting > 0 || d.holiday > 0)) &&
+  netBookable(d.available, rule) < rule.warn_below;
+
 interface DayCardProps {
   day: string;
   index: number;
@@ -305,9 +310,7 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown })
     </div>
     <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{total}</p>
     <p className="text-[10px] text-text-quaternary">bookable slots</p>
-    {SLOTS.slice(0, 4).some(
-      (slot) => netBookable(breakdown(slot).available, rule) < rule.warn_below,
-    ) && (
+    {SLOTS.slice(0, 4).some((slot) => isLowCoverage(breakdown(slot), rule)) && (
       <span className="mt-1 inline-flex rounded-full border border-tag-red-border bg-tag-red-bg px-1.5 py-0.5 text-[9px] font-semibold text-tag-red-text">
         Low coverage
       </span>
@@ -318,7 +321,7 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown })
         const available = details.available;
         const held = heldFor(available, rule);
         const net = available - held;
-        const low = net < rule.warn_below;
+        const low = isLowCoverage(details, rule);
         const width = `${Math.min(100, available * 12.5)}%`;
         const heldWidth = available ? `${(held / available) * 100}%` : '0%';
         return (
@@ -411,8 +414,12 @@ const Cell: React.FC<CellProps> = ({
   onCycle,
   className: rowClassName = '',
 }) => {
-  const meeting = item?.source === 'meeting' && !exception;
-  const holiday = item?.source === 'holiday' && !exception;
+  // Meeting and holiday overlays win visually unless a manager added the rep back.
+  const meeting = item?.source === 'meeting' && exception?.available !== true;
+  const holiday =
+    item?.source === 'holiday' && exception?.source !== undefined && exception?.available === true
+      ? false
+      : item?.source === 'holiday' && exception?.available !== true;
   const available = exception?.available ?? item?.available ?? false;
   const stateClass =
     meeting || holiday
