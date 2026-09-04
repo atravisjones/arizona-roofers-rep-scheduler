@@ -707,7 +707,7 @@ const AvailabilityPage: React.FC = () => {
       </div>
     );
   return (
-    <main className="min-h-0 flex-1 overflow-y-auto bg-bg-secondary px-4 py-5 lg:px-6">
+    <main className="h-full min-h-0 overflow-y-auto bg-bg-secondary px-4 py-5 lg:px-6">
       <div className="mx-auto max-w-[1600px] space-y-5">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
