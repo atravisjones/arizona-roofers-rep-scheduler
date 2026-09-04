@@ -138,7 +138,7 @@ export const useAppLogic = () => {
     const isBoardJob = useCallback((job: Job) => {
         if (boardKind === 'insurance') return job.pinnedKind === 'adjuster';
         if (job.pinnedKind === 'adjuster') return false;
-        const commercial = /commercial/i.test(job.notes || ''); // same test the auto-assign router uses
+        const commercial = /\bcommercial\b/i.test(job.notes || ''); // same test the auto-assign router uses
         return boardKind === 'commercial' ? commercial : !commercial;
     }, [boardKind]);
     const [history, setHistory] = useState<Map<string, AppState>[]>([new Map()]);
