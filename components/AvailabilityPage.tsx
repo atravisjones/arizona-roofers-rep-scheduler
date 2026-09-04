@@ -480,20 +480,22 @@ const Board: React.FC<BoardProps> = ({
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-bg-light text-[9px] font-bold text-brand-text-light">
                         {initials(profile.display_name)}
                       </span>
-                      <span
-                        className={`truncate text-[11px] font-semibold ${profile.is_placeholder || isZeroAvailability(profile, days, resolved, exceptions) ? 'text-text-tertiary' : 'text-text-secondary'}`}
-                      >
-                        {profile.display_name}
+                      <span className="flex min-w-0 flex-col items-start gap-0.5">
+                        <span
+                          className={`truncate text-[11px] font-semibold ${profile.is_placeholder || isZeroAvailability(profile, days, resolved, exceptions) ? 'text-text-tertiary' : 'text-text-secondary'}`}
+                        >
+                          {profile.display_name}
+                        </span>
+                        {profile.is_placeholder ? (
+                          <span className="shrink-0 rounded border border-tag-blue-border bg-tag-blue-bg px-1 py-0.5 text-[9px] text-tag-blue-text">
+                            coverage slot
+                          </span>
+                        ) : isZeroAvailability(profile, days, resolved, exceptions) ? (
+                          <span className="shrink-0 rounded border border-border-secondary bg-bg-secondary px-1 py-0.5 text-[9px] text-text-quaternary">
+                            no availability
+                          </span>
+                        ) : null}
                       </span>
-                      {profile.is_placeholder ? (
-                        <span className="shrink-0 rounded border border-tag-blue-border bg-tag-blue-bg px-1 py-0.5 text-[9px] text-tag-blue-text">
-                          coverage slot
-                        </span>
-                      ) : isZeroAvailability(profile, days, resolved, exceptions) ? (
-                        <span className="shrink-0 rounded border border-border-secondary bg-bg-secondary px-1 py-0.5 text-[9px] text-text-quaternary">
-                          no availability
-                        </span>
-                      ) : null}
                     </button>
                     {days.flatMap((day, index) =>
                       sundayCollapsed && index === 6
