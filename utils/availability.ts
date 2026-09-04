@@ -17,12 +17,13 @@ export const SLOT_START: Record<string, string> = {
   s4: '5p',
   s5: '5p',
 };
+// Stacked-layout labels: the live booking windows (8-11 / 11-1 / 2-5 / 5-8).
 export const SLOT_START_FULL: Record<string, string> = {
-  s1: '8am',
-  s2: '11am',
-  s3: '2pm',
-  s4: '5pm',
-  s5: '5pm',
+  s1: '8–11',
+  s2: '11–1',
+  s3: '2–5',
+  s4: '5–8',
+  s5: '5–8',
 };
 
 function fromKey(key: string): Date {
