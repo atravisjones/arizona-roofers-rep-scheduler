@@ -312,7 +312,7 @@ const Cell: React.FC<CellProps> = ({
       : exception?.available === true
         ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
         : available
-          ? 'border-2 border-tag-green-border bg-tag-green-bg text-tag-green-text'
+          ? 'border border-tag-green-text/60 bg-tag-green-text/30 text-tag-green-text'
           : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
   const contents = meeting
@@ -552,7 +552,7 @@ const Legend: React.FC = () => {
         Legend
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-green-text bg-tag-green-bg`} />
+        <i className={`${sample} border-tag-green-text bg-tag-green-text/30`} />
         <span className={`${label} text-tag-green-text`}>Available</span>
       </span>
       <span className="flex items-center gap-2">
@@ -573,7 +573,7 @@ const Legend: React.FC = () => {
       </span>
       <span className="flex items-center gap-2">
         <i
-          className={`${sample} border-tag-green-text bg-tag-green-bg ring-2 ring-tag-amber-text ring-offset-1 ring-offset-bg-primary`}
+          className={`${sample} border-tag-green-text bg-tag-green-text/30 ring-2 ring-tag-amber-text ring-offset-1 ring-offset-bg-primary`}
         />
         <span className={`${label} text-tag-amber-text`}>Pending request</span>
       </span>
