@@ -770,7 +770,7 @@ const Board: React.FC<BoardProps> = ({
       <div className={layout === 'wide' ? 'overflow-x-auto' : ''}>
         <div className="min-w-[1050px]">
           <div
-            className={`grid border-b border-border-secondary bg-bg-secondary text-center ${layout === 'stacked' ? 'sticky top-0 z-20 shadow-sm' : ''}`}
+            className={`grid border-b border-border-secondary bg-bg-secondary text-center ${layout === 'stacked' ? 'sticky -top-5 z-20 shadow-sm' : ''}`}
             style={gridStyle}
           >
             <div className="sticky left-0 z-10 bg-bg-secondary px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-text-quaternary">
