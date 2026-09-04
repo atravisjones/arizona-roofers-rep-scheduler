@@ -17,6 +17,13 @@ export const SLOT_START: Record<string, string> = {
   s4: '5p',
   s5: '5p',
 };
+export const SLOT_START_FULL: Record<string, string> = {
+  s1: '8am',
+  s2: '11am',
+  s3: '2pm',
+  s4: '5pm',
+  s5: '5pm',
+};
 
 function fromKey(key: string): Date {
   const [year, month, day] = key.split('-').map(Number);

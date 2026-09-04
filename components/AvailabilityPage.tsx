@@ -16,6 +16,7 @@ import {
   SLOTS,
   SLOT_LABELS,
   SLOT_START,
+  SLOT_START_FULL,
   WEEKDAYS,
   addWeeks,
   dateKey,
@@ -298,7 +299,7 @@ interface DayCardProps {
   total: number;
   rule: AvailabilityData['hold_rule'];
   breakdown: (slot: string) => CapacityBreakdown;
-  holidayInfo?: Holiday;
+  holiday?: Holiday;
 }
 const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, holiday }) => {
   const theme = getHolidayTheme(holiday?.name);
@@ -430,7 +431,8 @@ interface CellProps {
   editable: boolean;
   onCycle: () => void;
   className?: string;
-  holiday?: Holiday;
+  holidayInfo?: Holiday;
+  layout?: 'wide' | 'stacked';
 }
 const Cell: React.FC<CellProps> = ({
   profile,
@@ -443,6 +445,7 @@ const Cell: React.FC<CellProps> = ({
   onCycle,
   className: rowClassName = '',
   holidayInfo,
+  layout = 'wide',
 }) => {
   // Meeting and holiday overlays win visually unless a manager added the rep back.
   const meeting = item?.source === 'meeting' && exception?.available !== true;
@@ -463,7 +466,7 @@ const Cell: React.FC<CellProps> = ({
             : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
   // Every cell shows its start time; state is carried by fill, border and text style.
-  const start = SLOT_START[slot] || '';
+  const start = (layout === 'stacked' ? SLOT_START_FULL : SLOT_START)[slot] || '';
   const contents = meeting ? (
     'M'
   ) : holiday ? (
@@ -475,7 +478,7 @@ const Cell: React.FC<CellProps> = ({
   ) : (
     start
   );
-  const cellClass = `m-0.5 flex h-6 items-center justify-center rounded border text-[10px] font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] justify-start px-2 text-[10px]' : 'm-0.5 flex h-6 justify-center'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
   const holidayStyle =
     holiday && holidayInfo
       ? (() => {
@@ -510,9 +513,9 @@ const Cell: React.FC<CellProps> = ({
   );
 };
 
-const SundayStub: React.FC = () => (
+const SundayStub: React.FC<{ stacked?: boolean }> = ({ stacked = false }) => (
   <div
-    className="m-0.5 h-6 rounded border border-border-secondary bg-bg-tertiary opacity-60"
+    className={`${stacked ? 'm-0.5 h-[98px]' : 'm-0.5 h-6'} rounded border border-border-secondary bg-bg-tertiary opacity-60`}
     aria-label="Sunday has no availability"
   />
 );
@@ -554,6 +557,8 @@ interface BoardProps {
   filters: AvailabilityFilters;
   onFilters: (filters: AvailabilityFilters) => void;
   holidays: Map<string, Holiday>;
+  layout: 'wide' | 'stacked';
+  onLayout: (layout: 'wide' | 'stacked') => void;
 }
 const FilterBar: React.FC<{
   filters: AvailabilityFilters;
@@ -638,6 +643,8 @@ const Board: React.FC<BoardProps> = ({
   filters,
   onFilters,
   holidays,
+  layout,
+  onLayout,
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
   const eligibleProfiles = profiles.filter(
@@ -662,7 +669,11 @@ const Board: React.FC<BoardProps> = ({
     );
   });
   const dayColumns = sundayCollapsed ? 25 : 28;
-  const gridColumns = `grid-cols-[190px_repeat(${dayColumns},minmax(34px,1fr))]`;
+  const gridTemplateColumns =
+    layout === 'stacked'
+      ? `190px repeat(6, minmax(64px, 1fr)) minmax(${sundayCollapsed ? '34px' : '64px'}, 1fr)`
+      : `190px repeat(${dayColumns}, minmax(34px, 1fr))`;
+  const gridStyle = { gridTemplateColumns };
   return (
     <section
       className={`overflow-hidden rounded-lg border border-border-secondary bg-bg-primary ${editing ? 'border-t-2 border-t-brand-primary' : ''}`}
@@ -675,14 +686,32 @@ const Board: React.FC<BoardProps> = ({
             a rep for pattern details.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onToggleNonSelling}
-          className={`${FOCUS} rounded-md border border-border-secondary bg-bg-secondary px-3 py-1.5 text-[11px] font-semibold text-text-secondary`}
-        >
-          {showNonSelling ? 'Hide non-selling' : 'Show non-selling'}{' '}
-          <span className="ml-1">{showNonSelling ? '−' : '+'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <div
+            className="flex overflow-hidden rounded-md border border-border-secondary bg-bg-secondary p-0.5"
+            aria-label="Board layout"
+          >
+            {(['stacked', 'wide'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onLayout(option)}
+                aria-pressed={layout === option}
+                className={`${FOCUS} rounded px-2.5 py-1 text-[10px] font-semibold capitalize ${layout === option ? 'bg-bg-primary text-text-primary shadow-sm' : 'text-text-tertiary'}`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onToggleNonSelling}
+            className={`${FOCUS} rounded-md border border-border-secondary bg-bg-secondary px-3 py-1.5 text-[11px] font-semibold text-text-secondary`}
+          >
+            {showNonSelling ? 'Hide non-selling' : 'Show non-selling'}{' '}
+            <span className="ml-1">{showNonSelling ? '−' : '+'}</span>
+          </button>
+        </div>
       </div>
       <Legend />
       <FilterBar
@@ -694,47 +723,68 @@ const Board: React.FC<BoardProps> = ({
       <div className="overflow-x-auto">
         <div className="min-w-[1050px]">
           <div
-            className={`grid ${gridColumns} border-b border-border-secondary bg-bg-secondary text-center`}
+            className="grid border-b border-border-secondary bg-bg-secondary text-center"
+            style={gridStyle}
           >
             <div className="sticky left-0 z-10 bg-bg-secondary px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-text-quaternary">
               Rep / slot
             </div>
-            {days.map((day, index) => (
-              <div
-                key={day}
-                className={`${sundayCollapsed && index === 6 ? 'col-span-1' : 'col-span-4'} border-l border-border-secondary px-1 py-2 ${day === today ? 'text-brand-primary' : 'text-text-tertiary'}`}
-              >
-                <div className="text-[10px] font-bold uppercase">
-                  {sundayCollapsed && index === 6 ? 'Sun' : WEEKDAYS[index]}
+            {days.map((day, index) => {
+              // A holiday colors its whole column, starting with the header.
+              const dayHoliday = holidays.get(day);
+              const theme = dayHoliday ? getHolidayTheme(dayHoliday.name) : null;
+              return (
+                <div
+                  key={day}
+                  className={`${layout === 'wide' ? (sundayCollapsed && index === 6 ? 'col-span-1' : 'col-span-4') : ''} border-l border-border-secondary px-1 py-2 ${day === today ? 'text-brand-primary' : 'text-text-tertiary'}`}
+                  style={
+                    theme
+                      ? {
+                          backgroundColor: theme.bg,
+                          boxShadow: `inset 0 3px 0 ${theme.stripe}`,
+                          color: theme.text,
+                        }
+                      : undefined
+                  }
+                >
+                  <div className="text-[10px] font-bold uppercase">
+                    {sundayCollapsed && index === 6 ? 'Sun' : WEEKDAYS[index]}
+                  </div>
+                  <div className="text-[10px] tabular-nums">{displayDate(day)}</div>
+                  {theme && !(sundayCollapsed && index === 6) && (
+                    <div className="text-[10px] font-semibold">{dayHoliday!.name}</div>
+                  )}
                 </div>
-                <div className="text-[10px] tabular-nums">{displayDate(day)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div
-            className={`grid ${gridColumns} border-b border-border-secondary bg-bg-secondary/60 text-center`}
-          >
-            <div className="sticky left-0 z-10 bg-bg-secondary/60" />
-            {days.flatMap((day, index) =>
-              sundayCollapsed && index === 6
-                ? [
-                    <div
-                      key={`${day}-stub`}
-                      className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
-                    >
-                      —
-                    </div>,
-                  ]
-                : SLOTS.slice(0, 4).map((slot) => (
-                    <div
-                      key={`${day}-${slot}`}
-                      className="border-l border-border-secondary/60 py-1 text-[9px] font-bold text-text-quaternary"
-                    >
-                      {SLOT_START[slot]}
-                    </div>
-                  )),
-            )}
-          </div>
+          {layout === 'wide' && (
+            <div
+              className="grid border-b border-border-secondary bg-bg-secondary/60 text-center"
+              style={gridStyle}
+            >
+              <div className="sticky left-0 z-10 bg-bg-secondary/60" />
+              {days.flatMap((day, index) =>
+                sundayCollapsed && index === 6
+                  ? [
+                      <div
+                        key={`${day}-stub`}
+                        className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
+                      >
+                        —
+                      </div>,
+                    ]
+                  : SLOTS.slice(0, 4).map((slot) => (
+                      <div
+                        key={`${day}-${slot}`}
+                        className="border-l border-border-secondary/60 py-1 text-[9px] font-bold text-text-quaternary"
+                      >
+                        {SLOT_START[slot]}
+                      </div>
+                    )),
+              )}
+            </div>
+          )}
           {groups.map((group) => {
             const reps = filteredProfiles.filter((profile) => profile.section === group);
             if (!reps.length) return null;
@@ -746,12 +796,13 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className={`grid ${gridColumns} border-b border-border-secondary/70`}
+                    className="grid border-b border-border-secondary/70"
+                    style={gridStyle}
                   >
                     <button
                       type="button"
                       onClick={() => onRep(profile)}
-                      className={`${FOCUS} sticky left-0 z-10 flex min-w-0 items-center gap-2 bg-bg-primary px-4 py-2 text-left hover:bg-bg-tertiary`}
+                      className={`${FOCUS} sticky left-0 z-10 flex min-h-[98px] min-w-0 items-center gap-2 bg-bg-primary px-4 py-2 text-left hover:bg-bg-tertiary`}
                     >
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-bg-light text-[9px] font-bold text-brand-text-light">
                         {initials(profile.display_name)}
@@ -775,38 +826,101 @@ const Board: React.FC<BoardProps> = ({
                     </button>
                     {days.flatMap((day, index) =>
                       sundayCollapsed && index === 6
-                        ? [<SundayStub key={`${profile.id}-${day}-stub`} />]
-                        : SLOTS.slice(0, 4).map((slot) => {
-                            const key = `${profile.id}:${day}:${slot}`;
-                            const item = resolved.get(key);
-                            const exception = exceptions.get(key);
-                            const pending = requests.some(
-                              (request) =>
-                                request.rep_id === profile.id &&
-                                request.status === 'pending' &&
-                                (request.request_date === day || request.dates?.includes(day)),
-                            );
-                            return (
-                              <Cell
-                                key={key}
-                                profile={profile}
-                                day={day}
-                                slot={slot}
-                                item={item}
-                                exception={exception}
-                                pending={pending}
-                                editable={editable}
-                                onCycle={() => onCycle(profile, day, slot)}
-                                holidayInfo={holidays.get(day)}
-                                className={
-                                  profile.is_placeholder ||
-                                  isZeroAvailability(profile, days, resolved, exceptions)
-                                    ? 'opacity-60'
-                                    : ''
+                        ? [
+                            <SundayStub
+                              key={`${profile.id}-${day}-stub`}
+                              stacked={layout === 'stacked'}
+                            />,
+                          ]
+                        : layout === 'stacked'
+                          ? [
+                              <div
+                                key={`${profile.id}-${day}`}
+                                className="min-w-0 border-l border-border-secondary/70 py-0.5"
+                                style={
+                                  holidays.get(day)
+                                    ? {
+                                        backgroundColor: getHolidayTheme(holidays.get(day)!.name)
+                                          .bg,
+                                      }
+                                    : undefined
                                 }
-                              />
-                            );
-                          }),
+                              >
+                                {SLOTS.slice(0, 4).map((slot) => {
+                                  const key = `${profile.id}:${day}:${slot}`;
+                                  const item = resolved.get(key);
+                                  const exception = exceptions.get(key);
+                                  const pending = requests.some(
+                                    (request) =>
+                                      request.rep_id === profile.id &&
+                                      request.status === 'pending' &&
+                                      (request.request_date === day ||
+                                        request.dates?.includes(day)),
+                                  );
+                                  return (
+                                    <Cell
+                                      key={key}
+                                      layout="stacked"
+                                      profile={profile}
+                                      day={day}
+                                      slot={slot}
+                                      item={item}
+                                      exception={exception}
+                                      pending={pending}
+                                      editable={editable}
+                                      onCycle={() => onCycle(profile, day, slot)}
+                                      holidayInfo={holidays.get(day)}
+                                      className={
+                                        profile.is_placeholder ||
+                                        isZeroAvailability(profile, days, resolved, exceptions)
+                                          ? 'opacity-60'
+                                          : ''
+                                      }
+                                    />
+                                  );
+                                })}
+                              </div>,
+                            ]
+                          : SLOTS.slice(0, 4).map((slot) => {
+                              const key = `${profile.id}:${day}:${slot}`;
+                              const item = resolved.get(key);
+                              const exception = exceptions.get(key);
+                              const pending = requests.some(
+                                (request) =>
+                                  request.rep_id === profile.id &&
+                                  request.status === 'pending' &&
+                                  (request.request_date === day || request.dates?.includes(day)),
+                              );
+                              const dayHoliday = holidays.get(day);
+                              return (
+                                <div
+                                  key={key}
+                                  style={
+                                    dayHoliday
+                                      ? { backgroundColor: getHolidayTheme(dayHoliday.name).bg }
+                                      : undefined
+                                  }
+                                >
+                                  <Cell
+                                    profile={profile}
+                                    day={day}
+                                    slot={slot}
+                                    item={item}
+                                    exception={exception}
+                                    pending={pending}
+                                    editable={editable}
+                                    onCycle={() => onCycle(profile, day, slot)}
+                                    holidayInfo={holidays.get(day)}
+                                    className={
+                                      profile.is_placeholder ||
+                                      isZeroAvailability(profile, days, resolved, exceptions)
+                                        ? 'opacity-60'
+                                        : ''
+                                    }
+                                  />
+                                </div>
+                              );
+                            }),
                     )}
                   </div>
                 ))}
@@ -976,6 +1090,13 @@ const AvailabilityPage: React.FC = () => {
       return false;
     }
   });
+  const [layout, setLayout] = useState<'wide' | 'stacked'>(() => {
+    try {
+      return window.localStorage.getItem('availability.layout') === 'wide' ? 'wide' : 'stacked';
+    } catch {
+      return 'stacked';
+    }
+  });
   const days = useMemo(() => weekDays(monday), [monday]);
   const policy = data?.policy[monday] || {
     template_kind: 'standard',
@@ -1013,6 +1134,13 @@ const AvailabilityPage: React.FC = () => {
       /* optional persistence */
     }
   }, [filters]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('availability.layout', layout);
+    } catch {
+      // Layout persistence is optional when storage is unavailable.
+    }
+  }, [layout]);
   const maps = useMemo(() => {
     const resolved = new Map<string, Resolved>();
     const exceptions = new Map<string, Exception>();
@@ -1221,6 +1349,8 @@ const AvailabilityPage: React.FC = () => {
             onRep={setDrawer}
             onCycle={(profile, day, slot) => void cycleCell(profile, day, slot)}
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
+            layout={layout}
+            onLayout={setLayout}
             sundayCollapsed={sundayCollapsed}
             editing={editable}
             filters={filters}
