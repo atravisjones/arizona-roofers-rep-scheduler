@@ -4,6 +4,7 @@ import { HoldRuleChip } from './AvailabilityHoldRule';
 import {
   AvailabilityData,
   Exception,
+  Holiday,
   Profile,
   Resolved,
   Section,
@@ -24,6 +25,7 @@ import {
   netBookable,
   weekDays,
 } from '../utils/availability';
+import { getHolidayTheme, HOLIDAY_GLYPH } from '../utils/holidayThemes';
 import { useAppContext } from '../context/AppContext';
 
 const SELLING_SECTIONS: Section[] = ['PHX', 'NORTH', 'SOUTH', 'COMMERCIAL'];
@@ -138,7 +140,11 @@ const PolicyChips: React.FC<PolicyChipsProps> = ({ policy, holidays, editable, o
     {holidays.map((holiday) => (
       <span
         key={holiday.date}
-        className="rounded-full border border-tag-blue-border bg-tag-blue-bg px-3 py-1.5 text-[11px] font-semibold text-tag-blue-text"
+        className="rounded-full border px-3 py-1.5 text-[11px] font-semibold"
+        style={(() => {
+          const theme = getHolidayTheme(holiday.name);
+          return { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text };
+        })()}
       >
         {new Date(`${holiday.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })} ·{' '}
         {holiday.name}
@@ -174,6 +180,7 @@ interface CapacityStripProps {
   onSection: (section: string) => void;
   onSaveRule: (rule: AvailabilityData['hold_rule']) => Promise<void>;
   sundayCollapsed: boolean;
+  holidays: Map<string, Holiday>;
 }
 interface CapacityBreakdown {
   standing: number;
@@ -194,6 +201,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
   onSection,
   onSaveRule,
   sundayCollapsed,
+  holidays,
 }) => {
   const inSection = (profile: Profile) =>
     section === 'All' ||
@@ -270,6 +278,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
               total={total}
               rule={rule}
               breakdown={(slot) => breakdown(day, slot)}
+              holiday={holidays.get(day)}
             />
           );
         })}
@@ -289,108 +298,127 @@ interface DayCardProps {
   total: number;
   rule: AvailabilityData['hold_rule'];
   breakdown: (slot: string) => CapacityBreakdown;
+  holidayInfo?: Holiday;
 }
-const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown }) => (
-  <article
-    tabIndex={0}
-    className={`group relative rounded-lg border bg-bg-primary p-3 ${day === today ? 'border-brand-primary ring-2 ring-brand-primary/20' : 'border-border-secondary'} ${index === 6 ? 'opacity-60' : ''}`}
-  >
-    <div className="flex items-start justify-between">
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
-          {WEEKDAYS[index]}
-        </p>
-        <p className="text-[11px] tabular-nums text-text-secondary">{displayDate(day)}</p>
+const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, holiday }) => {
+  const theme = getHolidayTheme(holiday?.name);
+  return (
+    <article
+      tabIndex={0}
+      className={`group relative rounded-lg border bg-bg-primary p-3 ${day === today ? 'border-brand-primary ring-2 ring-brand-primary/20' : 'border-border-secondary'} ${index === 6 ? 'opacity-60' : ''}`}
+    >
+      {holiday && (
+        <div
+          className="absolute inset-x-0 top-0 h-1 rounded-t-lg"
+          style={{ backgroundColor: theme.stripe }}
+        />
+      )}
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
+            {WEEKDAYS[index]}
+          </p>
+          <p className="text-[11px] tabular-nums text-text-secondary">{displayDate(day)}</p>
+        </div>
+        {day === today && (
+          <span className="rounded-full bg-brand-bg-light px-1.5 py-0.5 text-[9px] font-bold text-brand-text-light">
+            TODAY
+          </span>
+        )}
       </div>
-      {day === today && (
-        <span className="rounded-full bg-brand-bg-light px-1.5 py-0.5 text-[9px] font-bold text-brand-text-light">
-          TODAY
+      {holiday && (
+        <span
+          className="mt-2 inline-flex max-w-full truncate rounded border px-1.5 py-0.5 text-[9px] font-semibold"
+          style={{ backgroundColor: theme.bg, borderColor: theme.border, color: theme.text }}
+          title={holiday.name}
+        >
+          {holiday.name}
         </span>
       )}
-    </div>
-    <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{total}</p>
-    <p className="text-[10px] text-text-quaternary">bookable slots</p>
-    {SLOTS.slice(0, 4).some((slot) => isLowCoverage(breakdown(slot), rule)) && (
-      <span className="mt-1 inline-flex rounded-full border border-tag-red-border bg-tag-red-bg px-1.5 py-0.5 text-[9px] font-semibold text-tag-red-text">
-        Low coverage
-      </span>
-    )}
-    <div className="mt-3 space-y-2">
-      {SLOTS.slice(0, 4).map((slot) => {
-        const details = breakdown(slot);
-        const available = details.available;
-        const held = heldFor(available, rule);
-        const net = available - held;
-        const low = isLowCoverage(details, rule);
-        const width = `${Math.min(100, available * 12.5)}%`;
-        const heldWidth = available ? `${(held / available) * 100}%` : '0%';
-        return (
-          <div key={slot} className="flex items-center gap-2">
-            <span className="w-7 text-[11px] text-text-quaternary">{slot.toUpperCase()}</span>
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary">
-              <div
-                className={`relative h-full rounded-full ${low ? 'bg-tag-red-text' : 'bg-tag-green-text'}`}
-                style={{ width }}
-              >
-                <span
-                  className="absolute right-0 top-0 h-full bg-tag-amber-text/70"
-                  style={{ width: heldWidth }}
-                />
+      <p className="mt-3 text-2xl font-bold tabular-nums text-text-primary">{total}</p>
+      <p className="text-[10px] text-text-quaternary">bookable slots</p>
+      {SLOTS.slice(0, 4).some((slot) => isLowCoverage(breakdown(slot), rule)) && (
+        <span className="mt-1 inline-flex rounded-full border border-tag-red-border bg-tag-red-bg px-1.5 py-0.5 text-[9px] font-semibold text-tag-red-text">
+          Low coverage
+        </span>
+      )}
+      <div className="mt-3 space-y-2">
+        {SLOTS.slice(0, 4).map((slot) => {
+          const details = breakdown(slot);
+          const available = details.available;
+          const held = heldFor(available, rule);
+          const net = available - held;
+          const low = isLowCoverage(details, rule);
+          const width = `${Math.min(100, available * 12.5)}%`;
+          const heldWidth = available ? `${(held / available) * 100}%` : '0%';
+          return (
+            <div key={slot} className="flex items-center gap-2">
+              <span className="w-7 text-[11px] text-text-quaternary">{slot.toUpperCase()}</span>
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary">
+                <div
+                  className={`relative h-full rounded-full ${low ? 'bg-tag-red-text' : 'bg-tag-green-text'}`}
+                  style={{ width }}
+                >
+                  <span
+                    className="absolute right-0 top-0 h-full bg-tag-amber-text/70"
+                    style={{ width: heldWidth }}
+                  />
+                </div>
               </div>
+              <span
+                className={`w-4 text-right text-xs font-semibold tabular-nums ${low ? 'text-tag-red-text' : 'text-text-secondary'}`}
+              >
+                {net}
+              </span>
             </div>
-            <span
-              className={`w-4 text-right text-xs font-semibold tabular-nums ${low ? 'text-tag-red-text' : 'text-text-secondary'}`}
-            >
-              {net}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-    <div className="pointer-events-none invisible absolute left-2 right-2 top-full z-20 mt-2 rounded-md border border-border-secondary bg-bg-primary p-3 text-[10px] shadow-xl group-hover:visible group-focus-within:visible">
-      <p className="mb-2 font-semibold text-text-primary">Capacity breakdown</p>
-      <table className="w-full tabular-nums">
-        <thead>
-          <tr className="text-left text-text-quaternary">
-            <th>Slot</th>
-            <th>Standing</th>
-            <th>− Off</th>
-            <th>− Meeting</th>
-            <th>− Holiday</th>
-            <th>+ Added</th>
-            <th>− Hold</th>
-            <th>= Bookable</th>
-          </tr>
-        </thead>
-        <tbody>
-          {SLOTS.slice(0, 4).map((slot) => {
-            const d = breakdown(slot);
-            const hold = heldFor(d.available, rule);
-            return (
-              <tr key={slot} className="border-t border-border-secondary text-text-secondary">
-                <td className="py-1 pr-1">{slot.toUpperCase()}</td>
-                <td>{d.standing}</td>
-                <td>{d.exception}</td>
-                <td>{d.meeting}</td>
-                <td>{d.holiday}</td>
-                <td>{d.added}</td>
-                <td>{hold}</td>
-                <td className="font-semibold">{d.available - hold}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-        <tfoot>
-          <tr className="border-t border-border-secondary font-semibold text-text-primary">
-            <td className="pt-1">Total</td>
-            <td colSpan={6} />
-            <td>{total}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-  </article>
-);
+          );
+        })}
+      </div>
+      <div className="pointer-events-none invisible absolute left-2 right-2 top-full z-20 mt-2 rounded-md border border-border-secondary bg-bg-primary p-3 text-[10px] shadow-xl group-hover:visible group-focus-within:visible">
+        <p className="mb-2 font-semibold text-text-primary">Capacity breakdown</p>
+        <table className="w-full tabular-nums">
+          <thead>
+            <tr className="text-left text-text-quaternary">
+              <th>Slot</th>
+              <th>Standing</th>
+              <th>− Off</th>
+              <th>− Meeting</th>
+              <th>− Holiday</th>
+              <th>+ Added</th>
+              <th>− Hold</th>
+              <th>= Bookable</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SLOTS.slice(0, 4).map((slot) => {
+              const d = breakdown(slot);
+              const hold = heldFor(d.available, rule);
+              return (
+                <tr key={slot} className="border-t border-border-secondary text-text-secondary">
+                  <td className="py-1 pr-1">{slot.toUpperCase()}</td>
+                  <td>{d.standing}</td>
+                  <td>{d.exception}</td>
+                  <td>{d.meeting}</td>
+                  <td>{d.holiday}</td>
+                  <td>{d.added}</td>
+                  <td>{hold}</td>
+                  <td className="font-semibold">{d.available - hold}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-border-secondary font-semibold text-text-primary">
+              <td className="pt-1">Total</td>
+              <td colSpan={6} />
+              <td>{total}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </article>
+  );
+};
 
 interface CellProps {
   profile: Profile;
@@ -402,6 +430,7 @@ interface CellProps {
   editable: boolean;
   onCycle: () => void;
   className?: string;
+  holiday?: Holiday;
 }
 const Cell: React.FC<CellProps> = ({
   profile,
@@ -413,6 +442,7 @@ const Cell: React.FC<CellProps> = ({
   editable,
   onCycle,
   className: rowClassName = '',
+  holidayInfo,
 }) => {
   // Meeting and holiday overlays win visually unless a manager added the rep back.
   const meeting = item?.source === 'meeting' && exception?.available !== true;
@@ -446,6 +476,13 @@ const Cell: React.FC<CellProps> = ({
     start
   );
   const cellClass = `m-0.5 flex h-6 items-center justify-center rounded border text-[10px] font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  const holidayStyle =
+    holiday && holidayInfo
+      ? (() => {
+          const theme = getHolidayTheme(holidayInfo.name);
+          return { backgroundColor: theme.bg, borderColor: theme.border, color: theme.text };
+        })()
+      : undefined;
   const title = `${label}${exception?.note ? `\n${exception.note}` : ''}${exception?.created_by ? ` · set by ${exception.created_by}` : ''}`;
   if (editable && !meeting) {
     return (
@@ -455,14 +492,20 @@ const Cell: React.FC<CellProps> = ({
         className={`${FOCUS} ${cellClass}`}
         aria-label={label}
         title={title}
+        style={holiday ? holidayStyle : undefined}
       >
-        {contents}
+        {holiday ? HOLIDAY_GLYPH : contents}
       </button>
     );
   }
   return (
-    <div className={cellClass} aria-label={label} title={title}>
-      {contents}
+    <div
+      className={cellClass}
+      aria-label={label}
+      title={title}
+      style={holiday ? holidayStyle : undefined}
+    >
+      {holiday ? HOLIDAY_GLYPH : contents}
     </div>
   );
 };
@@ -510,6 +553,7 @@ interface BoardProps {
   editing: boolean;
   filters: AvailabilityFilters;
   onFilters: (filters: AvailabilityFilters) => void;
+  holidays: Map<string, Holiday>;
 }
 const FilterBar: React.FC<{
   filters: AvailabilityFilters;
@@ -593,6 +637,7 @@ const Board: React.FC<BoardProps> = ({
   editing,
   filters,
   onFilters,
+  holidays,
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
   const eligibleProfiles = profiles.filter(
@@ -752,6 +797,7 @@ const Board: React.FC<BoardProps> = ({
                                 pending={pending}
                                 editable={editable}
                                 onCycle={() => onCycle(profile, day, slot)}
+                                holidayInfo={holidays.get(day)}
                                 className={
                                   profile.is_placeholder ||
                                   isZeroAvailability(profile, days, resolved, exceptions)
@@ -797,7 +843,7 @@ const Legend: React.FC = () => {
       </span>
       <span className="flex items-center gap-2">
         <i className={`${sample} border-text-tertiary text-text-tertiary ${HATCHED}`}>H</i>
-        <span className={`${label} text-text-tertiary`}>Company holiday</span>
+        <span className={`${label} text-text-tertiary`}>Company holiday (colored per holiday)</span>
       </span>
       <span className="flex items-center gap-2">
         <i
@@ -978,6 +1024,10 @@ const AvailabilityPage: React.FC = () => {
     );
     return { resolved, exceptions };
   }, [data]);
+  const holidays = useMemo(
+    () => new Map((data?.holidays || []).map((holiday) => [holiday.date, holiday] as const)),
+    [data?.holidays],
+  );
   const sundayCollapsed = useMemo(
     () =>
       !(data?.profiles || []).some((profile) =>
@@ -1153,6 +1203,7 @@ const AvailabilityPage: React.FC = () => {
             editable={editable}
             sundayCollapsed={sundayCollapsed}
             onSection={setSection}
+            holidays={holidays}
             onSaveRule={async (rule) => {
               await runWrite({ action: 'set_hold_rule', ...rule }, 'Hold rule updated');
             }}
@@ -1174,6 +1225,7 @@ const AvailabilityPage: React.FC = () => {
             editing={editable}
             filters={filters}
             onFilters={setFilters}
+            holidays={holidays}
           />
         )}
         {editable &&
