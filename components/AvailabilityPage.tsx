@@ -840,7 +840,7 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className="grid border-b-2 border-border-primary"
+                    className="relative grid border-b-2 border-border-primary"
                     style={gridStyle}
                   >
                     <button
@@ -969,18 +969,35 @@ const Board: React.FC<BoardProps> = ({
                     {offRuns(profile, days, resolved, exceptions, holidays)
                       .filter((run) => !(sundayCollapsed && run.start === 6))
                       .map((run) => {
+                        // Absolute overlay across the run; geometry mirrors gridTemplateColumns.
                         const span =
                           sundayCollapsed && run.start + run.length > 6
                             ? 6 - run.start
                             : run.length;
+                        const trailing = sundayCollapsed
+                          ? layout === 'stacked'
+                            ? '40px'
+                            : '34px'
+                          : '0px';
+                        const units =
+                          layout === 'stacked'
+                            ? sundayCollapsed
+                              ? 6
+                              : 7
+                            : sundayCollapsed
+                              ? 24
+                              : 28;
                         const perDay = layout === 'stacked' ? 1 : 4;
+                        const unit = `((100% - 190px - ${trailing}) / ${units})`;
                         return (
                           <div
                             key={`${profile.id}-off-${run.start}`}
-                            className="pointer-events-none z-[5] m-1 flex items-center justify-center rounded-md border border-tag-amber-border bg-bg-primary/70 px-2 text-center text-[11px] font-semibold text-tag-amber-text backdrop-blur-[1px]"
+                            className="pointer-events-none absolute z-[5] flex items-center justify-center rounded-md border border-tag-amber-border bg-bg-primary/70 px-2 text-center text-[11px] font-semibold text-tag-amber-text backdrop-blur-[1px]"
                             style={{
-                              gridColumn: `${2 + run.start * perDay} / span ${span * perDay}`,
-                              gridRow: 1,
+                              top: 6,
+                              bottom: 6,
+                              left: `calc(190px + ${run.start * perDay} * ${unit} + 4px)`,
+                              width: `calc(${span * perDay} * ${unit} - 8px)`,
                             }}
                             aria-hidden="true"
                           >
