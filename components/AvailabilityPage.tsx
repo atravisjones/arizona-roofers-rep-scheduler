@@ -530,6 +530,7 @@ interface OffRun {
 const offRuns = (
   profile: Profile,
   days: string[],
+  resolved: Map<string, Resolved>,
   exceptions: Map<string, Exception>,
   holidays: Map<string, Holiday>,
 ): OffRun[] => {
@@ -537,7 +538,14 @@ const offRuns = (
   let current: OffRun | null = null;
   days.forEach((day, index) => {
     const cells = SLOTS.slice(0, 4).map((slot) => exceptions.get(`${profile.id}:${day}:${slot}`));
-    const allOff = !holidays.get(day) && cells.every((cell) => cell && cell.available === false);
+    // Fully off = nothing resolves available that day AND at least one slot is a time-off exception.
+    const nothingAvailable = SLOTS.slice(0, 4).every(
+      (slot) => !resolved.get(`${profile.id}:${day}:${slot}`)?.available,
+    );
+    const allOff =
+      !holidays.get(day) &&
+      nothingAvailable &&
+      cells.some((cell) => cell && cell.available === false);
     if (allOff) {
       const note = cells
         .map((cell) => (cell?.note || '').trim())
@@ -958,7 +966,7 @@ const Board: React.FC<BoardProps> = ({
                               );
                             }),
                     )}
-                    {offRuns(profile, days, exceptions, holidays)
+                    {offRuns(profile, days, resolved, exceptions, holidays)
                       .filter((run) => !(sundayCollapsed && run.start === 6))
                       .map((run) => {
                         const span =
