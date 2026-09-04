@@ -521,6 +521,41 @@ const SundayStub: React.FC<{ stacked?: boolean }> = ({ stacked = false }) => (
   />
 );
 
+// Consecutive days where every slot is a time-off exception, with the reason (exception note).
+interface OffRun {
+  start: number;
+  length: number;
+  reason: string;
+}
+const offRuns = (
+  profile: Profile,
+  days: string[],
+  exceptions: Map<string, Exception>,
+  holidays: Map<string, Holiday>,
+): OffRun[] => {
+  const runs: OffRun[] = [];
+  let current: OffRun | null = null;
+  days.forEach((day, index) => {
+    const cells = SLOTS.slice(0, 4).map((slot) => exceptions.get(`${profile.id}:${day}:${slot}`));
+    const allOff = !holidays.get(day) && cells.every((cell) => cell && cell.available === false);
+    if (allOff) {
+      const note = cells
+        .map((cell) => (cell?.note || '').trim())
+        .find((text) => text && !/^imported from/i.test(text));
+      const reason = note || 'Time off';
+      if (current && current.start + current.length === index && current.reason === reason) {
+        current.length += 1;
+      } else {
+        current = { start: index, length: 1, reason };
+        runs.push(current);
+      }
+    } else {
+      current = null;
+    }
+  });
+  return runs;
+};
+
 const isZeroAvailability = (
   profile: Profile,
   days: string[],
@@ -923,6 +958,29 @@ const Board: React.FC<BoardProps> = ({
                               );
                             }),
                     )}
+                    {offRuns(profile, days, exceptions, holidays)
+                      .filter((run) => !(sundayCollapsed && run.start === 6))
+                      .map((run) => {
+                        const span =
+                          sundayCollapsed && run.start + run.length > 6
+                            ? 6 - run.start
+                            : run.length;
+                        const perDay = layout === 'stacked' ? 1 : 4;
+                        return (
+                          <div
+                            key={`${profile.id}-off-${run.start}`}
+                            className="pointer-events-none z-[5] m-1 flex items-center justify-center rounded-md border border-tag-amber-border bg-bg-primary/70 px-2 text-center text-[11px] font-semibold text-tag-amber-text backdrop-blur-[1px]"
+                            style={{
+                              gridColumn: `${2 + run.start * perDay} / span ${span * perDay}`,
+                              gridRow: 1,
+                            }}
+                            aria-hidden="true"
+                          >
+                            {run.reason}
+                            {span > 1 ? ` · ${span} days` : ''}
+                          </div>
+                        );
+                      })}
                   </div>
                 ))}
               </React.Fragment>
