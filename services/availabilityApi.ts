@@ -1,6 +1,6 @@
 import { getAuthUser } from '../components/AuthGate';
 
-export type Section = 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'MANAGEMENT' | 'D2D';
+export type Section = 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'INSURANCE' | 'MANAGEMENT' | 'D2D';
 export type Slot = 's1' | 's2' | 's3' | 's4' | 's5';
 
 export interface Profile {

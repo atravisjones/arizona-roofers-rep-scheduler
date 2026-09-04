@@ -868,9 +868,9 @@ export async function fetchSheetData(date: Date = new Date()): Promise<{ reps: O
             else if (sectionBanner.includes('NORTHERN')) currentRegion = 'NORTH';
             else if (sectionBanner.includes('TUCSON')) currentRegion = 'SOUTH';
             else if (sectionBanner.includes('COMMERCIAL')) currentRegion = 'COMMERCIAL';
-            else if (sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO')) currentRegion = null;
+            else if (sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO') || sectionBanner.includes('INSURANCE')) currentRegion = null; // INSURANCE section (2026-09-04): not auto-assign eligible yet
             if (sectionBanner.includes('PHOENIX') || sectionBanner.includes('NORTHERN') || sectionBanner.includes('TUCSON') ||
-                sectionBanner.includes('COMMERCIAL') || sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO')) {
+                sectionBanner.includes('COMMERCIAL') || sectionBanner.includes('MANAGEMENT') || sectionBanner.includes('GRINGO') || sectionBanner.includes('INSURANCE')) {
                 currentRepContext = null;
                 continue;
             }

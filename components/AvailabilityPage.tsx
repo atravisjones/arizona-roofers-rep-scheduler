@@ -29,7 +29,7 @@ import {
 import { getHolidayTheme, HOLIDAY_GLYPH } from '../utils/holidayThemes';
 import { useAppContext } from '../context/AppContext';
 
-const SELLING_SECTIONS: Section[] = ['PHX', 'NORTH', 'SOUTH', 'COMMERCIAL'];
+const SELLING_SECTIONS: Section[] = ['PHX', 'NORTH', 'SOUTH', 'COMMERCIAL', 'INSURANCE'];
 const HATCHED =
   'bg-[repeating-linear-gradient(135deg,rgb(var(--border-secondary)/.28)_0px,rgb(var(--border-secondary)/.28)_3px,transparent_3px,transparent_6px)]';
 const FOCUS =
@@ -207,7 +207,8 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
   const inSection = (profile: Profile) =>
     section === 'All' ||
     profile.section === section ||
-    (section === 'Commercial' && profile.section === 'COMMERCIAL');
+    (section === 'Commercial' && profile.section === 'COMMERCIAL') ||
+    (section === 'Insurance' && profile.section === 'INSURANCE');
   const breakdown = (day: string, slot: string): CapacityBreakdown =>
     profiles.reduce(
       (result, rep) => {
@@ -247,6 +248,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
             <option>NORTH</option>
             <option>SOUTH</option>
             <option>Commercial</option>
+            <option>Insurance</option>
             <option>All</option>
           </select>
         </div>
@@ -835,7 +837,13 @@ const Board: React.FC<BoardProps> = ({
             return (
               <React.Fragment key={group}>
                 <div className="border-y border-border-secondary bg-bg-secondary px-4 py-1.5 text-[9px] font-bold uppercase tracking-[.18em] text-text-quaternary">
-                  {group === 'PHX' ? 'Phoenix' : group === 'SOUTH' ? 'South / Tucson' : group}
+                  {group === 'PHX'
+                    ? 'Phoenix'
+                    : group === 'SOUTH'
+                      ? 'South / Tucson'
+                      : group === 'INSURANCE'
+                        ? 'Insurance'
+                        : group}
                 </div>
                 {reps.map((profile) => (
                   <div
