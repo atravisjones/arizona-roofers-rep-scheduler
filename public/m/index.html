@@ -139,6 +139,19 @@
     }, 2500);
   }
   let lastNum = '';
+  // Every call on this page goes through CTM: copy the number inside the tap (clipboard needs the
+  // gesture), mark the check as called (unlocks dispositions), then open CTM Phone on its dialpad.
+  function startCall(jobId, num) {
+    try { navigator.clipboard.writeText(num); } catch (err) {}
+    lastNum = num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+    toast('Dial ' + lastNum + ' in CTM');
+    if (jobId) { called[jobId] = Date.now(); saveCalled(); setTimeout(render, 400); }
+    openCTM();
+  }
+  document.getElementById('map').addEventListener('click', e => {
+    const b = e.target.closest('[data-call]'); if (!b) return;
+    e.preventDefault(); startCall(b.dataset.call, b.dataset.num || '');
+  });
   const digits = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; };
   // CTM click-to-call: opens the softphone with the number filled in (the CTM Phone app takes
   // the link over when it's installed and claims app.calltrackingmetrics.com; otherwise the browser softphone).
@@ -393,22 +406,13 @@
           </div>
         </div>`);
       if (c.lat != null && c.lon != null) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
-        .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<a href="${tel(c.phone)}">${esc(c.phone)}</a>` : ''}`).addTo(checkLayer);
+        .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<button type="button" class="btn call" style="margin-top:6px;padding:6px 10px" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}</button>` : ''}`).addTo(checkLayer);
     });
     buildRoute();
   }
   checksEl.addEventListener('click', async e => {
     const callA = e.target.closest('[data-call]');
-    if (callA) {
-      // copy inside the click (user gesture) so the clipboard write is allowed, then let the link open CTM
-      const num = callA.dataset.num || '';
-      try { navigator.clipboard.writeText(num); } catch (err) {}
-      lastNum = num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
-      toast('Dial ' + lastNum + ' in CTM');
-      called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400);
-      openCTM();
-      return;
-    }
+    if (callA) { startCall(callA.dataset.call, callA.dataset.num || ''); return; }
     if (e.target.closest('a, button')) { /* buttons handled below */ } else {
       const card = e.target.closest('.card[data-id]'); if (!card) return;
       const id = card.dataset.id;
