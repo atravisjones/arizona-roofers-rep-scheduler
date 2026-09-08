@@ -335,11 +335,7 @@
       const id = card.dataset.id;
       selectedId = selectedId === id ? null : id;
       render();
-      const mk = checkMarkers[selectedId];
-      if (mk) {
-        if (document.body.classList.contains('map-min')) setMapMin(false);
-        setTimeout(() => { map.setView(mk.getLatLng(), Math.max(map.getZoom(), 14), { animate: true }); mk.openPopup(); }, 50);
-      }
+      // highlight only — no zoom/pan; the amber marker is enough to spot it
       return;
     }
     const ob = e.target.closest('[data-outcome]');
