@@ -182,7 +182,7 @@
   .reppick { border-color: var(--bd2); background: var(--bg1); color: var(--tx1); }
   .reppick option { color: var(--tx1); }
   h2 { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.25); }
-  @media (min-width: 900px) { h2 { color: var(--tx3); text-shadow: none; } #right { background: var(--bg2); } }
+  /* desktop: cards float on the gradient like the planner's panels */
   .meta, .empty, .hist { color: var(--tx3); }
   .addr { color: var(--tx2); }
   .card { background: var(--bg1); border: 1px solid var(--bd1); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
@@ -203,7 +203,7 @@
   .seg-label { color: var(--tx4); }
   .chip.on { background: var(--brand); border-color: var(--brand); }
   .routebar { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
-  @media (min-width: 900px) { .routebar { color: var(--tx3); text-shadow: none; } #left { background: var(--bg1); } #routeBar, #locBar { border-color: var(--bd1); } }
+  @media (min-width: 900px) { .routebar { color: var(--tx3); text-shadow: none; } #left { background: var(--bg1); } #routeBar, #locBar { border-color: var(--bd1); } .toolbar, .tabs .tab { box-shadow: 0 1px 3px rgba(0,0,0,.12); } }
   #locBtn { background: var(--brand) !important; }
   #mapWrap { background: var(--bg3); }
   #map .leaflet-tile-pane { filter: sepia(.25) saturate(1.05); }
@@ -218,7 +218,7 @@
   #cal .dow, #cal .calmsg { color: var(--tx3); }
   footer { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   footer a { color: var(--bg1); }
-  @media (min-width: 900px) { footer, footer a { color: var(--tx4); text-shadow: none; } }
+
   #gate { background: #b39a83; background-image: linear-gradient(180deg, #a39d94 0%, #b39a83 30%, #dd8d55 62%, #ee7c28 85%, #f0731a 100%); }
   .gatebox { background: var(--bg1); border: 1px solid var(--bd1); }
   .gatebox h2 { font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; color: var(--tx1); text-shadow: none; }
