@@ -112,9 +112,30 @@
   // (per its apple-app-site-association); Android: Chrome intent by package name (Play fallback).
   // CTM has no dial-this-number scheme, so Call copies the number first and he pastes it in the dialer.
   const isAndroid = /android/i.test(navigator.userAgent);
-  const ctmOpen = isAndroid
-    ? 'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;S.browser_fallback_url=https%3A%2F%2Fapp.calltrackingmetrics.com%2Fhome;end'
-    : 'https://app.calltrackingmetrics.com/home';
+  const CTM_WEB = 'https://app.calltrackingmetrics.com/home';
+  // Android: launch by package (no browser fallback, so a miss does nothing instead of leaving the page);
+  // try the current CTM Phone package first, then the older CTM Agent package.
+  const CTM_INTENTS = [
+    'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;end',
+    'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.ctmPhone;end',
+  ];
+  function openCTM() {
+    const startedHidden = document.visibilityState === 'hidden';
+    let left = false;
+    const onHide = () => { left = true; };
+    document.addEventListener('visibilitychange', onHide, { once: true });
+    window.addEventListener('pagehide', onHide, { once: true });
+    window.addEventListener('blur', onHide, { once: true });
+    if (isAndroid) {
+      window.location.href = CTM_INTENTS[0];
+      setTimeout(() => { if (!left) window.location.href = CTM_INTENTS[1]; }, 900);
+    } else {
+      window.location.href = CTM_WEB;   // universal link: iOS opens CTM Phone if it claims /home
+    }
+    setTimeout(() => {
+      if (!left && !startedHidden) toast('CTM app did not open. Number is copied — open CTM Phone and paste it in the dialer.');
+    }, 2200);
+  }
   const digits = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; };
   // CTM click-to-call: opens the softphone with the number filled in (the CTM Phone app takes
   // the link over when it's installed and claims app.calltrackingmetrics.com; otherwise the browser softphone).
@@ -342,7 +363,7 @@
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<a class="btn call" href="${ctmOpen}" target="_blank" rel="noopener" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 Call in CTM</a>` : ''}
+              ${c.phone ? `<button class="btn call" type="button" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 Call in CTM</button>` : ''}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
@@ -366,6 +387,7 @@
       try { navigator.clipboard.writeText(num); } catch (err) {}
       toast('Copied ' + num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') + ' — paste it in the CTM dialer');
       called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400);
+      openCTM();
       return;
     }
     if (e.target.closest('a, button')) { /* buttons handled below */ } else {
