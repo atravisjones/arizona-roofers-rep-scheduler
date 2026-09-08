@@ -553,6 +553,8 @@
     if (single) map.setView(b.getCenter(), 11); else map.fitBounds(b.pad(0.25), { maxZoom: 13 });
   };
   fit();
+  // Two-column layout sizes the map after first paint; re-measure once fonts/layout settle so no pin sits under the edge.
+  setTimeout(() => { map.invalidateSize(); if (!map.hasLayer(adjLayer)) fit(); }, 400);
 
   // Location: iOS Safari is stingy with prompts that fire on page load, so we also offer a
   // tap-driven request and explain a denial (Settings > Privacy > Location Services > Safari Websites).
