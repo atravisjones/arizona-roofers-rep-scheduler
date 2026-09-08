@@ -10,10 +10,14 @@
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; background: #f4f4f5; color: #18181b; }
-  header { background: #4f46e5; color: #fff; padding: 14px 16px 12px; position: sticky; top: 0; z-index: 10; }
+  header { background: #4f46e5; color: #fff; padding: 10px 12px 10px 16px; position: sticky; top: 0; z-index: 1100; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header .hbtn { border: 1px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; }
   header h1 { margin: 0; font-size: 18px; }
   header .sub { font-size: 13px; opacity: .9; margin-top: 2px; }
-  #map { height: 240px; background: #e4e4e7; }
+  #mapWrap { position: sticky; top: 52px; z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+  #map { height: 240px; transition: height .2s; }
+  body.map-min #map { height: 0; }
+  body.map-min #mapWrap { box-shadow: none; }
   section { padding: 12px 12px 4px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #52525b; margin: 6px 0 8px; display: flex; justify-content: space-between; align-items: center; }
   .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; gap: 12px; align-items: flex-start; }
@@ -29,6 +33,7 @@
   button.btn { border: 0; font: inherit; cursor: pointer; }
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; color: #fff; background: #4f46e5; }
   .btn.call { background: #059669; }
+  .btn.copied { background: #d1fae5; color: #065f46; }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
@@ -44,10 +49,13 @@
 </head>
 <body>
 <header>
-  <h1 id="title">My Day</h1>
-  <div class="sub" id="subtitle">Loading…</div>
+  <div>
+    <h1 id="title">My Day</h1>
+    <div class="sub" id="subtitle">Loading…</div>
+  </div>
+  <button class="hbtn" id="mapToggle" type="button">Hide map</button>
 </header>
-<div id="map"></div>
+<div id="mapWrap"><div id="map"></div></div>
 <a id="routeLink" class="btn big" href="#" target="_blank" rel="noopener" hidden>▶ Drive the whole route in Google Maps</a>
 <div class="routebar" id="routeBar"></div>
 
@@ -187,6 +195,15 @@
   }
   drawLine();
   let checkLayer = L.featureGroup().addTo(map);
+  const mapToggle = document.getElementById('mapToggle');
+  function setMapMin(min) {
+    document.body.classList.toggle('map-min', min);
+    mapToggle.textContent = min ? 'Show map' : 'Hide map';
+    try { localStorage.setItem('m-map-min', min ? '1' : ''); } catch (e) {}
+    if (!min) setTimeout(() => { map.invalidateSize(); fit(); }, 220);
+  }
+  mapToggle.addEventListener('click', () => setMapMin(!document.body.classList.contains('map-min')));
+  try { if (localStorage.getItem('m-map-min')) setMapMin(true); } catch (e) {}
   const fit = () => { const b = group.getBounds(); if (meMarker) b.extend(meMarker.getLatLng()); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
   fit();
 
@@ -225,7 +242,7 @@
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}">📞 Call</a>` : ''}
+              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}">📞 Call</a><button class="btn ghost" type="button" data-copy="${esc(c.phone)}">Copy #</button><a class="btn ghost" href="https://app.calltrackingmetrics.com/calls/desk#filter=${encodeURIComponent(String(c.phone).replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener">CTM</a>` : ''}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
@@ -240,7 +257,15 @@
     });
     buildRoute();
   }
-  checksEl.addEventListener('click', e => {
+  checksEl.addEventListener('click', async e => {
+    const cp = e.target.closest('[data-copy]');
+    if (cp) {
+      const num = String(cp.dataset.copy).replace(/[^0-9+]/g, '');
+      try { await navigator.clipboard.writeText(num); } catch (err) { window.prompt('Copy this number', num); }
+      cp.textContent = 'Copied'; cp.classList.add('copied');
+      setTimeout(() => { cp.textContent = 'Copy #'; cp.classList.remove('copied'); }, 1500);
+      return;
+    }
     const b = e.target.closest('[data-pick]'); if (!b) return;
     const id = b.dataset.pick, pos = b.dataset.pos;
     if (picks[id] === pos) delete picks[id]; else picks[id] = pos;   // tap again to remove
