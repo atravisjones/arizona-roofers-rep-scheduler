@@ -179,7 +179,7 @@
   // Where the rep is right now. Google Maps starts the drive here (origin omitted = device
   // location) and checks are measured against the real drive line: me → stop 1 → stop 2 …
   let me = null;
-  function routePoints() { return [...(me ? [me] : []), ...coordStops]; }
+  function routePoints() { return [...(me ? [me] : []), ...coordStops.filter(st => !stopRan(stops.indexOf(st)))]; }
   // Real road route from OSRM (same router the planner uses): vertices of the drive line,
   // plus distance/time. Falls back to straight segments until it arrives.
   let drive = null; // { verts: [{la,lo}], miles, mins, key }
@@ -358,6 +358,15 @@
     });
   }
   drawStops();
+  let lineLayer = L.featureGroup().addTo(map);
+  let meMarker = null;
+  function drawLine() {
+    lineLayer.clearLayers();
+    if (drive && drive.verts.length > 1) { L.polyline(drive.verts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 5, opacity: .7 }).addTo(lineLayer); return; }
+    const pts = routePoints();
+    if (pts.length > 1) L.polyline(pts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(lineLayer);
+  }
+  drawLine();
   let checkLayer = L.featureGroup().addTo(map);
   const mapToggle = document.getElementById('mapToggle');
   function setMapMin(min) {
