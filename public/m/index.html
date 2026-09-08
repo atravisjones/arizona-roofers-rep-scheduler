@@ -117,7 +117,7 @@
 
 <div class="tabs" id="tabs">
   <button class="tab on" type="button" data-tab="day">Today</button>
-  <button class="tab" type="button" data-tab="adj">Needs adjuster mtg <span id="adjCount"></span></button>
+  <button class="tab" type="button" data-tab="adj">Needs Adjuster <span id="adjCount"></span></button>
 </div>
 
 <div id="tab-adj" hidden>
@@ -709,9 +709,22 @@
         .addTo(adjLayer);
     });
   }
+  // Greater Phoenix: the queue view always opens here; Tucson-area pins are one pinch-out away.
+  const PHX_BOUNDS = L.latLngBounds([33.20, -112.60], [33.80, -111.55]);
   function showAdjOnMap(on) {
-    if (on) { drawAdj(); if (!map.hasLayer(adjLayer)) adjLayer.addTo(map); map.removeLayer(checkLayer); const b = adjLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2), { maxZoom: 12 }); }
-    else { if (map.hasLayer(adjLayer)) map.removeLayer(adjLayer); if (!map.hasLayer(checkLayer)) checkLayer.addTo(map); fit(); }
+    if (on) {
+      drawAdj();
+      if (!map.hasLayer(adjLayer)) adjLayer.addTo(map);
+      // Only the queue on the map: hide the day's checks, meetings and route line.
+      map.removeLayer(checkLayer); group.removeLayer(stopLayer); map.removeLayer(lineLayer);
+      map.fitBounds(PHX_BOUNDS);
+    } else {
+      if (map.hasLayer(adjLayer)) map.removeLayer(adjLayer);
+      if (!map.hasLayer(checkLayer)) checkLayer.addTo(map);
+      if (!group.hasLayer(stopLayer)) stopLayer.addTo(group);
+      if (!map.hasLayer(lineLayer)) lineLayer.addTo(map);
+      fit();
+    }
   }
   const fmtPhone = p => digits(p).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
   function renderAdj(jobs, live) {
