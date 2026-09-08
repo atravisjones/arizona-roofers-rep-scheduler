@@ -47,3 +47,27 @@ retail sales reps.
    (and to Supabase `rep_profiles` section `D2D` so generated tabs carry them).
 2. Add their Roofr user id to `DOOR_KNOCKER_BY_USER_ID` so tagged meetings
    auto-pin. Without it they still get a column and can take meetings by drag.
+
+## Insurance check pickups (added 2026-09-08)
+
+Goal: when Michael (or any door knocker) drives to adjuster meetings, grab the insurance
+checks homeowners are holding on the way there or back.
+
+- **Source:** `api/insurance-checks.js` — every non-deleted job whose `stage` is
+  `INS: Collect ACV` (same query as the production map's Insurance tab). Returns
+  coords, value, phone, owner/assignee, `daysInStage` (latest Collect ACV entry in
+  `stage_timeline`, else job age), `isD2D` (lead_source contains "door"). Edge-cached 5 min.
+  Jobs without stored coords are geocoded client-side (`fillMissingCoords`).
+- **Map overlay** (`LeafletMap` props `checks/showChecks/checkRadiusMiles/pickupIds/onTogglePickup`):
+  `$` pins, green = retail/insurance lead, purple = D2D. Only rendered on the Insurance section.
+  With a rep route drawn, pins within the radius glow and the rest dim. Popup: tel:, Open in
+  Roofr, Add/Remove from route.
+- **Route panel** (`RoutePanel.tsx`): `Checks` toggle (default on for Insurance), radius 2/5/10 mi,
+  "Checks near route" list sorted by straight-line miles off the OSRM geometry
+  (`milesOffRoute`). `Add` folds the check into the rep's stops via greedy cheapest insertion
+  and re-asks OSRM (`buildRouteWithPickups`); the footer shows the with-pickups distance/time
+  delta. Pickups are panel-local state and reset whenever the route changes — nothing is
+  written to Roofr or the schedule.
+- Gotcha: `routeInfo.coordinates` holds EVERY marker on the map (context jobs included) and
+  is index-aligned with `mappableJobs`; the rep's real stops are the entries whose
+  `assignedRepName` matches the route's rep. Re-routing off the full list sends you to Tucson.
