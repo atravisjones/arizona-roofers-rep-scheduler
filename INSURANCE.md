@@ -91,3 +91,13 @@ straight-line miles to that road geometry; the bar shows road miles/minutes. Per
 "+ Before appts / + After appts" fold a check into the route (localStorage per rep+day).
 Call row = tel: dialer, Copy #, and a CTM desk link filtered to the number (CTM has no
 app URL scheme). Map is sticky under the header with a Hide/Show toggle.
+
+### Check outcomes (2026-09-08)
+
+Each check on the phone page has Pickup confirmed / Declined / No answer. Outcomes go to KPI
+Supabase table `insurance_check_outcomes` (job_id, rep, date_key, outcome; service-role RLS only)
+through `api/check-outcomes.js` (GET `?days=N` newest-first, POST `{jobId, rep, date, outcome}`;
+`outcome: null` deletes that rep+job+day). Latest row per job+date wins. Declined / No answer sink
+to the bottom greyed out for that day, hide the Before/After buttons and drop any route pick;
+Confirmed stays active in green. Tap the same button again to undo. Other days show as a
+"History: 9/3 Declined · …" line (last 5, other reps' names in parentheses). The page reads 60 days.
