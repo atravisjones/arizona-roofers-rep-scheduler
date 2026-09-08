@@ -6,6 +6,7 @@
 <title>Insurance Tracker</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -162,6 +163,68 @@
     .toolbar { grid-template-columns: 1fr 1fr; }
     .seg-group.wide { grid-column: 1 / -1; }
   }
+  /* ===== Theme: "Falls" — same tokens as the planner (index.html [data-theme="falls"]) ===== */
+  :root {
+    --bg1: #fffdf8; --bg2: #f7f2e9; --bg3: #f0e8db; --bg4: #dfd3c0;
+    --tx1: #1a1612; --tx2: #3c342d; --tx3: #7a6c60; --tx4: #a8988a;
+    --bd1: #e2d6c4; --bd2: #cabaa4;
+    --brand: #284fed; --brand2: #1c3ac7; --brand-bg: #e8edff;
+    --amber-bg: #fff4d6; --amber-tx: #b05a07; --orange-tx: #c2410c;
+  }
+  body { color: var(--tx1); background-color: #b39a83;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.12 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"), linear-gradient(180deg, #a39d94 0%, #b39a83 30%, #dd8d55 62%, #ee7c28 85%, #f0731a 100%);
+    background-attachment: fixed, fixed; }
+  header { background: var(--bg1); color: var(--tx1); border-bottom: 1px solid var(--bd1); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  header h1 { font-family: 'Archivo Black', 'Arial Black', sans-serif; letter-spacing: .01em; font-weight: 400; }
+  header .sub { color: var(--tx3); opacity: 1; }
+  header .hbtn { border: 1px solid var(--bd2); background: var(--bg1); color: var(--tx2); }
+  #routeLink { background: var(--brand) !important; color: #fff !important; border-color: var(--brand) !important; }
+  .reppick { border-color: var(--bd2); background: var(--bg1); color: var(--tx1); }
+  .reppick option { color: var(--tx1); }
+  h2 { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  @media (min-width: 900px) { h2 { color: var(--tx3); text-shadow: none; } #right { background: var(--bg2); } }
+  .meta, .empty, .hist { color: var(--tx3); }
+  .addr { color: var(--tx2); }
+  .card { background: var(--bg1); border: 1px solid var(--bd1); box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .card.done { background: var(--bg2); }
+  .card.sel { outline-color: var(--brand); box-shadow: 0 0 0 4px rgba(40,79,237,.2); }
+  .btn { background: var(--brand); }
+  .btn.ghost { background: var(--bg2); color: var(--tx2); border-color: var(--bd1); }
+  .btn.out { background: var(--bg3); color: var(--tx2); }
+  .btn.pos { background: var(--amber-bg); color: var(--amber-tx); border: 1px solid #f7d88a; }
+  .btn.pos.on, .btn.pos.on-between { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .num.stop { background: #dc2626; }
+  .tabs .tab { background: var(--bg1); color: var(--tx2); border-color: var(--bd2); }
+  .tabs .tab.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .toolbar { background: var(--bg1); border-color: var(--bd1); }
+  .seg { background: var(--bg3); }
+  .seg .chip { color: var(--tx3); }
+  .seg .chip.on { background: var(--bg1); color: var(--tx1); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .seg-label { color: var(--tx4); }
+  .chip.on { background: var(--brand); border-color: var(--brand); }
+  .routebar { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  @media (min-width: 900px) { .routebar { color: var(--tx3); text-shadow: none; } #left { background: var(--bg1); } #routeBar, #locBar { border-color: var(--bd1); } }
+  #locBtn { background: var(--brand) !important; }
+  #mapWrap { background: var(--bg3); }
+  #map .leaflet-tile-pane { filter: sepia(.25) saturate(1.05); }
+  #cal { background: var(--bg1); }
+  #cal .calhead b { font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; }
+  #cal .calhead button { border-color: var(--bd2); background: var(--bg1); color: var(--tx2); }
+  #cal .day { background: var(--bg2); border-color: var(--bd1); color: var(--tx2); }
+  #cal .day.has { background: var(--bg1); border-color: #b9c6ff; color: var(--tx1); }
+  #cal .day.sel { background: var(--brand); border-color: var(--brand); color: #fff; }
+  #cal .day.sel .n { color: var(--brand); }
+  #cal .day.today { outline-color: #ee7c28; }
+  #cal .dow, #cal .calmsg { color: var(--tx3); }
+  footer { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  footer a { color: var(--bg1); }
+  @media (min-width: 900px) { footer, footer a { color: var(--tx4); text-shadow: none; } }
+  #gate { background: #b39a83; background-image: linear-gradient(180deg, #a39d94 0%, #b39a83 30%, #dd8d55 62%, #ee7c28 85%, #f0731a 100%); }
+  .gatebox { background: var(--bg1); border: 1px solid var(--bd1); }
+  .gatebox h2 { font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; color: var(--tx1); text-shadow: none; }
+  .gatebox p { color: var(--tx3); }
+  .party .box { background: var(--bg1); }
+  .party .amt { color: var(--brand); }
 </style>
 </head>
 <body>
