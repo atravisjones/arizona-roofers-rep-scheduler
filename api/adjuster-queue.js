@@ -56,6 +56,7 @@ function parseAdjuster(notes) {
     break;
   }
   if (!phone) return null;
+  name = name.replace(/^[^A-Za-z]+/, '').replace(/\s*[-–|]\s*\S+@\S+$/, '').trim();
   return { name: name.slice(0, 60), phone };
 }
 
@@ -96,6 +97,8 @@ export default async function handler(req, res) {
       const list = contacts && Array.isArray(contacts.data) ? contacts.data : [];
       const insC = list.map(x => x.contact || {}).find(c => c.contact_type === 'insurance' && !c.deleted_at);
       if (insC) out.carrier = { name: insC.name || insC.company_name || insC.first_name || '', phone: digits(insC.phone), email: insC.email || '' };
+      // Notes that just repeat the carrier's number are not an adjuster.
+      if (out.adjuster && out.carrier && out.adjuster.phone === out.carrier.phone) out.adjuster = null;
       return out;
     };
     const results = [];
