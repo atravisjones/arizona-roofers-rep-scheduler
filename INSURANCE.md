@@ -83,3 +83,11 @@ fetches `/api/insurance-checks`, ranks checks by miles from the nearest stop (2/
 gives every stop and check a Google Maps Navigate link (`maps/dir/?api=1&destination=`), checks a
 `tel:` Call and Roofr link, plus a whole-route link with `waypoints=`. The link is a snapshot —
 re-share after moving appointments. Nothing on the page writes anywhere.
+
+Phone page updates (2026-09-08, later): the route starts from the phone's location (Google
+Maps link omits `origin`; page asks for geolocation), the drive line is a real OSRM road
+route (me → [checks before] → appointments → [checks after]) and checks are ranked by
+straight-line miles to that road geometry; the bar shows road miles/minutes. Per-check
+"+ Before appts / + After appts" fold a check into the route (localStorage per rep+day).
+Call row = tel: dialer, Copy #, and a CTM desk link filtered to the number (CTM has no
+app URL scheme). Map is sticky under the header with a Hide/Show toggle.
