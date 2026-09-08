@@ -45,6 +45,7 @@
   .btn.copied { background: #d1fae5; color: #065f46; }
   .btn.roofr { background: #2C9BD6; color: #fff; }
   .btn.pos.on-between { background: #b45309; color: #fff; }
+  .toast { font-size: 18px; letter-spacing: .02em; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #18181b; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; z-index: 2000; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
@@ -112,30 +113,31 @@
   // (per its apple-app-site-association); Android: Chrome intent by package name (Play fallback).
   // CTM has no dial-this-number scheme, so Call copies the number first and he pastes it in the dialer.
   const isAndroid = /android/i.test(navigator.userAgent);
+  // Verified on the app itself (2026-09-08, CTM Phone 2.0.22 manifest + Expo routes): the app
+  // registers the custom scheme ctmphone:// and its dialpad route is /call, so ctmphone://call
+  // opens the app directly on the dialpad. No route or parameter carries a number, and the
+  // dialpad display has no paste, so the number is shown big in the toast to key in.
   const CTM_WEB = 'https://app.calltrackingmetrics.com/home';
-  // Android: launch by package (no browser fallback, so a miss does nothing instead of leaving the page);
-  // try the current CTM Phone package first, then the older CTM Agent package.
-  const CTM_INTENTS = [
-    'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;end',
-    'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.ctmPhone;end',
-  ];
+  const CTM_ANDROID = 'intent://call#Intent;scheme=ctmphone;package=com.calltrackingmetrics.phone;S.browser_fallback_url=' + encodeURIComponent(CTM_WEB) + ';end';
+  const CTM_IOS = 'ctmphone://call';
   function openCTM() {
-    const startedHidden = document.visibilityState === 'hidden';
     let left = false;
     const onHide = () => { left = true; };
     document.addEventListener('visibilitychange', onHide, { once: true });
     window.addEventListener('pagehide', onHide, { once: true });
     window.addEventListener('blur', onHide, { once: true });
     if (isAndroid) {
-      window.location.href = CTM_INTENTS[0];
-      setTimeout(() => { if (!left) window.location.href = CTM_INTENTS[1]; }, 900);
+      window.location.href = CTM_ANDROID;
     } else {
-      window.location.href = CTM_WEB;   // universal link: iOS opens CTM Phone if it claims /home
+      window.location.href = CTM_IOS;
+      // iOS: if the scheme is ignored (app missing), fall back to the universal link
+      setTimeout(() => { if (!left) window.location.href = CTM_WEB; }, 1200);
     }
     setTimeout(() => {
-      if (!left && !startedHidden) toast('CTM app did not open. Number is copied — open CTM Phone and paste it in the dialer.');
-    }, 2200);
+      if (!left) toast('CTM app did not open — open CTM Phone and dial ' + lastNum);
+    }, 2500);
   }
+  let lastNum = '';
   const digits = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; };
   // CTM click-to-call: opens the softphone with the number filled in (the CTM Phone app takes
   // the link over when it's installed and claims app.calltrackingmetrics.com; otherwise the browser softphone).
@@ -217,7 +219,7 @@
     let t = document.getElementById('toast');
     if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
     t.textContent = msg; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 12000);
   }
 
   const prettyDate = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : '';
@@ -385,7 +387,8 @@
       // copy inside the click (user gesture) so the clipboard write is allowed, then let the link open CTM
       const num = callA.dataset.num || '';
       try { navigator.clipboard.writeText(num); } catch (err) {}
-      toast('Copied ' + num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') + ' — paste it in the CTM dialer');
+      lastNum = num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+      toast('Dial ' + lastNum + ' in CTM');
       called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400);
       openCTM();
       return;
