@@ -355,7 +355,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
 
     const routeInfoForMap = (pickupRoute && pickupIds.size > 0) ? pickupRoute.routeInfo : baseRouteInfo;
 
-    // No-login phone page for the rep: /m/?rep=&date=&s=<stops>. The stops travel IN the link
+    // No-login phone page for the rep: /insurance-tracker/?rep=&date=&s=<stops>. The stops travel IN the link
     // (name, address, time, coords) so the page shows exactly this column — manual placements
     // included — and only fetches the public checks feed itself.
     const shareDay = useCallback(async () => {
@@ -372,7 +372,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             }));
         const y = selectedDate.getFullYear(), m = String(selectedDate.getMonth() + 1).padStart(2, '0'), d = String(selectedDate.getDate()).padStart(2, '0');
         const packed = btoa(unescape(encodeURIComponent(JSON.stringify(stops)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        const url = `${window.location.origin}/m/?rep=${encodeURIComponent(routeData.repName)}&date=${y}-${m}-${d}&s=${packed}`;
+        const url = `${window.location.origin}/insurance-tracker/?rep=${encodeURIComponent(routeData.repName)}&date=${y}-${m}-${d}&s=${packed}`;
         try { await navigator.clipboard.writeText(url); } catch { window.prompt('Copy this link', url); }
         setShareState('copied');
         setTimeout(() => setShareState('idle'), 2500);
