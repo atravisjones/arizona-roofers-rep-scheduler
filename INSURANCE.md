@@ -101,3 +101,13 @@ through `api/check-outcomes.js` (GET `?days=N` newest-first, POST `{jobId, rep, 
 to the bottom greyed out for that day, hide the Before/After buttons and drop any route pick;
 Confirmed stays active in green. Tap the same button again to undo. Other days show as a
 "History: 9/3 Declined · …" line (last 5, other reps' names in parentheses). The page reads 60 days.
+
+Phone page v3 (2026-09-08, late): card tap = highlight only (no zoom). Buttons per check are
+Call (tel:, the phone decides which app answers it), Navigate, Roofr (Roofr blue #2C9BD6).
+Dispositions appear only after Call is tapped (localStorage `m-called:<rep>:<date>`):
++ Before appts / + Between appts / + After appts (any of these = outcome `confirmed` + route
+pick; Between slots into the cheapest gap between appointments) and Declined / No answer.
+The Drive button is `https://www.google.com/maps/dir//stop1/stop2/...` so Google fills the
+origin with "Your location". CTM: `calls/phone?to_number=` opens the softphone but does NOT
+populate the number (checked live 2026-09-08), and no app URL scheme exists, so tel: is the
+best hand-off; if CTM Phone is his default calling app the phone routes tel: to it.
