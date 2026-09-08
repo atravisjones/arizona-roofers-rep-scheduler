@@ -80,6 +80,8 @@
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
+  .sortrow { flex-wrap: wrap; align-items: center; }
+  .sortlbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #71717a; font-weight: 700; margin-right: 2px; }
   .chip { border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
   .chip.on { background: var(--on, #4f46e5); border-color: var(--on, #4f46e5); color: #fff; }
   .value { color: #047857; font-weight: 800; }
@@ -122,6 +124,13 @@
 <section>
   <h2><span>Book an adjuster meeting <span id="adjSub"></span></span></h2>
   <div class="meta" style="margin:-4px 0 10px">Jobs in “Ins: Needs Adjuster Meeting”. Call the customer, then the adjuster or carrier to get the meeting on the calendar.</div>
+  <div class="chips sortrow" data-for="adj" style="margin:-2px 0 10px">
+    <span class="sortlbl">Sort</span>
+    <button class="chip on" data-sort="old">Waiting longest</button>
+    <button class="chip" data-sort="new">Newest</button>
+    <button class="chip" data-sort="rep">Rep</button>
+    <button class="chip" data-sort="name">Name</button>
+  </div>
   <div id="adj"><div class="empty">Loading…</div></div>
 </section>
 </div>
@@ -146,6 +155,14 @@
     <button class="chip on" data-kind="all">All checks</button>
     <button class="chip" data-kind="retail">Retail</button>
     <button class="chip" data-kind="d2d" style="--on:#8b5cf6">Door knocker</button>
+  </div>
+  <div class="chips sortrow" data-for="check" style="margin:-4px 0 10px">
+    <span class="sortlbl">Sort</span>
+    <button class="chip on" data-sort="near">Nearest</button>
+    <button class="chip" data-sort="new">Newest</button>
+    <button class="chip" data-sort="old">Waiting longest</button>
+    <button class="chip" data-sort="rep">Rep</button>
+    <button class="chip" data-sort="name">Name</button>
   </div>
   <div id="checks"></div>
 </section>
@@ -517,6 +534,17 @@
   let checks = [];
   let radius = 5;
   let kind = 'all';   // 'all' | 'retail' | 'd2d' — checks filter by lead source
+  // Sort per list. near = distance off route (checks only, falls through to the default order),
+  // new/old = days in stage, rep = job owner A-Z, name = customer A-Z.
+  const sorts = { check: 'near', adj: 'old' };
+  const sortBy = (mode, a, b) => {
+    const str = (x, k) => String(x[k] || '').toLowerCase();
+    if (mode === 'new') return (a.daysInStage ?? 1e9) - (b.daysInStage ?? 1e9);
+    if (mode === 'old') return (b.daysInStage ?? -1) - (a.daysInStage ?? -1);
+    if (mode === 'rep') return str(a, 'jobOwner').localeCompare(str(b, 'jobOwner')) || str(a, 'customerName').localeCompare(str(b, 'customerName'));
+    if (mode === 'name') return str(a, 'customerName').localeCompare(str(b, 'customerName'));
+    return 0;
+  };
   let selectedId = null;
   const checkMarkers = {};
   // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
@@ -566,7 +594,7 @@
       if (wider) setRadiusChip(wider);
     }
     const rows = within(radius)
-      .sort((a, b) => (isDead(a.c) - isDead(b.c)) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
+      .sort((a, b) => (isDead(a.c) - isDead(b.c)) || sortBy(sorts.check, a.c, b.c) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     const live = rows.filter(x => !isDead(x.c));
     document.getElementById('checkCount').textContent = '· ' + live.length + (live.length ? ' · ' + money(live.reduce((s, x) => s + (x.c.value || 0), 0)) : '') + (rows.length > live.length ? ` · ${rows.length - live.length} done` : '');
     checksEl.innerHTML = rows.length ? '' : `<div class="empty">${routePoints().length ? 'No checks within ' + radius + ' mi of your route. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
@@ -600,8 +628,8 @@
     buildRoute();
   }
   // Bring a check's card into view just under the sticky header + map.
-  function scrollToCard(id) {
-    const card = checksEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (!card) return;
+  function scrollToCard(id, root) {
+    const card = (root || checksEl).querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (!card) return;
     const top = card.getBoundingClientRect().top + window.scrollY - document.getElementById('mapWrap').getBoundingClientRect().bottom - 8;
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
@@ -664,15 +692,35 @@
     document.querySelectorAll('#tabs .tab').forEach(x => x.classList.toggle('on', x === b));
     document.getElementById('tab-day').hidden = b.dataset.tab !== 'day';
     document.getElementById('tab-adj').hidden = b.dataset.tab !== 'adj';
+    showAdjOnMap(b.dataset.tab === 'adj');
   });
+  // Needs-adjuster jobs get their own orange "A" pins, shown only while that tab is open (the
+  // check pins hide so the map reads as one list at a time). Tap a pin -> its card.
+  const adjLayer = L.featureGroup();
+  let adjSel = null;
+  function drawAdj() {
+    adjLayer.clearLayers();
+    const jobs = adjData ? (adjData.jobs || []) : [];
+    jobs.forEach(j => {
+      if (j.lat == null || j.lon == null) return;
+      const sel = adjSel === j.jobId;
+      L.marker([j.lat, j.lon], { icon: pin(sel ? '#f59e0b' : '#b45309', 'A', sel ? 34 : 24), zIndexOffset: sel ? 1500 : 800 })
+        .on('click', () => { adjSel = j.jobId; drawAdj(); renderAdj(jobs, !!adjData.live); scrollToCard(j.jobId, adjEl); })
+        .addTo(adjLayer);
+    });
+  }
+  function showAdjOnMap(on) {
+    if (on) { drawAdj(); if (!map.hasLayer(adjLayer)) adjLayer.addTo(map); map.removeLayer(checkLayer); const b = adjLayer.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.2), { maxZoom: 12 }); }
+    else { if (map.hasLayer(adjLayer)) map.removeLayer(adjLayer); if (!map.hasLayer(checkLayer)) checkLayer.addTo(map); fit(); }
+  }
   const fmtPhone = p => digits(p).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
   function renderAdj(jobs, live) {
     document.getElementById('adjCount').textContent = jobs.length || '';
     document.getElementById('adjSub').textContent = jobs.length ? `· ${jobs.length}` : '';
     if (!jobs.length) { adjEl.innerHTML = '<div class="empty">Nothing waiting on an adjuster meeting.</div>'; return; }
-    jobs.sort((a, b) => (b.daysInStage || 0) - (a.daysInStage || 0));
+    jobs.sort((a, b) => sortBy(sorts.adj, a, b) || (b.daysInStage || 0) - (a.daysInStage || 0));
     adjEl.innerHTML = jobs.map(j => `
-      <div class="card">
+      <div class="card${adjSel === j.jobId ? ' sel' : ''}" data-id="${esc(j.jobId)}">
         <div class="num adj">${j.daysInStage != null ? j.daysInStage + 'd' : '?'}</div>
         <div class="body">
           <div class="name">${esc(j.customerName || 'Unknown')}</div>
@@ -690,10 +738,24 @@
       </div>`).join('') + (live ? '' : '<div class="empty">Adjuster / carrier numbers unavailable right now (Roofr session). Customer numbers still work.</div>');
   }
   adjEl.addEventListener('click', e => {
-    const b = e.target.closest('[data-call]'); if (!b) return;
-    startCall('', b.dataset.num || '');
+    const b = e.target.closest('[data-call]');
+    if (b) { startCall('', b.dataset.num || ''); return; }
+    if (e.target.closest('a, button')) return;
+    const card = e.target.closest('.card[data-id]'); if (!card) return;
+    adjSel = adjSel === card.dataset.id ? null : card.dataset.id;
+    renderAdj(adjData ? adjData.jobs || [] : [], !!(adjData && adjData.live)); drawAdj();
   });
-  fetch('/api/adjuster-queue').then(r => r.json()).then(d => renderAdj(d.jobs || [], !!d.live)).catch(() => { adjEl.innerHTML = '<div class="empty">Could not load the queue.</div>'; });
+  let adjData = null;
+  fetch('/api/adjuster-queue').then(r => r.json()).then(d => {
+    adjData = d; renderAdj(d.jobs || [], !!d.live);
+    geocodeMissing(d.jobs || [], () => { if (map.hasLayer(adjLayer)) drawAdj(); });
+  }).catch(() => { adjEl.innerHTML = '<div class="empty">Could not load the queue.</div>'; });
+  document.querySelectorAll('.sortrow').forEach(row => row.addEventListener('click', e => {
+    const b = e.target.closest('[data-sort]'); if (!b) return;
+    sorts[row.dataset.for] = b.dataset.sort;
+    row.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === b));
+    if (row.dataset.for === 'adj') { if (adjData) renderAdj(adjData.jobs || [], !!adjData.live); } else render();
+  }));
 
   document.getElementById('kind').addEventListener('click', e => {
     const b = e.target.closest('[data-kind]'); if (!b) return;
