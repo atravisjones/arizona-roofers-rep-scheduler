@@ -97,7 +97,48 @@
   .btn.adj { background: #b45309; }
   .btn.carrier { background: #52525b; }
   .num.adj { background: #b45309; font-size: 11px; }
-  footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; }
+  footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+
+  /* ---- Touch + phone ---- */
+  button, .btn, .chip, .tab, a.btn { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .btn { min-height: 40px; }
+  header { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  header h1, header .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #map { height: clamp(200px, 32vh, 320px); }
+  /* Chip rows scroll sideways instead of stacking three rows deep on a phone */
+  .chips { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { white-space: nowrap; flex: 0 0 auto; }
+  .sortrow { flex-wrap: nowrap; }
+  @media (max-width: 480px) {
+    h2 { flex-wrap: wrap; gap: 6px; }
+    h2 .chips { width: 100%; }
+    .card { padding: 10px; gap: 10px; }
+    .actions { gap: 6px; }
+    .btn { padding: 8px 10px; font-size: 12.5px; }
+    header .hbtn { padding: 6px 8px; }
+  }
+  @media (max-height: 500px) and (orientation: landscape) { #map { height: 160px; } }
+
+  /* ---- Tablet / desktop: map or calendar pinned on the left, lists scroll on the right ---- */
+  @media (min-width: 900px) {
+    body { display: grid; grid-template-columns: minmax(360px, 42%) 1fr; column-gap: 0; align-content: start; }
+    header { grid-column: 1 / -1; }
+    #mapWrap, #routeBar, #locBar { grid-column: 1; }
+    #tabs, #tab-adj, #tab-day, footer { grid-column: 2; }
+    #mapWrap { position: sticky; top: 52px; align-self: start; box-shadow: 2px 0 8px rgba(0,0,0,.12); }
+    #map { height: calc(100vh - 100px); max-height: none; }
+    body.map-min #map { height: 0; }
+    #cal { min-height: calc(100vh - 100px); padding: 16px 18px; }
+    #cal .day { height: 56px; font-size: 15px; }
+    /* Route / location bar rides just under the pinned map */
+    #routeBar, #locBar { position: sticky; top: calc(100vh - 48px); margin: 0; padding: 8px 12px; background: #fff; border-top: 1px solid #e4e4e7; z-index: 1001; min-height: 48px; display: flex; align-items: center; justify-content: center; }
+    #routeBar:empty { display: none; }
+    #tabs { padding-top: 12px; }
+    section { padding: 12px 20px 4px; }
+    .tabs { padding-left: 20px; padding-right: 20px; }
+    #kind, .sortrow { flex-wrap: wrap; overflow: visible; }
+  }
 </style>
 </head>
 <body>
@@ -452,12 +493,14 @@
   function setView(v) {
     const cal = v === 'cal';
     document.body.classList.toggle('map-min', cal);
-    document.getElementById('map').style.height = cal ? '0px' : '240px';
+    document.getElementById('map').style.height = cal ? '0px' : '';   // '' = let the CSS (phone vs tablet) size it
     calEl.hidden = !cal;
     mapToggle.textContent = cal ? '🗺 Map' : '📅 Calendar';
     if (cal) renderCal(); else setTimeout(() => { map.invalidateSize(); fit(); }, 220);
   }
   mapToggle.addEventListener('click', () => setView(calEl.hidden ? 'cal' : 'map'));
+  // Rotation / split-screen: let Leaflet re-measure, then refit whichever layer set is showing.
+  let rsz; window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => { map.invalidateSize(); if (map.hasLayer(adjLayer)) map.fitBounds(PHX_BOUNDS); else fit(); }, 250); });
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   let calMonth = (date || todayStr).slice(0, 7);
   const calCounts = {};   // 'YYYY-MM' -> { 'YYYY-MM-DD': n }
