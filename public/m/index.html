@@ -26,6 +26,7 @@
   .meta { font-size: 13px; color: #52525b; margin-top: 2px; }
   .addr { font-size: 13px; color: #3f3f46; margin-top: 2px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  button.btn { border: 0; font: inherit; cursor: pointer; }
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; color: #fff; background: #4f46e5; }
   .btn.call { background: #059669; }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
@@ -35,6 +36,9 @@
   .chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
   .value { color: #047857; font-weight: 800; }
   .empty { color: #71717a; font-size: 14px; padding: 8px 4px 16px; }
+  .btn.pos { background: #f59e0b; color: #1c1917; }
+  .btn.pos.on { background: #b45309; color: #fff; }
+  .routebar { margin: 8px 12px 0; font-size: 12px; color: #52525b; text-align: center; }
   footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; }
 </style>
 </head>
@@ -45,6 +49,7 @@
 </header>
 <div id="map"></div>
 <a id="routeLink" class="btn big" href="#" target="_blank" rel="noopener" hidden>▶ Drive the whole route in Google Maps</a>
+<div class="routebar" id="routeBar"></div>
 
 <section>
   <h2>Appointments <span id="stopCount"></span></h2>
@@ -95,10 +100,21 @@
   document.getElementById('subtitle').textContent = prettyDate || 'Today';
   document.title = rep + ' · ' + (prettyDate || 'My Day');
 
-  // Whole-route link: first stop → last stop with the middle ones as waypoints
-  if (stops.length >= 1) {
+  // Pickups the rep folds into the Google route: { jobId: 'before' | 'after' }, remembered per day on this phone.
+  const PICK_KEY = 'm-route-picks:' + rep + ':' + date;
+  let picks = {};
+  try { picks = JSON.parse(localStorage.getItem(PICK_KEY) || '{}') || {}; } catch (e) { picks = {}; }
+  const savePicks = () => { try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) {} };
+
+  // Whole-route link: [checks before] → appointments in order → [checks after]
+  function buildRoute() {
+    const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
+    const before = Object.keys(picks).filter(id => picks[id] === 'before' && byId[id]).map(id => byId[id].address);
+    const after = Object.keys(picks).filter(id => picks[id] === 'after' && byId[id]).map(id => byId[id].address);
+    const addrs = [...before, ...stops.map(s => s.a), ...after];
     const a = document.getElementById('routeLink');
-    const addrs = stops.map(s => s.a);
+    const bar = document.getElementById('routeBar');
+    if (!addrs.length) { a.hidden = true; bar.textContent = ''; return; }
     let url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving';
     if (addrs.length === 1) url += '&destination=' + encodeURIComponent(addrs[0]);
     else {
@@ -106,6 +122,9 @@
       if (addrs.length > 2) url += '&waypoints=' + encodeURIComponent(addrs.slice(1, -1).join('|'));
     }
     a.href = url; a.hidden = false;
+    const n = before.length + after.length;
+    a.textContent = n ? `▶ Drive the route · ${stops.length} appt${stops.length === 1 ? '' : 's'} + ${n} check${n === 1 ? '' : 's'}` : '▶ Drive the whole route in Google Maps';
+    bar.textContent = n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'Call a check, then add it before or after your appointments.';
   }
 
   // Stops
@@ -141,6 +160,7 @@
   // Checks
   let checks = [];
   let radius = 5;
+  buildRoute();
   const checksEl = document.getElementById('checks');
   function render() {
     checkLayer.clearLayers();
@@ -150,7 +170,7 @@
         if (c.lat != null && c.lon != null) coordStops.forEach((s, i) => { const m = miles({ la: c.lat, lo: c.lon }, s); if (d == null || m < d) { d = m; near = stops.indexOf(s) + 1; } });
         return { c, d, near };
       })
-      .filter(x => coordStops.length === 0 ? radius >= 999 : (x.d != null && x.d <= radius))
+      .filter(x => picks[x.c.jobId] || (coordStops.length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
       .sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     document.getElementById('checkCount').textContent = '· ' + rows.length + (rows.length ? ' · ' + money(rows.reduce((s, x) => s + (x.c.value || 0), 0)) : '');
     checksEl.innerHTML = rows.length ? '' : `<div class="empty">${coordStops.length ? 'No checks within ' + radius + ' mi of your stops. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
@@ -169,12 +189,23 @@
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
+            <div class="actions">
+              <button class="btn pos${picks[c.jobId] === 'before' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="before">${picks[c.jobId] === 'before' ? '✓ Before appts' : '+ Before appts'}</button>
+              <button class="btn pos${picks[c.jobId] === 'after' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="after">${picks[c.jobId] === 'after' ? '✓ After appts' : '+ After appts'}</button>
+            </div>
           </div>
         </div>`);
       if (c.lat != null && c.lon != null) L.marker([c.lat, c.lon], { icon: pin(c.isD2D ? '#8b5cf6' : '#059669', '$', 22) })
         .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<a href="${tel(c.phone)}">${esc(c.phone)}</a>` : ''}`).addTo(checkLayer);
     });
+    buildRoute();
   }
+  checksEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    const id = b.dataset.pick, pos = b.dataset.pos;
+    if (picks[id] === pos) delete picks[id]; else picks[id] = pos;   // tap again to remove
+    savePicks(); render();
+  });
   document.getElementById('radius').addEventListener('click', e => {
     const b = e.target.closest('[data-mi]'); if (!b) return;
     radius = Number(b.dataset.mi);
