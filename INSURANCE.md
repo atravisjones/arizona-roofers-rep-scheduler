@@ -119,3 +119,19 @@ So Call = copy the 10-digit number to the clipboard inside the click, show a toa
 iOS `https://app.calltrackingmetrics.com/home` (universal link), Android
 `intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;...;end` (web fallback).
 He pastes into the CTM dialer. Tapping Call is what unlocks the disposition row.
+
+CTM hand-off — VERIFIED ON DEVICE 2026-09-08 (Travis's S22 Ultra over ADB, CTM Phone 2.0.22):
+- The app's manifest registers custom schemes `ctmphone://` and `exp+ctm-phone://` (MainActivity),
+  https app links for `app.calltrackingmetrics.com/home` and `app.ctm.com/home` (autoVerify), and
+  NO `tel:` filter. Expo Router routes include `/(tabs)/call` (the dialpad) — so `ctmphone://call`
+  opens the app directly on the dialpad. Tested 10 param/path shapes (`?number=`, `?phone=`,
+  `?to=`, `/call/<digits>`, `/dial/<digits>`, …): none prefill the number; unknown paths render
+  Expo's "Unmatched Route". The dialpad number display has no paste on long-press.
+- The https link failed earlier because "Open supported links" was DISABLED for the app on the
+  phone; enabled via `pm set-app-links-user-selection --user 0 --package com.calltrackingmetrics.phone true app.calltrackingmetrics.com app.ctm.com`.
+- Page: Android uses `intent://call#Intent;scheme=ctmphone;package=com.calltrackingmetrics.phone;S.browser_fallback_url=…;end`,
+  iOS uses `ctmphone://call` with the `/home` universal link as fallback. Button label carries the
+  number (`📞 CTM · 602-332-0548`); clipboard copy still happens. Verified by tapping the button in
+  Chrome on the phone: toast "Copied to clipboard", CTM Phone foreground on Dialpad.
+- APK pulled to inspect: `adb pull $(pm path …)` then read `assets/index.android.bundle` (Hermes;
+  strings still greppable). Test page for future candidates: `/m/ctm-test.html`.
