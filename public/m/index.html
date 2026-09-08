@@ -80,6 +80,14 @@
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
+  /* Segmented controls: one toolbar card per list, every row full-width and centred */
+  .toolbar { background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; padding: 10px 12px; margin: 0 0 12px; display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .seg-group { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .seg-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #71717a; font-weight: 700; text-align: center; }
+  .seg { display: flex; background: #eeeef1; border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg .chip { flex: 1 1 0; min-width: 0; border: 0; background: transparent; border-radius: 8px; padding: 8px 4px; font-size: 12px; font-weight: 700; color: #52525b; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+  .seg .chip.on { background: #fff; color: #18181b; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+  .seg .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 8px; }
   .sortrow { flex-wrap: wrap; align-items: center; }
   .sortlbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #71717a; font-weight: 700; margin-right: 2px; }
   .chip { border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
@@ -106,10 +114,9 @@
   header h1, header .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #map { height: clamp(200px, 32vh, 320px); }
   /* Chip rows scroll sideways instead of stacking three rows deep on a phone */
-  .chips { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+  .chips:not(.seg) { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
   .chips::-webkit-scrollbar { display: none; }
   .chip { white-space: nowrap; flex: 0 0 auto; }
-  .sortrow { flex-wrap: nowrap; }
   @media (max-width: 480px) {
     h2 { flex-wrap: wrap; gap: 6px; }
     h2 .chips { width: 100%; }
@@ -135,7 +142,8 @@
     #tabs { padding-top: 12px; }
     section { padding: 12px 20px 4px; }
     .tabs { padding-left: 20px; padding-right: 20px; }
-    #kind, .sortrow { flex-wrap: wrap; overflow: visible; }
+    .toolbar { grid-template-columns: 1fr 1fr; }
+    .seg-group.wide { grid-column: 1 / -1; }
   }
 </style>
 </head>
@@ -167,12 +175,16 @@
 <section>
   <h2><span>Book an adjuster meeting <span id="adjSub"></span></span></h2>
   <div class="meta" style="margin:-4px 0 10px">Jobs in “Ins: Needs Adjuster Meeting”. Call the customer, then the adjuster or carrier to get the meeting on the calendar.</div>
-  <div class="chips sortrow" data-for="adj" style="margin:-2px 0 10px">
-    <span class="sortlbl">Sort</span>
-    <button class="chip on" data-sort="old">Waiting longest</button>
-    <button class="chip" data-sort="new">Newest</button>
-    <button class="chip" data-sort="rep">Rep</button>
-    <button class="chip" data-sort="name">Name</button>
+  <div class="toolbar">
+    <div class="seg-group wide">
+      <span class="seg-label">Sort</span>
+      <div class="seg sortrow" data-for="adj">
+        <button class="chip on" data-sort="old">Waiting longest</button>
+        <button class="chip" data-sort="new">Newest</button>
+        <button class="chip" data-sort="rep">Rep</button>
+        <button class="chip" data-sort="name">Name</button>
+      </div>
+    </div>
   </div>
   <div id="adj"><div class="empty">Loading…</div></div>
 </section>
@@ -185,27 +197,35 @@
 </section>
 
 <section>
-  <h2>
-    <span>Checks to pick up <span id="checkCount"></span></span>
-    <span class="chips" id="radius">
-      <button class="chip" data-mi="2">2 mi</button>
-      <button class="chip on" data-mi="5">5 mi</button>
-      <button class="chip" data-mi="10">10 mi</button>
-      <button class="chip" data-mi="999">All</button>
-    </span>
-  </h2>
-  <div class="chips" id="kind" style="margin:-2px 0 10px">
-    <button class="chip on" data-kind="all">All checks</button>
-    <button class="chip" data-kind="retail">Retail</button>
-    <button class="chip" data-kind="d2d" style="--on:#8b5cf6">Door knocker</button>
-  </div>
-  <div class="chips sortrow" data-for="check" style="margin:-4px 0 10px">
-    <span class="sortlbl">Sort</span>
-    <button class="chip on" data-sort="near">Nearest</button>
-    <button class="chip" data-sort="new">Newest</button>
-    <button class="chip" data-sort="old">Waiting longest</button>
-    <button class="chip" data-sort="rep">Rep</button>
-    <button class="chip" data-sort="name">Name</button>
+  <h2><span>Checks to pick up <span id="checkCount"></span></span></h2>
+  <div class="toolbar">
+    <div class="seg-group">
+      <span class="seg-label">Within</span>
+      <div class="seg" id="radius">
+        <button class="chip" data-mi="2">2 mi</button>
+        <button class="chip on" data-mi="5">5 mi</button>
+        <button class="chip" data-mi="10">10 mi</button>
+        <button class="chip" data-mi="999">All</button>
+      </div>
+    </div>
+    <div class="seg-group">
+      <span class="seg-label">Type</span>
+      <div class="seg" id="kind">
+        <button class="chip on" data-kind="all">All</button>
+        <button class="chip" data-kind="retail"><i class="dot" style="background:#059669"></i>Retail</button>
+        <button class="chip" data-kind="d2d"><i class="dot" style="background:#8b5cf6"></i>Door knocker</button>
+      </div>
+    </div>
+    <div class="seg-group wide">
+      <span class="seg-label">Sort</span>
+      <div class="seg sortrow" data-for="check">
+        <button class="chip on" data-sort="near">Nearest</button>
+        <button class="chip" data-sort="new">Newest</button>
+        <button class="chip" data-sort="old">Waiting</button>
+        <button class="chip" data-sort="rep">Rep</button>
+        <button class="chip" data-sort="name">Name</button>
+      </div>
+    </div>
   </div>
   <div id="checks"></div>
 </section>
