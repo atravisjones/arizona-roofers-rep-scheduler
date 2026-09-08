@@ -107,10 +107,37 @@
   // location) and checks are measured against the real drive line: me → stop 1 → stop 2 …
   let me = null;
   function routePoints() { return [...(me ? [me] : []), ...coordStops]; }
+  // Real road route from OSRM (same router the planner uses): vertices of the drive line,
+  // plus distance/time. Falls back to straight segments until it arrives.
+  let drive = null; // { verts: [{la,lo}], miles, mins, key }
+  let driveTimer = null;
+  function pickedStops() {
+    const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
+    const pos = p => Object.keys(picks).filter(id => picks[id] === p && byId[id] && byId[id].lat != null).map(id => ({ la: byId[id].lat, lo: byId[id].lon }));
+    return { before: pos('before'), after: pos('after') };
+  }
+  function drivePoints() { const p = pickedStops(); return [...(me ? [me] : []), ...p.before, ...coordStops, ...p.after]; }
+  function refreshDrive() {
+    clearTimeout(driveTimer);
+    driveTimer = setTimeout(async () => {
+      const pts = drivePoints();
+      if (pts.length < 2) { drive = null; drawLine(); render(); return; }
+      const key = pts.map(p => p.la.toFixed(4) + ',' + p.lo.toFixed(4)).join(';');
+      if (drive && drive.key === key) return;
+      try {
+        const url = 'https://router.project-osrm.org/route/v1/driving/' + pts.map(p => p.lo + ',' + p.la).join(';') + '?overview=full&geometries=geojson';
+        const d = await (await fetch(url)).json();
+        const r = d.routes && d.routes[0];
+        if (!r) throw new Error('no route');
+        drive = { key, verts: r.geometry.coordinates.map(c => ({ la: c[1], lo: c[0] })), miles: r.distance * 0.000621371, mins: r.duration / 60 };
+      } catch (e) { drive = null; }
+      drawLine(); render();
+    }, 150);
+  }
   // Straight-line miles from a point to the nearest piece of the drive line (segment distance
   // in a local flat projection — plenty for "is this on my way").
   function milesOffRoute(pt) {
-    const pts = routePoints();
+    const pts = (drive && drive.verts.length > 1) ? drive.verts : routePoints();
     if (!pts.length) return null;
     const kx = 69.17 * Math.cos(pt.la * Math.PI / 180), ky = 69.17;
     const P = { x: pt.lo * kx, y: pt.la * ky };
@@ -157,7 +184,7 @@
     a.href = url; a.hidden = false;
     const n = before.length + after.length;
     a.textContent = n ? `▶ Drive the route · ${stops.length} appt${stops.length === 1 ? '' : 's'} + ${n} check${n === 1 ? '' : 's'}` : '▶ Drive the whole route in Google Maps';
-    const start = fromMe ? 'Starts from where you are' : 'Turn on location to start from where you are';
+    const start = (drive ? `${drive.miles.toFixed(1)} mi · ${Math.round(drive.mins)} min by road · ` : '') + (fromMe ? 'starts from where you are' : 'turn on location to start from where you are');
     bar.textContent = start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
   }
 
@@ -190,6 +217,7 @@
   let meMarker = null;
   function drawLine() {
     lineLayer.clearLayers();
+    if (drive && drive.verts.length > 1) { L.polyline(drive.verts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 5, opacity: .7 }).addTo(lineLayer); return; }
     const pts = routePoints();
     if (pts.length > 1) L.polyline(pts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(lineLayer);
   }
@@ -212,7 +240,7 @@
     navigator.geolocation.getCurrentPosition(pos => {
       me = { la: pos.coords.latitude, lo: pos.coords.longitude };
       meMarker = L.marker([me.la, me.lo], { icon: pin('#2563eb', '●', 20), zIndexOffset: 2000 }).bindPopup('You are here').addTo(group);
-      drawLine(); fit(); render();
+      drawLine(); fit(); render(); refreshDrive();
     }, () => { /* denied or unavailable: route starts at the first appointment */ }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   }
 
@@ -220,6 +248,7 @@
   let checks = [];
   let radius = 5;
   buildRoute();
+  refreshDrive();
   const checksEl = document.getElementById('checks');
   function render() {
     checkLayer.clearLayers();
@@ -270,7 +299,7 @@
     const b = e.target.closest('[data-pick]'); if (!b) return;
     const id = b.dataset.pick, pos = b.dataset.pos;
     if (picks[id] === pos) delete picks[id]; else picks[id] = pos;   // tap again to remove
-    savePicks(); render();
+    savePicks(); render(); refreshDrive();
   });
   document.getElementById('radius').addEventListener('click', e => {
     const b = e.target.closest('[data-mi]'); if (!b) return;
@@ -278,7 +307,7 @@
     document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', x === b));
     render();
   });
-  fetch('/api/insurance-checks').then(r => r.json()).then(d => { checks = d.checks || []; render(); })
+  fetch('/api/insurance-checks').then(r => r.json()).then(d => { checks = d.checks || []; render(); refreshDrive(); })
     .catch(() => { checksEl.innerHTML = '<div class="empty">Could not load checks.</div>'; });
 })();
 </script>
