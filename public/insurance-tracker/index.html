@@ -18,7 +18,11 @@
   .reppick { margin-top: 4px; max-width: 100%; border: 1px solid rgba(255,255,255,.55); background: rgba(255,255,255,.14); color: #fff; border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; font-weight: 700; }
   .reppick option { color: #18181b; }
   .reppick[hidden] { display: none; }
-  #mapWrap { position: sticky; top: 52px; z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+  /* Phone: the column wrappers must not create a sticky containing block, or the map only
+     sticks inside its own height. --hdr = live header height (the rep dropdown makes it taller). */
+  :root { --hdr: 52px; }
+  #cols, #left, #right { display: contents; }
+  #mapWrap { position: sticky; top: var(--hdr); z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
   #map { height: 240px; transition: height .2s; }
   body.map-min #map { height: 0; }
   #cal { background: #fff; padding: 8px 10px 10px; }
@@ -142,7 +146,8 @@
   /* ---- Tablet / desktop: map or calendar pinned on the left, lists scroll on the right ---- */
   @media (min-width: 900px) {
     #cols { display: flex; align-items: flex-start; }
-    #left { flex: 0 0 42%; min-width: 360px; position: sticky; top: 52px; height: calc(100vh - 52px); display: flex; flex-direction: column; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,.12); z-index: 1000; }
+    #right { display: block; }
+    #left { flex: 0 0 42%; min-width: 360px; position: sticky; top: var(--hdr); height: calc(100vh - var(--hdr)); display: flex; flex-direction: column; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,.12); z-index: 1000; }
     #right { flex: 1; min-width: 0; }
     #mapWrap { position: static; flex: 1; min-height: 0; display: flex; flex-direction: column; box-shadow: none; }
     #map { height: auto; flex: 1; min-height: 0; max-height: none; }
@@ -634,7 +639,9 @@ window.__bootMyDay = function () {
   }
   mapToggle.addEventListener('click', () => setView(calEl.hidden ? 'cal' : 'map'));
   // Rotation / split-screen: let Leaflet re-measure, then refit whichever layer set is showing.
-  let rsz; window.addEventListener('resize', () => { clearTimeout(rsz); rsz = setTimeout(() => { map.invalidateSize(); if (map.hasLayer(adjLayer)) map.fitBounds(PHX_BOUNDS); else fit(); }, 250); });
+  const setHdr = () => document.documentElement.style.setProperty('--hdr', document.querySelector('header').offsetHeight + 'px');
+  setHdr(); setTimeout(setHdr, 300);
+  let rsz; window.addEventListener('resize', () => { setHdr(); clearTimeout(rsz); rsz = setTimeout(() => { map.invalidateSize(); if (map.hasLayer(adjLayer)) map.fitBounds(PHX_BOUNDS); else fit(); }, 250); });
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   let calMonth = (date || todayStr).slice(0, 7);
   const calCounts = {};   // 'YYYY-MM' -> { 'YYYY-MM-DD': n }
@@ -809,7 +816,7 @@ window.__bootMyDay = function () {
   // Bring a check's card into view just under the sticky header + map.
   function scrollToCard(id, root) {
     const card = (root || checksEl).querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (!card) return;
-    const stickyBottom = matchMedia('(min-width: 900px)').matches ? 52 : document.getElementById('mapWrap').getBoundingClientRect().bottom;
+    const stickyBottom = matchMedia('(min-width: 900px)').matches ? document.querySelector('header').offsetHeight : document.getElementById('mapWrap').getBoundingClientRect().bottom;
     const top = card.getBoundingClientRect().top + window.scrollY - stickyBottom - 8;
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
