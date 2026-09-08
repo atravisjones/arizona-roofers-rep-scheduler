@@ -30,6 +30,8 @@
   .btn.out.on-picked_up { background: #047857; color: #fff; }
   .hist { font-size: 11px; color: #71717a; margin-top: 4px; }
   .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
+  .card.bye { transition: opacity .35s ease, transform .35s ease, height .3s ease .15s, padding .3s ease .15s, margin .3s ease .15s; overflow: hidden; opacity: 0; transform: translateX(60px) scale(.95); height: 0 !important; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
+  .pin-bye { transition: transform .4s cubic-bezier(.5,-.6,.6,1), opacity .4s ease; transform: scale(0) rotate(90deg); opacity: 0; }
   .card[data-id] { cursor: pointer; }
   .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; gap: 12px; align-items: flex-start; }
   .num { flex: 0 0 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 14px; }
@@ -479,6 +481,15 @@
     const top = card.getBoundingClientRect().top + window.scrollY - document.getElementById('mapWrap').getBoundingClientRect().bottom - 8;
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
+  // Animate a check off the screen (card slides out and collapses, pin shrinks away) before the
+  // re-render moves it to the greyed bottom of the list and drops its marker.
+  function dismiss(id) {
+    const card = checksEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (card) { card.style.height = card.offsetHeight + 'px'; void card.offsetHeight; card.classList.add('bye'); }
+    const el = checkMarkers[id]?.getElement?.();
+    if (el && el.firstElementChild) el.firstElementChild.classList.add('pin-bye');
+    return new Promise(r => setTimeout(r, 480));
+  }
   checksEl.addEventListener('click', async e => {
     const callA = e.target.closest('[data-call]');
     if (callA) { startCall(callA.dataset.call, callA.dataset.num || ''); return; }
@@ -497,6 +508,9 @@
       if (cur !== o && (o === 'declined' || o === 'no_answer') && picks[id]) { delete picks[id]; savePicks(); refreshDrive(); }
       if (cur === o) setOutcome(id, (o === 'picked_up' && picks[id]) ? 'confirmed' : null);   // undo (picked up -> back to confirmed)
       else {
+        if (ob.disabled) return;
+        ob.disabled = true;
+        await dismiss(id);
         setOutcome(id, o);
         if (o === 'picked_up') {
           const c = checks.find(x => x.jobId === id);
