@@ -446,6 +446,7 @@
     try {
       const r = await fetch(`/api/adjuster-days?rep=${encodeURIComponent(rep)}&date=${k}`);
       const d = await r.json();
+      await geocodeMissing(d.stops || []);
       const packed = btoa(unescape(encodeURIComponent(JSON.stringify(d.stops || [])))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       location.href = `/m/?rep=${encodeURIComponent(rep)}&date=${k}&s=${packed}`;
     } catch (err) { toast('Could not load that day'); }
@@ -615,7 +616,27 @@
     render();
   });
   fetch('/api/check-outcomes?days=60').then(r => r.json()).then(d => { ingestOutcomes(d.outcomes || []); render(); }).catch(() => {});
-  fetch('/api/insurance-checks').then(r => r.json()).then(d => { checks = d.checks || []; render(); refreshDrive(); })
+  // Some jobs have no coordinates in Supabase (the planner geocodes those in the browser). Do the
+  // same here so they still hit the map; results are cached on the phone.
+  const GEO_KEY = 'm-geo';
+  let geoCache = {}; try { geoCache = JSON.parse(localStorage.getItem(GEO_KEY) || '{}'); } catch (e) {}
+  async function geocodeMissing(list, onEach) {
+    const todo = list.filter(x => (x.la == null || x.lo == null) && (x.a || x.address)).slice(0, 25);
+    for (const x of todo) {
+      const q = x.a || x.address;
+      let hit = geoCache[q];
+      if (!hit) {
+        try { const r = await fetch('/api/geocode?q=' + encodeURIComponent(q)); const d = await r.json(); if (Array.isArray(d) && d[0]) hit = geoCache[q] = { la: Number(d[0].lat), lo: Number(d[0].lon) }; } catch (e) {}
+        try { localStorage.setItem(GEO_KEY, JSON.stringify(geoCache)); } catch (e) {}
+      }
+      if (hit) { if ('address' in x) { x.lat = hit.la; x.lon = hit.lo; } x.la = hit.la; x.lo = hit.lo; if (onEach) onEach(); }
+    }
+  }
+  fetch('/api/insurance-checks').then(r => r.json()).then(d => {
+    checks = (d.checks || []).map(c => ({ ...c, la: c.lat, lo: c.lon }));
+    render(); refreshDrive();
+    geocodeMissing(checks, () => render());
+  })
     .catch(() => { checksEl.innerHTML = '<div class="empty">Could not load checks.</div>'; });
 })();
 </script>
