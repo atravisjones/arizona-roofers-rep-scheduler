@@ -472,9 +472,16 @@
           </div>
         </div>`);
       if (c.lat != null && c.lon != null) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
-        .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<button type="button" class="btn call" style="margin-top:6px;padding:6px 10px" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}</button>` : ''}`).addTo(checkLayer);
+        .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<button type="button" class="btn call" style="margin-top:6px;padding:6px 10px" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}</button>` : ''}`).addTo(checkLayer)
+        .on('click', () => { selectedId = c.jobId; render(); checkMarkers[c.jobId]?.openPopup(); scrollToCard(c.jobId); });
     });
     buildRoute();
+  }
+  // Bring a check's card into view just under the sticky header + map.
+  function scrollToCard(id) {
+    const card = checksEl.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (!card) return;
+    const top = card.getBoundingClientRect().top + window.scrollY - document.getElementById('mapWrap').getBoundingClientRect().bottom - 8;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
   checksEl.addEventListener('click', async e => {
     const callA = e.target.closest('[data-call]');
