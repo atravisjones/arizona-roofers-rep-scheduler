@@ -20,6 +20,8 @@
   body.map-min #mapWrap { box-shadow: none; }
   section { padding: 12px 12px 4px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #52525b; margin: 6px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
+  .card[data-id] { cursor: pointer; }
   .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; gap: 12px; align-items: flex-start; }
   .num { flex: 0 0 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 14px; }
   .num.stop { background: #6366f1; }
@@ -96,6 +98,9 @@
   const money = v => v == null ? '' : '$' + Math.round(v).toLocaleString();
   const nav = addr => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addr);
   const tel = p => 'tel:' + String(p || '').replace(/[^0-9+]/g, '');
+  // CTM click-to-call: opens the softphone with the number filled in (the CTM Phone app takes
+  // the link over when it's installed and claims app.calltrackingmetrics.com; otherwise the browser softphone).
+  const ctmCall = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 10) d = '1' + d; return 'https://app.calltrackingmetrics.com/calls/phone?to_number=' + d; };
   const miles = (a, b) => {
     const R = 3958.8, toR = d => d * Math.PI / 180;
     const dLat = toR(b.la - a.la), dLon = toR(b.lo - a.lo);
@@ -247,11 +252,14 @@
   // Checks
   let checks = [];
   let radius = 5;
+  let selectedId = null;
+  const checkMarkers = {};
   buildRoute();
   refreshDrive();
   const checksEl = document.getElementById('checks');
   function render() {
     checkLayer.clearLayers();
+    for (const k in checkMarkers) delete checkMarkers[k];
     const rows = checks
       .map(c => {
         const d = (c.lat != null && c.lon != null) ? milesOffRoute({ la: c.lat, lo: c.lon }) : null;
@@ -265,14 +273,14 @@
       const days = c.daysInStage != null ? c.daysInStage + 'd waiting' : '';
       const dist = d != null ? (d < 0.1 ? 'on' : d.toFixed(1) + ' mi off') + ' your route' : '';
       checksEl.insertAdjacentHTML('beforeend', `
-        <div class="card">
+        <div class="card${selectedId === c.jobId ? ' sel' : ''}" data-id="${esc(c.jobId)}">
           <div class="num check${c.isD2D ? ' d2d' : ''}">$</div>
           <div class="body">
             <div class="name">${esc(c.customerName || 'Unknown')} <span class="value">${money(c.value)}</span></div>
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}">📞 Call</a><button class="btn ghost" type="button" data-copy="${esc(c.phone)}">Copy #</button><a class="btn ghost" href="https://app.calltrackingmetrics.com/calls/desk#filter=${encodeURIComponent(String(c.phone).replace(/[^0-9]/g, ''))}" target="_blank" rel="noopener">CTM</a>` : ''}
+              ${c.phone ? `<a class="btn call" href="${ctmCall(c.phone)}" target="_blank" rel="noopener">📞 Call (CTM)</a><a class="btn ghost" href="${tel(c.phone)}">Dialer</a><button class="btn ghost" type="button" data-copy="${esc(c.phone)}">Copy #</button>` : ''}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
@@ -282,12 +290,24 @@
             </div>
           </div>
         </div>`);
-      if (c.lat != null && c.lon != null) L.marker([c.lat, c.lon], { icon: pin(c.isD2D ? '#8b5cf6' : '#059669', '$', 22) })
+      if (c.lat != null && c.lon != null) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
         .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<a href="${tel(c.phone)}">${esc(c.phone)}</a>` : ''}`).addTo(checkLayer);
     });
     buildRoute();
   }
   checksEl.addEventListener('click', async e => {
+    if (e.target.closest('a, button')) { /* buttons handled below */ } else {
+      const card = e.target.closest('.card[data-id]'); if (!card) return;
+      const id = card.dataset.id;
+      selectedId = selectedId === id ? null : id;
+      render();
+      const mk = checkMarkers[selectedId];
+      if (mk) {
+        if (document.body.classList.contains('map-min')) setMapMin(false);
+        setTimeout(() => { map.setView(mk.getLatLng(), Math.max(map.getZoom(), 14), { animate: true }); mk.openPopup(); }, 50);
+      }
+      return;
+    }
     const cp = e.target.closest('[data-copy]');
     if (cp) {
       const num = String(cp.dataset.copy).replace(/[^0-9+]/g, '');
