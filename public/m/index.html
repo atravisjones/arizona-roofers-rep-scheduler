@@ -43,6 +43,8 @@
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; color: #fff; background: #4f46e5; }
   .btn.call { background: #059669; }
   .btn.copied { background: #d1fae5; color: #065f46; }
+  .btn.roofr { background: #2C9BD6; color: #fff; }
+  .btn.pos.on-between { background: #b45309; color: #fff; }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
@@ -123,12 +125,27 @@
   // plus distance/time. Falls back to straight segments until it arrives.
   let drive = null; // { verts: [{la,lo}], miles, mins, key }
   let driveTimer = null;
-  function pickedStops() {
+  // Ordered route: [before] -> appointments with "between" checks slotted into their cheapest gap -> [after]
+  function orderedRoute() {
     const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
-    const pos = p => Object.keys(picks).filter(id => picks[id] === p && byId[id] && byId[id].lat != null).map(id => ({ la: byId[id].lat, lo: byId[id].lon }));
-    return { before: pos('before'), after: pos('after') };
+    const of = p => Object.keys(picks).filter(id => picks[id] === p && byId[id]).map(id => byId[id]);
+    const toPt = c => ({ a: c.address, la: c.lat, lo: c.lon, check: c });
+    const seq = stops.map(s => ({ a: s.a, la: s.la, lo: s.lo }));
+    of('between').forEach(c => {
+      const pt = toPt(c);
+      if (pt.la == null || seq.length < 2) { seq.push(pt); return; }
+      let best = seq.length, bestCost = Infinity;
+      for (let i = 0; i < seq.length - 1; i++) {
+        const A = seq[i], B = seq[i + 1];
+        if (A.la == null || B.la == null) continue;
+        const cost = miles(A, pt) + miles(pt, B) - miles(A, B);
+        if (cost < bestCost) { bestCost = cost; best = i + 1; }
+      }
+      seq.splice(best, 0, pt);
+    });
+    return { before: of('before').map(toPt), seq, after: of('after').map(toPt) };
   }
-  function drivePoints() { const p = pickedStops(); return [...(me ? [me] : []), ...p.before, ...coordStops, ...p.after]; }
+  function drivePoints() { const r = orderedRoute(); return [...(me ? [me] : []), ...r.before, ...r.seq, ...r.after].filter(p => p.la != null && p.lo != null); }
   function refreshDrive() {
     clearTimeout(driveTimer);
     driveTimer = setTimeout(async () => {
@@ -174,30 +191,28 @@
   const PICK_KEY = 'm-route-picks:' + rep + ':' + date;
   let picks = {};
   try { picks = JSON.parse(localStorage.getItem(PICK_KEY) || '{}') || {}; } catch (e) { picks = {}; }
+  const CALLED_KEY = 'm-called:' + rep + ':' + date;
+  let called = {};
+  try { called = JSON.parse(localStorage.getItem(CALLED_KEY) || '{}') || {}; } catch (e) { called = {}; }
+  const saveCalled = () => { try { localStorage.setItem(CALLED_KEY, JSON.stringify(called)); } catch (e) {} };
   const savePicks = () => { try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) {} };
 
   // Whole-route link: [checks before] → appointments in order → [checks after]
   function buildRoute() {
-    const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
-    const before = Object.keys(picks).filter(id => picks[id] === 'before' && byId[id]).map(id => byId[id].address);
-    const after = Object.keys(picks).filter(id => picks[id] === 'after' && byId[id]).map(id => byId[id].address);
-    const addrs = [...before, ...stops.map(s => s.a), ...after];
-    const fromMe = !!me;
+    const r = orderedRoute();
+    const before = r.before.map(p => p.a), after = r.after.map(p => p.a);
+    const between = r.seq.filter(p => p.check).map(p => p.a);
+    const addrs = [...before, ...r.seq.map(p => p.a), ...after];
     const a = document.getElementById('routeLink');
     const bar = document.getElementById('routeBar');
     if (!addrs.length) { a.hidden = true; bar.textContent = ''; return; }
-    let url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving';
-    // No origin = Google starts from the phone's current location; every address becomes a
-    // waypoint except the last, which is the destination.
-    const via = fromMe ? addrs.slice(0, -1) : addrs.slice(1, -1);
-    if (!fromMe && addrs.length > 1) url += '&origin=' + encodeURIComponent(addrs[0]);
-    url += '&destination=' + encodeURIComponent(addrs[addrs.length - 1]);
-    if (via.length) url += '&waypoints=' + encodeURIComponent(via.join('|'));
+    // Empty origin segment = "Your location" in Google Maps; each following segment is a stop in order.
+    const url = 'https://www.google.com/maps/dir//' + addrs.map(x => encodeURIComponent(x).replace(/%20/g, '+')).join('/');
     a.href = url; a.hidden = false;
-    const n = before.length + after.length;
+    const n = before.length + between.length + after.length;
     a.textContent = n ? `▶ Drive the route · ${stops.length} appt${stops.length === 1 ? '' : 's'} + ${n} check${n === 1 ? '' : 's'}` : '▶ Drive the whole route in Google Maps';
-    const start = (drive ? `${drive.miles.toFixed(1)} mi · ${Math.round(drive.mins)} min by road · ` : '') + (fromMe ? 'starts from where you are' : 'turn on location to start from where you are');
-    bar.textContent = start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
+    const start = (drive ? `${drive.miles.toFixed(1)} mi · ${Math.round(drive.mins)} min by road · ` : '') + 'starts from your location';
+    bar.textContent = start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', between.length ? `${between.length} between` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
   }
 
   // Stops
@@ -310,18 +325,15 @@
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<a class="btn call" href="${ctmCall(c.phone)}" target="_blank" rel="noopener">📞 Call (CTM)</a><a class="btn ghost" href="${tel(c.phone)}">Dialer</a><button class="btn ghost" type="button" data-copy="${esc(c.phone)}">Copy #</button>` : ''}
+              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}" data-call="${esc(c.jobId)}">📞 Call</a>` : ''}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
-              <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
+              <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
-            <div class="actions">
-              ${['confirmed', 'declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '✓ ' : ''}${OUT_LABEL[o]}</button>`).join('')}
-            </div>
-            ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' · ')}</div>` : ''}
-            <div class="actions"${isDead(c) ? ' hidden' : ''}>
-              <button class="btn pos${picks[c.jobId] === 'before' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="before">${picks[c.jobId] === 'before' ? '✓ Before appts' : '+ Before appts'}</button>
-              <button class="btn pos${picks[c.jobId] === 'after' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="after">${picks[c.jobId] === 'after' ? '✓ After appts' : '+ After appts'}</button>
-            </div>
+            ${(called[c.jobId] || outcomes[c.jobId]?.today) ? `<div class="actions">
+              ${['before', 'between', 'after'].map(p => `<button class="btn pos${picks[c.jobId] === p ? ' on on-' + p : ''}" type="button" data-pick="${esc(c.jobId)}" data-pos="${p}">${picks[c.jobId] === p ? '\u2713 ' : '+ '}${p === 'before' ? 'Before appts' : p === 'between' ? 'Between appts' : 'After appts'}</button>`).join('')}
+              ${['declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '\u2713 ' : ''}${OUT_LABEL[o]}</button>`).join('')}
+            </div>` : ''}
+            ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' \u00b7 ')}</div>` : ''}
           </div>
         </div>`);
       if (c.lat != null && c.lon != null) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
@@ -330,6 +342,8 @@
     buildRoute();
   }
   checksEl.addEventListener('click', async e => {
+    const callA = e.target.closest('[data-call]');
+    if (callA) { called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400); return; /* let tel: proceed */ }
     if (e.target.closest('a, button')) { /* buttons handled below */ } else {
       const card = e.target.closest('.card[data-id]'); if (!card) return;
       const id = card.dataset.id;
@@ -346,18 +360,11 @@
       setOutcome(id, cur === o ? null : o);   // tap again to undo
       return;
     }
-    const cp = e.target.closest('[data-copy]');
-    if (cp) {
-      const num = String(cp.dataset.copy).replace(/[^0-9+]/g, '');
-      try { await navigator.clipboard.writeText(num); } catch (err) { window.prompt('Copy this number', num); }
-      cp.textContent = 'Copied'; cp.classList.add('copied');
-      setTimeout(() => { cp.textContent = 'Copy #'; cp.classList.remove('copied'); }, 1500);
-      return;
-    }
     const b = e.target.closest('[data-pick]'); if (!b) return;
     const id = b.dataset.pick, pos = b.dataset.pos;
-    if (picks[id] === pos) delete picks[id]; else picks[id] = pos;   // tap again to remove
-    savePicks(); render(); refreshDrive();
+    if (picks[id] === pos) { delete picks[id]; savePicks(); setOutcome(id, null); }   // tap again = undo
+    else { picks[id] = pos; savePicks(); setOutcome(id, 'confirmed'); }               // a position = pickup confirmed
+    refreshDrive();
   });
   document.getElementById('radius').addEventListener('click', e => {
     const b = e.target.closest('[data-mi]'); if (!b) return;
