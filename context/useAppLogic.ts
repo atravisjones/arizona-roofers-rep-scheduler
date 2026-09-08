@@ -1509,7 +1509,7 @@ export const useAppLogic = () => {
         const otherJobs: DisplayJob[] = [];
 
         // Add jobs from other reps
-        appState.reps.forEach(r => {
+        appState.reps.filter(isBoardRep).forEach(r => {
             if (r.id !== repId) {
                 r.schedule.forEach(slot => {
                     slot.jobs.forEach(job => {
@@ -1519,8 +1519,8 @@ export const useAppLogic = () => {
             }
         });
 
-        // Add unassigned jobs
-        appState.unassignedJobs.forEach(job => {
+        // Add unassigned jobs (section-scoped, same as the Jobs list and Job Map)
+        appState.unassignedJobs.filter(isBoardJob).forEach(job => {
             otherJobs.push({ ...job, assignedRepName: undefined, timeSlotLabel: job.originalTimeframe || 'Uncategorized' });
         });
 
@@ -1585,7 +1585,7 @@ export const useAppLogic = () => {
 
         setActiveRoute({ repName: rep.name, mappableJobs: finalMappableJobs, unmappableJobs: finalUnmappableJobs, routeInfo: finalRouteInfo });
         setIsRouting(false);
-    }, [appState.reps, log, allJobs]);
+    }, [appState.reps, appState.unassignedJobs, isBoardRep, isBoardJob, log, allJobs]);
 
     const handleShowUnassignedJobsOnMap = useCallback(async (jobs?: Job[]) => {
         const requestId = ++mapRequestRef.current;

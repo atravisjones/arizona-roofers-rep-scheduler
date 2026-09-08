@@ -301,6 +301,16 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
     const baseRouteInfo = routeData?.routeInfo || null;
     const isRepRoute = mapType === 'route' && !!baseRouteInfo && (baseRouteInfo.coordinates?.length || 0) > 1;
 
+    // The rep's real stops: routeInfo.coordinates is index-aligned with mappableJobs and
+    // also carries every context pin, so keep only the jobs on this rep's schedule.
+    const repStops = useMemo(() => {
+        if (!routeData || !baseRouteInfo) return [] as { lat: number; lon: number }[];
+        return routeData.mappableJobs
+            .map((job, i) => ({ job, coord: baseRouteInfo.coordinates[i] }))
+            .filter(x => x.coord && x.job.assignedRepName === routeData.repName)
+            .map(x => x.coord);
+    }, [routeData, baseRouteInfo]);
+
     // A new rep / a re-drawn route drops the pickups — they were chosen against the old line.
     const routeKey = routeData ? `${routeData.repName}|${baseRouteInfo?.coordinates?.length || 0}|${baseRouteInfo?.distance?.toFixed(2) || ''}` : '';
     useEffect(() => {
@@ -315,11 +325,11 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         if (picks.length === 0) { setPickupRoute(null); return; }
         let cancelled = false;
         setIsRoutingPickups(true);
-        buildRouteWithPickups(baseRouteInfo, picks)
+        buildRouteWithPickups(baseRouteInfo, repStops, picks)
             .then(r => { if (!cancelled) setPickupRoute(r); })
             .finally(() => { if (!cancelled) setIsRoutingPickups(false); });
         return () => { cancelled = true; };
-    }, [pickupIds, checks, isRepRoute, baseRouteInfo]);
+    }, [pickupIds, checks, isRepRoute, baseRouteInfo, repStops]);
 
     const togglePickup = useCallback((check: InsuranceCheck) => {
         setPickupIds(prev => {
@@ -399,10 +409,11 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                                     <button
                                         key={mi}
                                         onClick={() => setCheckRadius(mi)}
-                                        className={`${SEG_BTN} px-2 ${checkRadius === mi ? SEG_ON : SEG_OFF}`}
+                                        className={`${SEG_BTN} px-1.5 ${checkRadius === mi ? SEG_ON : SEG_OFF}`}
                                         title={`Highlight checks within ${mi} miles of the route`}
-                                    >{mi} mi</button>
+                                    >{mi}</button>
                                 ))}
+                                <span className={MICRO_LABEL}>mi</span>
                             </>
                         )}
                     </div>

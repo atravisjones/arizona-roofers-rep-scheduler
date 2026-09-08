@@ -79,7 +79,7 @@ export function milesOffRoute(check: InsuranceCheck, route: RouteInfo | null | u
 }
 
 /**
- * Insert pickups into the rep's stop list at the cheapest position each
+ * Insert pickups into the rep's stop list (`routeStops`) at the cheapest position each
  * (greedy cheapest-insertion on straight-line miles), then ask OSRM for the
  * real drive. The returned RouteInfo keeps the ORIGINAL `coordinates` so the
  * map's index-aligned job markers stay put; only geometry/distance/duration
@@ -87,9 +87,12 @@ export function milesOffRoute(check: InsuranceCheck, route: RouteInfo | null | u
  */
 export async function buildRouteWithPickups(
     base: RouteInfo,
+    routeStops: Coordinates[],
     pickups: InsuranceCheck[],
 ): Promise<{ routeInfo: RouteInfo; stopOrder: InsuranceCheck[] } | null> {
-    const stops: { coord: Coordinates; check?: InsuranceCheck }[] = base.coordinates.map(coord => ({ coord }));
+    // NOTE: base.coordinates holds EVERY marker on the map (context jobs included);
+    // the rep's actual stops are passed separately.
+    const stops: { coord: Coordinates; check?: InsuranceCheck }[] = routeStops.map(coord => ({ coord }));
     const usable = pickups.filter(c => c.lat != null && c.lon != null);
     if (stops.length === 0 || usable.length === 0) return null;
 
