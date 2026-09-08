@@ -198,6 +198,7 @@
   const mapToggle = document.getElementById('mapToggle');
   function setMapMin(min) {
     document.body.classList.toggle('map-min', min);
+    document.getElementById('map').style.height = min ? '0px' : '240px';
     mapToggle.textContent = min ? 'Show map' : 'Hide map';
     try { localStorage.setItem('m-map-min', min ? '1' : ''); } catch (e) {}
     if (!min) setTimeout(() => { map.invalidateSize(); fit(); }, 220);
