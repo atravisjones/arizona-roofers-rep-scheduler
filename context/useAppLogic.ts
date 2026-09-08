@@ -3443,7 +3443,11 @@ export const useAppLogic = () => {
             if (lockFilter === 'unlocked' && rep.isLocked) return false;
             return true;
         });
+        // Flex placeholder rows (Flex D2D, Flex North/South) always sit below the real
+        // reps, whatever the sort — Michael stays above Flex D2D on Insurance.
+        const isFlex = (r: Rep) => /^flex\b/i.test(r.name.trim());
         repsToSort.sort((a, b) => {
+            if (isFlex(a) !== isFlex(b)) return isFlex(a) ? 1 : -1;
             let aValue: string | number, bValue: string | number;
             switch (sortConfig.key) {
                 case 'name': aValue = getCleanSortName(a.name); bValue = getCleanSortName(b.name); break;
