@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTM hand-off test</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #f4f4f5; color: #18181b; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p { font-size: 13px; color: #52525b; margin: 0 0 14px; }
+  .b { display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 14px; border: 0; border-radius: 10px; background: #4f46e5; color: #fff; font: inherit; font-weight: 700; text-align: left; }
+  .b small { display: block; font-weight: 400; opacity: .85; font-size: 11px; margin-top: 3px; word-break: break-all; }
+  .ios { background: #0f766e; }
+  .r { background: #fff; border-radius: 10px; padding: 10px; font-size: 13px; margin-top: 12px; min-height: 40px; }
+  .ok { color: #047857; font-weight: 700; } .no { color: #b91c1c; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>CTM hand-off test</h1>
+<p>Tap each button. If the CTM app opens, come back and note which number worked. The page records whether it left the screen.</p>
+<div id="btns"></div>
+<div class="r" id="log">Results appear here.</div>
+<script>
+  const NUM = '6025551234';
+  const PKG = 'com.calltrackingmetrics.phone', OLD = 'com.calltrackingmetrics.ctmPhone';
+  const tests = [
+    ['1 · Launcher intent (new app)', `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${PKG};end`],
+    ['2 · https host intent (new app)', `intent://app.calltrackingmetrics.com/home#Intent;scheme=https;package=${PKG};end`],
+    ['3 · tel DIAL intent w/ number (new app)', `intent://${NUM}#Intent;scheme=tel;action=android.intent.action.DIAL;package=${PKG};end`],
+    ['4 · tel VIEW intent w/ number (new app)', `intent://${NUM}#Intent;scheme=tel;package=${PKG};end`],
+    ['5 · plain tel: link (chooser?)', `tel:${NUM}`],
+    ['6 · ctmphone:// scheme guess', `ctmphone://dial?number=${NUM}`],
+    ['7 · ctm:// scheme guess', `ctm://dial?number=${NUM}`],
+    ['8 · Launcher intent (old CTM Agent app)', `intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.LAUNCHER;package=${OLD};end`],
+    ['9 · iPhone: universal link /home', `https://app.calltrackingmetrics.com/home`, 'ios'],
+    ['10 · iPhone: /home with number param', `https://app.calltrackingmetrics.com/home?to_number=1${NUM}`, 'ios'],
+  ];
+  const btns = document.getElementById('btns'), log = document.getElementById('log');
+  const results = [];
+  tests.forEach(([label, url, cls], i) => {
+    const b = document.createElement('button'); b.className = 'b' + (cls ? ' ' + cls : '');
+    b.innerHTML = label + '<small>' + url.replace(/</g, '&lt;') + '</small>';
+    b.onclick = () => {
+      let left = false; const mark = () => { left = true; };
+      document.addEventListener('visibilitychange', mark, { once: true });
+      window.addEventListener('blur', mark, { once: true });
+      window.addEventListener('pagehide', mark, { once: true });
+      window.location.href = url;
+      setTimeout(() => {
+        results[i] = left ? 'left the page (app or chooser opened)' : 'nothing happened';
+        log.innerHTML = results.map((r, j) => r ? `<div>${j + 1}: <span class="${/left/.test(r) ? 'ok' : 'no'}">${r}</span></div>` : '').join('') || 'Results appear here.';
+      }, 2500);
+    };
+    btns.appendChild(b);
+  });
+</script>
+</body>
+</html>
