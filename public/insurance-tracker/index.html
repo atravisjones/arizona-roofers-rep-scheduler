@@ -468,8 +468,15 @@ window.__bootMyDay = function () {
   const CTM_WEB = 'https://app.calltrackingmetrics.com/home';
   const CTM_ANDROID = 'intent://call#Intent;scheme=ctmphone;package=com.calltrackingmetrics.phone;S.browser_fallback_url=' + encodeURIComponent(CTM_WEB) + ';end';
   const CTM_IOS = 'ctmphone://call';
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = isAndroid || isIOS;
+  // Opens CTM Phone on its dialpad. Must run synchronously inside the tap handler — Safari drops
+  // custom-scheme navigations that happen after an await. Phones: scheme (Android via intent so
+  // a missing app lands on the store). Desktop / Mac Safari: no app, open the web softphone in a
+  // new tab instead of navigating this page away.
   function openCTM() {
-    let left = false;
+    if (!isMobile) { window.open(CTM_WEB, '_blank', 'noopener'); return; }
+    let left = document.hidden;
     const onHide = () => { left = true; };
     document.addEventListener('visibilitychange', onHide, { once: true });
     window.addEventListener('pagehide', onHide, { once: true });
@@ -477,17 +484,15 @@ window.__bootMyDay = function () {
     if (isAndroid) {
       window.location.href = CTM_ANDROID;
     } else {
-      window.location.href = CTM_IOS;
-      // iOS: if the scheme is ignored (app missing), fall back to the universal link
-      setTimeout(() => { if (!left) window.location.href = CTM_WEB; }, 1200);
+      // iOS: a real anchor tap is the most reliable way Safari hands a custom scheme to an app.
+      const a = document.createElement('a'); a.href = CTM_IOS; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove();
+      // App missing: Safari ignores the scheme and we're still visible after 2.5s -> web softphone.
+      setTimeout(() => { if (!left && !document.hidden) window.location.href = CTM_WEB; }, 2500);
     }
     setTimeout(() => {
-      if (!left) toast('CTM app did not open — open CTM Phone and dial ' + lastNum);
-    }, 2500);
+      if (!left && !document.hidden) toast('CTM app did not open — open CTM Phone and dial ' + lastNum);
+    }, 3500);
   }
-  let lastNum = '';
-  // Every call on this page goes through CTM: copy the number inside the tap (clipboard needs the
-  // gesture), mark the check as called (unlocks dispositions), then open CTM Phone on its dialpad.
   function startCall(jobId, num) {
     try { navigator.clipboard.writeText(num); } catch (err) {}
     lastNum = num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
