@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My Day</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; background: #f4f4f5; color: #18181b; }
+  header { background: #4f46e5; color: #fff; padding: 14px 16px 12px; position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0; font-size: 18px; }
+  header .sub { font-size: 13px; opacity: .9; margin-top: 2px; }
+  #map { height: 240px; background: #e4e4e7; }
+  section { padding: 12px 12px 4px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #52525b; margin: 6px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; gap: 12px; align-items: flex-start; }
+  .num { flex: 0 0 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; font-size: 14px; }
+  .num.stop { background: #6366f1; }
+  .num.check { background: #059669; }
+  .num.check.d2d { background: #8b5cf6; }
+  .body { flex: 1; min-width: 0; }
+  .name { font-weight: 700; font-size: 15px; }
+  .meta { font-size: 13px; color: #52525b; margin-top: 2px; }
+  .addr { font-size: 13px; color: #3f3f46; margin-top: 2px; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; color: #fff; background: #4f46e5; }
+  .btn.call { background: #059669; }
+  .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
+  .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
+  .chips { display: flex; gap: 6px; }
+  .chip { border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
+  .chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .value { color: #047857; font-weight: 800; }
+  .empty { color: #71717a; font-size: 14px; padding: 8px 4px 16px; }
+  footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">My Day</h1>
+  <div class="sub" id="subtitle">Loading…</div>
+</header>
+<div id="map"></div>
+<a id="routeLink" class="btn big" href="#" target="_blank" rel="noopener" hidden>▶ Drive the whole route in Google Maps</a>
+
+<section>
+  <h2>Appointments <span id="stopCount"></span></h2>
+  <div id="stops"></div>
+</section>
+
+<section>
+  <h2>
+    <span>Checks to pick up <span id="checkCount"></span></span>
+    <span class="chips" id="radius">
+      <button class="chip" data-mi="2">2 mi</button>
+      <button class="chip on" data-mi="5">5 mi</button>
+      <button class="chip" data-mi="10">10 mi</button>
+      <button class="chip" data-mi="999">All</button>
+    </span>
+  </h2>
+  <div id="checks"></div>
+</section>
+<footer>Arizona Roofers · checks = jobs in “INS: Collect ACV”, refreshed every 5 min · call ahead before you swing by</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const rep = params.get('rep') || 'Rep';
+  const date = params.get('date') || '';
+  let stops = [];
+  try {
+    const raw = params.get('s') || '';
+    const json = atob(raw.replace(/-/g, '+').replace(/_/g, '/'));
+    stops = JSON.parse(decodeURIComponent(escape(json)));
+  } catch (e) { stops = []; }
+  // stop = { n: name, a: address, t: time label, la: lat, lo: lon }
+
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const money = v => v == null ? '' : '$' + Math.round(v).toLocaleString();
+  const nav = addr => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addr);
+  const tel = p => 'tel:' + String(p || '').replace(/[^0-9+]/g, '');
+  const miles = (a, b) => {
+    const R = 3958.8, toR = d => d * Math.PI / 180;
+    const dLat = toR(b.la - a.la), dLon = toR(b.lo - a.lo);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(a.la)) * Math.cos(toR(b.la)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  };
+
+  const prettyDate = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : '';
+  document.getElementById('title').textContent = rep.split(' ')[0] + "'s day";
+  document.getElementById('subtitle').textContent = prettyDate || 'Today';
+  document.title = rep + ' · ' + (prettyDate || 'My Day');
+
+  // Whole-route link: first stop → last stop with the middle ones as waypoints
+  if (stops.length >= 1) {
+    const a = document.getElementById('routeLink');
+    const addrs = stops.map(s => s.a);
+    let url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving';
+    if (addrs.length === 1) url += '&destination=' + encodeURIComponent(addrs[0]);
+    else {
+      url += '&origin=' + encodeURIComponent(addrs[0]) + '&destination=' + encodeURIComponent(addrs[addrs.length - 1]);
+      if (addrs.length > 2) url += '&waypoints=' + encodeURIComponent(addrs.slice(1, -1).join('|'));
+    }
+    a.href = url; a.hidden = false;
+  }
+
+  // Stops
+  const stopsEl = document.getElementById('stops');
+  document.getElementById('stopCount').textContent = stops.length ? '· ' + stops.length : '';
+  if (!stops.length) stopsEl.innerHTML = '<div class="empty">No appointments in this link.</div>';
+  stops.forEach((s, i) => {
+    stopsEl.insertAdjacentHTML('beforeend', `
+      <div class="card">
+        <div class="num stop">${i + 1}</div>
+        <div class="body">
+          <div class="name">${esc(s.n)}</div>
+          ${s.t ? `<div class="meta">${esc(s.t)}</div>` : ''}
+          <div class="addr">${esc(s.a)}</div>
+          <div class="actions"><a class="btn" href="${nav(s.a)}" target="_blank" rel="noopener">🧭 Navigate</a></div>
+        </div>
+      </div>`);
+  });
+
+  // Map
+  const map = L.map('map', { zoomControl: false, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+  const group = L.featureGroup().addTo(map);
+  const pin = (color, label, size) => L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);color:#fff;font-weight:800;font-size:${Math.round(size * .5)}px;display:flex;align-items:center;justify-content:center">${label}</div>` });
+  const coordStops = stops.filter(s => s.la != null && s.lo != null);
+  coordStops.forEach((s, i) => L.marker([s.la, s.lo], { icon: pin('#6366f1', stops.indexOf(s) + 1, 28), zIndexOffset: 1000 }).bindPopup(`<b>${esc(s.n)}</b><br>${esc(s.a)}`).addTo(group));
+  if (coordStops.length > 1) L.polyline(coordStops.map(s => [s.la, s.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(group);
+  let checkLayer = L.featureGroup().addTo(map);
+  const fit = () => { const b = group.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
+  fit();
+
+  // Checks
+  let checks = [];
+  let radius = 5;
+  const checksEl = document.getElementById('checks');
+  function render() {
+    checkLayer.clearLayers();
+    const rows = checks
+      .map(c => {
+        let d = null, near = null;
+        if (c.lat != null && c.lon != null) coordStops.forEach((s, i) => { const m = miles({ la: c.lat, lo: c.lon }, s); if (d == null || m < d) { d = m; near = stops.indexOf(s) + 1; } });
+        return { c, d, near };
+      })
+      .filter(x => coordStops.length === 0 ? radius >= 999 : (x.d != null && x.d <= radius))
+      .sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
+    document.getElementById('checkCount').textContent = '· ' + rows.length + (rows.length ? ' · ' + money(rows.reduce((s, x) => s + (x.c.value || 0), 0)) : '');
+    checksEl.innerHTML = rows.length ? '' : `<div class="empty">${coordStops.length ? 'No checks within ' + radius + ' mi of your stops. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
+    rows.forEach(({ c, d, near }) => {
+      const days = c.daysInStage != null ? c.daysInStage + 'd waiting' : '';
+      const dist = d != null ? d.toFixed(1) + ' mi from stop ' + near : '';
+      checksEl.insertAdjacentHTML('beforeend', `
+        <div class="card">
+          <div class="num check${c.isD2D ? ' d2d' : ''}">$</div>
+          <div class="body">
+            <div class="name">${esc(c.customerName || 'Unknown')} <span class="value">${money(c.value)}</span></div>
+            <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
+            <div class="addr">${esc(c.address)}</div>
+            <div class="actions">
+              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}">📞 Call</a>` : ''}
+              <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
+              <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
+            </div>
+          </div>
+        </div>`);
+      if (c.lat != null && c.lon != null) L.marker([c.lat, c.lon], { icon: pin(c.isD2D ? '#8b5cf6' : '#059669', '$', 22) })
+        .bindPopup(`<b>${esc(c.customerName)}</b> ${money(c.value)}<br>${esc(c.address)}<br>${c.phone ? `<a href="${tel(c.phone)}">${esc(c.phone)}</a>` : ''}`).addTo(checkLayer);
+    });
+  }
+  document.getElementById('radius').addEventListener('click', e => {
+    const b = e.target.closest('[data-mi]'); if (!b) return;
+    radius = Number(b.dataset.mi);
+    document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  });
+  fetch('/api/insurance-checks').then(r => r.json()).then(d => { checks = d.checks || []; render(); })
+    .catch(() => { checksEl.innerHTML = '<div class="empty">Could not load checks.</div>'; });
+})();
+</script>
+</body>
+</html>
