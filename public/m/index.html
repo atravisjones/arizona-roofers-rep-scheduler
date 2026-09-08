@@ -45,6 +45,7 @@
   .btn.copied { background: #d1fae5; color: #065f46; }
   .btn.roofr { background: #2C9BD6; color: #fff; }
   .btn.pos.on-between { background: #b45309; color: #fff; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #18181b; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; z-index: 2000; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
@@ -107,6 +108,14 @@
   const money = v => v == null ? '' : '$' + Math.round(v).toLocaleString();
   const nav = addr => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + encodeURIComponent(addr);
   const tel = p => 'tel:' + String(p || '').replace(/[^0-9+]/g, '');
+  // Open the CTM Phone app. iOS: the app claims the universal link app.calltrackingmetrics.com/home
+  // (per its apple-app-site-association); Android: Chrome intent by package name (Play fallback).
+  // CTM has no dial-this-number scheme, so Call copies the number first and he pastes it in the dialer.
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const ctmOpen = isAndroid
+    ? 'intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;S.browser_fallback_url=https%3A%2F%2Fapp.calltrackingmetrics.com%2Fhome;end'
+    : 'https://app.calltrackingmetrics.com/home';
+  const digits = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 11 && d[0] === '1') d = d.slice(1); return d; };
   // CTM click-to-call: opens the softphone with the number filled in (the CTM Phone app takes
   // the link over when it's installed and claims app.calltrackingmetrics.com; otherwise the browser softphone).
   const ctmCall = p => { let d = String(p || '').replace(/[^0-9]/g, ''); if (d.length === 10) d = '1' + d; return 'https://app.calltrackingmetrics.com/calls/phone?to_number=' + d; };
@@ -180,6 +189,14 @@
       best = Math.min(best, Math.hypot(P.x - (A.x + t * dx), P.y - (A.y + t * dy)));
     }
     return best;
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
   }
 
   const prettyDate = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : '';
@@ -325,7 +342,7 @@
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<a class="btn call" href="${tel(c.phone)}" data-call="${esc(c.jobId)}">📞 Call</a>` : ''}
+              ${c.phone ? `<a class="btn call" href="${ctmOpen}" target="_blank" rel="noopener" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 Call in CTM</a>` : ''}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
@@ -343,7 +360,14 @@
   }
   checksEl.addEventListener('click', async e => {
     const callA = e.target.closest('[data-call]');
-    if (callA) { called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400); return; /* let tel: proceed */ }
+    if (callA) {
+      // copy inside the click (user gesture) so the clipboard write is allowed, then let the link open CTM
+      const num = callA.dataset.num || '';
+      try { navigator.clipboard.writeText(num); } catch (err) {}
+      toast('Copied ' + num.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3') + ' — paste it in the CTM dialer');
+      called[callA.dataset.call] = Date.now(); saveCalled(); setTimeout(render, 400);
+      return;
+    }
     if (e.target.closest('a, button')) { /* buttons handled below */ } else {
       const card = e.target.closest('.card[data-id]'); if (!card) return;
       const id = card.dataset.id;
