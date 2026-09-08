@@ -8,7 +8,7 @@
  */
 import { signSession, CLIENT_ID, SECRET, emailAllowed, TTL_SECONDS } from './auth.js';
 import { verifySession } from './_session.js';
-import { mAllowed, rosterHealth } from './_msession.js';
+import { mAllowed, rosterHealth, warmRoster } from './_msession.js';
 
 const DENIED = 'This page is for the office team (Management, Administration, Lead Center, Insurance, Production) and Michael. Ask Travis if you need access.';
 
@@ -28,6 +28,7 @@ export default async function handler(req, res) {
   }
 
   let info;
+  warmRoster();   // read the roster sheet while Google checks the token, not after
   try {
     const g = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
     if (!g.ok) return res.status(401).json({ success: false, error: 'Invalid Google token' });

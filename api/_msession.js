@@ -111,6 +111,9 @@ export async function mAllowed(email, name) {
   }
 }
 
+/** Kick off the sheet read early (result is cached); errors surface later in mAllowed's fallback. */
+export function warmRoster() { sheetAllowed().catch(() => {}); }
+
 /** Health for GET /api/m-auth: can we read the roster sheet right now? (no PII) */
 export async function rosterHealth() {
   try { const d = await sheetAllowed(); return { roster: 'sheet', people: d.emails.size }; }

@@ -280,7 +280,7 @@
     gate.hidden = false;
     const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
     sc.onload = () => {
-      google.accounts.id.initialize({ client_id: clientId, callback: async resp => {
+      google.accounts.id.initialize({ client_id: clientId, auto_select: true, callback: async resp => {
         err.textContent = 'Checking your access… this takes a few seconds the first time.'; err.style.color = '#4f46e5';
         try { start(await verify(resp.credential)); } catch (e) { err.style.color = ''; err.textContent = e.message; write(null); }
       } });
