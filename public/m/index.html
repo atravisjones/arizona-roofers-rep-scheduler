@@ -251,12 +251,13 @@
     const colors = ['#f59e0b', '#059669', '#4f46e5', '#ef4444', '#3b82f6', '#fbbf24'];
     const bits = Array.from({ length: 140 }, () => ({ x: innerWidth / 2, y: innerHeight * .45, vx: (Math.random() - .5) * 18, vy: -Math.random() * 16 - 4, r: Math.random() * 6 + 3, c: colors[Math.random() * colors.length | 0], a: Math.random() * Math.PI, va: (Math.random() - .5) * .3 }));
     let t0 = performance.now();
+    const start = t0;
     (function frame(now) {
       const dt = Math.min(32, now - t0) / 16; t0 = now;
       ctx.clearRect(0, 0, innerWidth, innerHeight);
       bits.forEach(b => { b.vy += .35 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a); ctx.fillStyle = b.c; ctx.fillRect(-b.r / 2, -b.r / 2, b.r, b.r * .6); ctx.restore(); });
       if (wrap.isConnected && now - start < 2600) requestAnimationFrame(frame);
-    })(t0); const start = t0;
+    })(t0);
     const close = () => { wrap.remove(); };
     wrap.addEventListener('click', close);
     setTimeout(close, 3200);
