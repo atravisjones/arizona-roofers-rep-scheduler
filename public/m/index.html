@@ -87,6 +87,14 @@
   .btn.pos { background: #f59e0b; color: #1c1917; }
   .btn.pos.on { background: #b45309; color: #fff; }
   .routebar { margin: 8px 12px 0; font-size: 12px; color: #52525b; text-align: center; }
+  .tabs { display: flex; gap: 6px; padding: 10px 12px 0; }
+  .tab { flex: 1; border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; border-radius: 10px; padding: 9px 8px; font: inherit; font-size: 13px; font-weight: 700; }
+  .tab.on { background: #18181b; border-color: #18181b; color: #fff; }
+  .tab .n, #adjCount { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #dc2626; color: #fff; font-size: 11px; line-height: 18px; margin-left: 4px; }
+  #adjCount:empty { display: none; }
+  .btn.adj { background: #b45309; }
+  .btn.carrier { background: #52525b; }
+  .num.adj { background: #b45309; font-size: 11px; }
   footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; }
 </style>
 </head>
@@ -105,6 +113,20 @@
 <div class="routebar" id="routeBar"></div>
 <div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
 
+<div class="tabs" id="tabs">
+  <button class="tab on" type="button" data-tab="day">Today</button>
+  <button class="tab" type="button" data-tab="adj">Needs adjuster mtg <span id="adjCount"></span></button>
+</div>
+
+<div id="tab-adj" hidden>
+<section>
+  <h2><span>Book an adjuster meeting <span id="adjSub"></span></span></h2>
+  <div class="meta" style="margin:-4px 0 10px">Jobs in “Ins: Needs Adjuster Meeting”. Call the customer, then the adjuster or carrier to get the meeting on the calendar.</div>
+  <div id="adj"><div class="empty">Loading…</div></div>
+</section>
+</div>
+
+<div id="tab-day">
 <section>
   <h2>Appointments <span id="stopCount"></span></h2>
   <div id="stops"></div>
@@ -127,6 +149,7 @@
   </div>
   <div id="checks"></div>
 </section>
+</div>
 <footer>Arizona Roofers · checks = jobs in “INS: Collect ACV”, refreshed every 5 min · call ahead before you swing by</footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -521,16 +544,28 @@
   buildRoute();
   refreshDrive();
   const checksEl = document.getElementById('checks');
+  const RADII = [2, 5, 10, 999];
+  function setRadiusChip(mi) {
+    radius = mi;
+    document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', Number(x.dataset.mi) === mi));
+  }
   function render() {
     checkLayer.clearLayers();
     for (const k in checkMarkers) delete checkMarkers[k];
-    const rows = checks
+    const scored = checks
       .map(c => {
         const d = (c.lat != null && c.lon != null) ? milesOffRoute({ la: c.lat, lo: c.lon }) : null;
         return { c, d };
       })
-      .filter(x => kind === 'all' || (kind === 'd2d') === !!x.c.isD2D)
-      .filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
+      .filter(x => kind === 'all' || (kind === 'd2d') === !!x.c.isD2D);
+    const within = mi => scored.filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? mi >= 999 : (x.d != null && x.d <= mi)));
+    // Always show at least one live check: if the current radius has none, widen to the first
+    // radius that does (up to All). Only stays empty when there is genuinely nothing to pick up.
+    if (checks.length && !within(radius).some(x => !isDead(x.c))) {
+      const wider = RADII.find(mi => mi > radius && within(mi).some(x => !isDead(x.c)));
+      if (wider) setRadiusChip(wider);
+    }
+    const rows = within(radius)
       .sort((a, b) => (isDead(a.c) - isDead(b.c)) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     const live = rows.filter(x => !isDead(x.c));
     document.getElementById('checkCount').textContent = '· ' + live.length + (live.length ? ' · ' + money(live.reduce((s, x) => s + (x.c.value || 0), 0)) : '') + (rows.length > live.length ? ` · ${rows.length - live.length} done` : '');
@@ -622,6 +657,44 @@
     document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', x === b));
     render();
   });
+  // ---- Needs Adjuster Meeting tab ----
+  const adjEl = document.getElementById('adj');
+  document.getElementById('tabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-tab]'); if (!b) return;
+    document.querySelectorAll('#tabs .tab').forEach(x => x.classList.toggle('on', x === b));
+    document.getElementById('tab-day').hidden = b.dataset.tab !== 'day';
+    document.getElementById('tab-adj').hidden = b.dataset.tab !== 'adj';
+  });
+  const fmtPhone = p => digits(p).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+  function renderAdj(jobs, live) {
+    document.getElementById('adjCount').textContent = jobs.length || '';
+    document.getElementById('adjSub').textContent = jobs.length ? `· ${jobs.length}` : '';
+    if (!jobs.length) { adjEl.innerHTML = '<div class="empty">Nothing waiting on an adjuster meeting.</div>'; return; }
+    jobs.sort((a, b) => (b.daysInStage || 0) - (a.daysInStage || 0));
+    adjEl.innerHTML = jobs.map(j => `
+      <div class="card">
+        <div class="num adj">${j.daysInStage != null ? j.daysInStage + 'd' : '?'}</div>
+        <div class="body">
+          <div class="name">${esc(j.customerName || 'Unknown')}</div>
+          <div class="meta">${[j.daysInStage != null ? j.daysInStage + 'd waiting' : '', j.jobOwner ? 'Rep: ' + esc(j.jobOwner) : '', j.insuranceCompany || j.carrier?.name ? esc(j.insuranceCompany || j.carrier.name) : '', j.claimNumber ? 'Claim ' + esc(j.claimNumber) : ''].filter(Boolean).join(' · ')}</div>
+          <div class="addr">${esc(j.address)}</div>
+          <div class="actions">
+            ${j.phone ? `<button class="btn call" type="button" data-call="" data-num="${j.phone}">📞 Customer · ${fmtPhone(j.phone)}</button>` : '<span class="meta">No customer phone in Roofr</span>'}
+            ${j.adjuster?.phone ? `<button class="btn adj" type="button" data-call="" data-num="${j.adjuster.phone}">📞 Adjuster${j.adjuster.name ? ' · ' + esc(j.adjuster.name) : ''} · ${fmtPhone(j.adjuster.phone)}</button>` : ''}
+            ${j.carrier?.phone ? `<button class="btn carrier" type="button" data-call="" data-num="${j.carrier.phone}">📞 ${esc(j.carrier.name || 'Carrier')} · ${fmtPhone(j.carrier.phone)}</button>` : (live && !j.adjuster ? '<span class="meta">No insurance contact on the job card</span>' : '')}
+            <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(j.jobId)}" target="_blank" rel="noopener">Roofr</a>
+            <a class="btn" href="${nav(j.address)}" target="_blank" rel="noopener">🧭</a>
+          </div>
+          ${j.insuranceNotes ? `<div class="hist">Insurance notes: ${esc(j.insuranceNotes).replace(/\n/g, ' · ')}</div>` : ''}
+        </div>
+      </div>`).join('') + (live ? '' : '<div class="empty">Adjuster / carrier numbers unavailable right now (Roofr session). Customer numbers still work.</div>');
+  }
+  adjEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-call]'); if (!b) return;
+    startCall('', b.dataset.num || '');
+  });
+  fetch('/api/adjuster-queue').then(r => r.json()).then(d => renderAdj(d.jobs || [], !!d.live)).catch(() => { adjEl.innerHTML = '<div class="empty">Could not load the queue.</div>'; });
+
   document.getElementById('kind').addEventListener('click', e => {
     const b = e.target.closest('[data-kind]'); if (!b) return;
     kind = b.dataset.kind;
