@@ -142,3 +142,9 @@ added checks get "Picked up" (outcome `picked_up`, logged like the others; migra
 CHECK constraint). Ran stops and picked-up checks are greyed, drop out of the Google link and the
 OSRM drive line, and picked-up checks sink to the bottom. Picking up fires a confetti popup with the
 check value and the day's running total. Undo: tap again (picked up → back to confirmed).
+
+## Phone page v5 (2026-09-08 pm)
+- **Calendar in the sticky box.** Header button swaps Map ⇄ Calendar (`#mapWrap` holds both). Calendar = month grid with the rep's adjuster-meeting count per day (`api/adjuster-days.js?rep=&month=` → counts from `calendar_events` where `event_subtype='Adjuster meeting'` and attendees include the door-knocker's Roofr uid, map in `DOOR_KNOCKER_IDS`). Tapping a day fetches `?rep=&date=` (that day's meetings joined to `jobs`, share-link shape), geocodes any without coords via `/api/geocode`, and reloads `/m/` with a fresh `s=` link — so every per-day key (ran / called / picks / outcomes) lines up.
+- **Appointment cards** now get `📞 CTM` + Roofr via `api/stop-lookup.js` (POST name+address → job_id, phone; street-number + first-word ilike on `jobs.address`, name tie-break). Jobs with no phone AND no `all_contacts` in the mirror show no button.
+- **Secondary-contact phone fallback** (`fallbackPhone` in `api/insurance-checks.js`): when the primary contact has no phone (carrier as primary), first non-toll-free number from `all_contacts`, labelled with that contact's first name.
+- **Checks:** Retail / Door knocker filter chips; dispositioned checks animate out (card slide+collapse, pin shrink) and drop off the map for the day; tapping a pin scrolls to the card (no popup); checks missing coords are geocoded in-page (cached in `localStorage m-geo`) — 13 of 41 lacked them.
