@@ -95,6 +95,29 @@
     return 2 * R * Math.asin(Math.sqrt(h));
   };
 
+  // Where the rep is right now. Google Maps starts the drive here (origin omitted = device
+  // location) and checks are measured against the real drive line: me → stop 1 → stop 2 …
+  let me = null;
+  function routePoints() { return [...(me ? [me] : []), ...coordStops]; }
+  // Straight-line miles from a point to the nearest piece of the drive line (segment distance
+  // in a local flat projection — plenty for "is this on my way").
+  function milesOffRoute(pt) {
+    const pts = routePoints();
+    if (!pts.length) return null;
+    const kx = 69.17 * Math.cos(pt.la * Math.PI / 180), ky = 69.17;
+    const P = { x: pt.lo * kx, y: pt.la * ky };
+    let best = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const A = { x: pts[i].lo * kx, y: pts[i].la * ky };
+      if (pts.length === 1 || i === pts.length - 1) { best = Math.min(best, Math.hypot(P.x - A.x, P.y - A.y)); continue; }
+      const B = { x: pts[i + 1].lo * kx, y: pts[i + 1].la * ky };
+      const dx = B.x - A.x, dy = B.y - A.y, len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2)) : 0;
+      best = Math.min(best, Math.hypot(P.x - (A.x + t * dx), P.y - (A.y + t * dy)));
+    }
+    return best;
+  }
+
   const prettyDate = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : '';
   document.getElementById('title').textContent = rep.split(' ')[0] + "'s day";
   document.getElementById('subtitle').textContent = prettyDate || 'Today';
@@ -112,19 +135,22 @@
     const before = Object.keys(picks).filter(id => picks[id] === 'before' && byId[id]).map(id => byId[id].address);
     const after = Object.keys(picks).filter(id => picks[id] === 'after' && byId[id]).map(id => byId[id].address);
     const addrs = [...before, ...stops.map(s => s.a), ...after];
+    const fromMe = !!me;
     const a = document.getElementById('routeLink');
     const bar = document.getElementById('routeBar');
     if (!addrs.length) { a.hidden = true; bar.textContent = ''; return; }
     let url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving';
-    if (addrs.length === 1) url += '&destination=' + encodeURIComponent(addrs[0]);
-    else {
-      url += '&origin=' + encodeURIComponent(addrs[0]) + '&destination=' + encodeURIComponent(addrs[addrs.length - 1]);
-      if (addrs.length > 2) url += '&waypoints=' + encodeURIComponent(addrs.slice(1, -1).join('|'));
-    }
+    // No origin = Google starts from the phone's current location; every address becomes a
+    // waypoint except the last, which is the destination.
+    const via = fromMe ? addrs.slice(0, -1) : addrs.slice(1, -1);
+    if (!fromMe && addrs.length > 1) url += '&origin=' + encodeURIComponent(addrs[0]);
+    url += '&destination=' + encodeURIComponent(addrs[addrs.length - 1]);
+    if (via.length) url += '&waypoints=' + encodeURIComponent(via.join('|'));
     a.href = url; a.hidden = false;
     const n = before.length + after.length;
     a.textContent = n ? `▶ Drive the route · ${stops.length} appt${stops.length === 1 ? '' : 's'} + ${n} check${n === 1 ? '' : 's'}` : '▶ Drive the whole route in Google Maps';
-    bar.textContent = n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'Call a check, then add it before or after your appointments.';
+    const start = fromMe ? 'Starts from where you are' : 'Turn on location to start from where you are';
+    bar.textContent = start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
   }
 
   // Stops
@@ -152,10 +178,25 @@
     html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);color:#fff;font-weight:800;font-size:${Math.round(size * .5)}px;display:flex;align-items:center;justify-content:center">${label}</div>` });
   const coordStops = stops.filter(s => s.la != null && s.lo != null);
   coordStops.forEach((s, i) => L.marker([s.la, s.lo], { icon: pin('#6366f1', stops.indexOf(s) + 1, 28), zIndexOffset: 1000 }).bindPopup(`<b>${esc(s.n)}</b><br>${esc(s.a)}`).addTo(group));
-  if (coordStops.length > 1) L.polyline(coordStops.map(s => [s.la, s.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(group);
+  let lineLayer = L.featureGroup().addTo(map);
+  let meMarker = null;
+  function drawLine() {
+    lineLayer.clearLayers();
+    const pts = routePoints();
+    if (pts.length > 1) L.polyline(pts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(lineLayer);
+  }
+  drawLine();
   let checkLayer = L.featureGroup().addTo(map);
-  const fit = () => { const b = group.getBounds(); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
+  const fit = () => { const b = group.getBounds(); if (meMarker) b.extend(meMarker.getLatLng()); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
   fit();
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      me = { la: pos.coords.latitude, lo: pos.coords.longitude };
+      meMarker = L.marker([me.la, me.lo], { icon: pin('#2563eb', '●', 20), zIndexOffset: 2000 }).bindPopup('You are here').addTo(group);
+      drawLine(); fit(); render();
+    }, () => { /* denied or unavailable: route starts at the first appointment */ }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+  }
 
   // Checks
   let checks = [];
@@ -166,17 +207,16 @@
     checkLayer.clearLayers();
     const rows = checks
       .map(c => {
-        let d = null, near = null;
-        if (c.lat != null && c.lon != null) coordStops.forEach((s, i) => { const m = miles({ la: c.lat, lo: c.lon }, s); if (d == null || m < d) { d = m; near = stops.indexOf(s) + 1; } });
-        return { c, d, near };
+        const d = (c.lat != null && c.lon != null) ? milesOffRoute({ la: c.lat, lo: c.lon }) : null;
+        return { c, d };
       })
-      .filter(x => picks[x.c.jobId] || (coordStops.length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
+      .filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
       .sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     document.getElementById('checkCount').textContent = '· ' + rows.length + (rows.length ? ' · ' + money(rows.reduce((s, x) => s + (x.c.value || 0), 0)) : '');
-    checksEl.innerHTML = rows.length ? '' : `<div class="empty">${coordStops.length ? 'No checks within ' + radius + ' mi of your stops. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
-    rows.forEach(({ c, d, near }) => {
+    checksEl.innerHTML = rows.length ? '' : `<div class="empty">${routePoints().length ? 'No checks within ' + radius + ' mi of your route. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
+    rows.forEach(({ c, d }) => {
       const days = c.daysInStage != null ? c.daysInStage + 'd waiting' : '';
-      const dist = d != null ? d.toFixed(1) + ' mi from stop ' + near : '';
+      const dist = d != null ? (d < 0.1 ? 'on' : d.toFixed(1) + ' mi off') + ' your route' : '';
       checksEl.insertAdjacentHTML('beforeend', `
         <div class="card">
           <div class="num check${c.isD2D ? ' d2d' : ''}">$</div>
