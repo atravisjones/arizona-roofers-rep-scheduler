@@ -13,7 +13,7 @@
 // phone (e.g. primary = insurance company), pick the first non-toll-free 10-digit number from the other
 // contacts. all_contacts is a " | "-joined dump: tokens are names, phones (raw + formatted) and emails.
 const TOLL_FREE = /^(800|888|877|866|855|844|833)/;
-function fallbackPhone(allContacts) {
+export function fallbackPhone(allContacts) {
   const tokens = String(allContacts || '').split('|').map(t => t.trim()).filter(Boolean);
   let lastName = '';
   for (const t of tokens) {

@@ -64,7 +64,7 @@
   .big { display: block; margin: 12px 12px 0; text-align: center; padding: 12px; font-size: 15px; }
   .chips { display: flex; gap: 6px; }
   .chip { border: 1px solid #d4d4d8; background: #fff; color: #3f3f46; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 700; }
-  .chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .chip.on { background: var(--on, #4f46e5); border-color: var(--on, #4f46e5); color: #fff; }
   .value { color: #047857; font-weight: 800; }
   .empty { color: #71717a; font-size: 14px; padding: 8px 4px 16px; }
   .btn.pos { background: #f59e0b; color: #1c1917; }
@@ -103,6 +103,11 @@
       <button class="chip" data-mi="999">All</button>
     </span>
   </h2>
+  <div class="chips" id="kind" style="margin:-2px 0 10px">
+    <button class="chip on" data-kind="all">All checks</button>
+    <button class="chip" data-kind="retail">Retail</button>
+    <button class="chip" data-kind="d2d" style="--on:#8b5cf6">Door knocker</button>
+  </div>
   <div id="checks"></div>
 </section>
 <footer>Arizona Roofers · checks = jobs in “INS: Collect ACV”, refreshed every 5 min · call ahead before you swing by</footer>
@@ -325,14 +330,28 @@
             ${s.t ? `<div class="meta">${esc(s.t)}</div>` : ''}
             <div class="addr">${esc(s.a)}</div>
             <div class="actions">
+              ${s.p ? `<button class="btn call" type="button" data-call="stop:${i}" data-num="${digits(s.p)}">📞 CTM · ${digits(s.p).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}${s.pc ? ' · ' + esc(s.pc.split(' ')[0]) : ''}</button>` : ''}
               ${done ? '' : `<a class="btn" href="${nav(s.a)}" target="_blank" rel="noopener">🧭 Navigate</a>`}
+              ${s.j ? `<a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(s.j)}" target="_blank" rel="noopener">Roofr</a>` : ''}
               <button class="btn ${done ? 'out on-confirmed' : 'ghost'}" type="button" data-ran="${i}">${done ? '✓ Ran' : 'Mark ran'}</button>
             </div>
           </div>
         </div>`);
     });
   }
+  // Appointments only carry name/address in the link; ask the server which Roofr job each one is
+  // so the card can show the customer's number (CTM) and a Roofr button.
+  if (stops.length) {
+    fetch('/api/stop-lookup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stops: stops.map(s => ({ n: s.n, a: s.a })) }) })
+      .then(r => r.json())
+      .then(d => {
+        (d.stops || []).forEach((info, i) => { if (info && stops[i]) { stops[i].j = info.jobId; stops[i].p = info.phone; stops[i].pc = info.phoneContact; } });
+        renderStops();
+      }).catch(() => {});
+  }
   stopsEl.addEventListener('click', e => {
+    const callA = e.target.closest('[data-call]');
+    if (callA) { startCall('', callA.dataset.num || ''); return; }
     const b = e.target.closest('[data-ran]'); if (!b) return;
     const k = 'stop:' + b.dataset.ran;
     if (ran[k]) delete ran[k]; else ran[k] = true;
@@ -406,6 +425,7 @@
   // Checks
   let checks = [];
   let radius = 5;
+  let kind = 'all';   // 'all' | 'retail' | 'd2d' — checks filter by lead source
   let selectedId = null;
   const checkMarkers = {};
   // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
@@ -441,6 +461,7 @@
         const d = (c.lat != null && c.lon != null) ? milesOffRoute({ la: c.lat, lo: c.lon }) : null;
         return { c, d };
       })
+      .filter(x => kind === 'all' || (kind === 'd2d') === !!x.c.isD2D)
       .filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
       .sort((a, b) => (isDead(a.c) - isDead(b.c)) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     const live = rows.filter(x => !isDead(x.c));
@@ -531,6 +552,12 @@
     const b = e.target.closest('[data-mi]'); if (!b) return;
     radius = Number(b.dataset.mi);
     document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  });
+  document.getElementById('kind').addEventListener('click', e => {
+    const b = e.target.closest('[data-kind]'); if (!b) return;
+    kind = b.dataset.kind;
+    document.querySelectorAll('#kind .chip').forEach(x => x.classList.toggle('on', x === b));
     render();
   });
   fetch('/api/check-outcomes?days=60').then(r => r.json()).then(d => { ingestOutcomes(d.outcomes || []); render(); }).catch(() => {});
