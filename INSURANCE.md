@@ -71,3 +71,15 @@ checks homeowners are holding on the way there or back.
 - Gotcha: `routeInfo.coordinates` holds EVERY marker on the map (context jobs included) and
   is index-aligned with `mappableJobs`; the rep's real stops are the entries whose
   `assignedRepName` matches the route's rep. Re-routing off the full list sends you to Tucson.
+
+### Share day (phone page for the rep) — 2026-09-08
+
+`public/m/index.html` is a static, no-login page (served before the SPA rewrite). The
+"Share day" button in the checks card builds `/m/?rep=<name>&date=YYYY-MM-DD&s=<base64url JSON>`
+where `s` = the rep's stops `[{n,a,t,la,lo}]` (name, address, time label, coords) taken from the
+drawn route. The stops travel in the link on purpose: `daily_schedules` is empty in Supabase
+(planner day state never lands there), so a server lookup would miss manual placements. The page
+fetches `/api/insurance-checks`, ranks checks by miles from the nearest stop (2/5/10/All), and
+gives every stop and check a Google Maps Navigate link (`maps/dir/?api=1&destination=`), checks a
+`tel:` Call and Roofr link, plus a whole-route link with `waypoints=`. The link is a snapshot —
+re-share after moving appointments. Nothing on the page writes anywhere.
