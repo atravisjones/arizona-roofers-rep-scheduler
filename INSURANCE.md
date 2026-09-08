@@ -111,3 +111,11 @@ The Drive button is `https://www.google.com/maps/dir//stop1/stop2/...` so Google
 origin with "Your location". CTM: `calls/phone?to_number=` opens the softphone but does NOT
 populate the number (checked live 2026-09-08), and no app URL scheme exists, so tel: is the
 best hand-off; if CTM Phone is his default calling app the phone routes tel: to it.
+
+Call in CTM (2026-09-08, final): CTM has no dial-by-URL for the app. Verified from
+app.calltrackingmetrics.com/.well-known/apple-app-site-association: the iOS app
+(KSGS66UULE.com.calltrackingmetrics.phone) claims ONLY the `/home` path; Android assetlinks.json is `{}`.
+So Call = copy the 10-digit number to the clipboard inside the click, show a toast, and open the app:
+iOS `https://app.calltrackingmetrics.com/home` (universal link), Android
+`intent://home#Intent;scheme=https;package=com.calltrackingmetrics.phone;...;end` (web fallback).
+He pastes into the CTM dialer. Tapping Call is what unlocks the disposition row.
