@@ -20,6 +20,13 @@
   body.map-min #mapWrap { box-shadow: none; }
   section { padding: 12px 12px 4px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #52525b; margin: 6px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+  .card.done { opacity: .5; background: #fafafa; }
+  .card.done .name { text-decoration: line-through; }
+  .btn.out { background: #e4e4e7; color: #27272a; }
+  .btn.out.on-confirmed { background: #059669; color: #fff; }
+  .btn.out.on-declined { background: #dc2626; color: #fff; }
+  .btn.out.on-no_answer { background: #52525b; color: #fff; }
+  .hist { font-size: 11px; color: #71717a; margin-top: 4px; }
   .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
   .card[data-id] { cursor: pointer; }
   .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; gap: 12px; align-items: flex-start; }
@@ -254,6 +261,28 @@
   let radius = 5;
   let selectedId = null;
   const checkMarkers = {};
+  // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
+  let outcomes = {};
+  const OUT_LABEL = { confirmed: 'Pickup confirmed', declined: 'Declined', no_answer: 'No answer' };
+  const todayKey = date || new Date().toISOString().slice(0, 10);
+  const isDead = c => { const t = outcomes[c.jobId]?.today; return t === 'declined' || t === 'no_answer'; };
+  function ingestOutcomes(rows) {
+    outcomes = {};
+    // rows arrive newest-first; first row per job+date is the latest
+    const seen = new Set();
+    rows.forEach(r => {
+      const k = r.job_id + '|' + r.date_key; if (seen.has(k)) return; seen.add(k);
+      const o = outcomes[r.job_id] || (outcomes[r.job_id] = { today: null, history: [] });
+      if (r.date_key === todayKey) o.today = r.outcome; else o.history.push(r);
+    });
+  }
+  async function setOutcome(jobId, outcome) {
+    const o = outcomes[jobId] || (outcomes[jobId] = { today: null, history: [] });
+    o.today = outcome; render();
+    try {
+      await fetch('/api/check-outcomes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId, rep, date: todayKey, outcome }) });
+    } catch (e) { /* offline: stays local until reload */ }
+  }
   buildRoute();
   refreshDrive();
   const checksEl = document.getElementById('checks');
@@ -266,14 +295,15 @@
         return { c, d };
       })
       .filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? radius >= 999 : (x.d != null && x.d <= radius)))
-      .sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
-    document.getElementById('checkCount').textContent = '· ' + rows.length + (rows.length ? ' · ' + money(rows.reduce((s, x) => s + (x.c.value || 0), 0)) : '');
+      .sort((a, b) => (isDead(a.c) - isDead(b.c)) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
+    const live = rows.filter(x => !isDead(x.c));
+    document.getElementById('checkCount').textContent = '· ' + live.length + (live.length ? ' · ' + money(live.reduce((s, x) => s + (x.c.value || 0), 0)) : '') + (rows.length > live.length ? ` · ${rows.length - live.length} done` : '');
     checksEl.innerHTML = rows.length ? '' : `<div class="empty">${routePoints().length ? 'No checks within ' + radius + ' mi of your route. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
     rows.forEach(({ c, d }) => {
       const days = c.daysInStage != null ? c.daysInStage + 'd waiting' : '';
       const dist = d != null ? (d < 0.1 ? 'on' : d.toFixed(1) + ' mi off') + ' your route' : '';
       checksEl.insertAdjacentHTML('beforeend', `
-        <div class="card${selectedId === c.jobId ? ' sel' : ''}" data-id="${esc(c.jobId)}">
+        <div class="card${selectedId === c.jobId ? ' sel' : ''}${isDead(c) ? ' done' : ''}" data-id="${esc(c.jobId)}">
           <div class="num check${c.isD2D ? ' d2d' : ''}">$</div>
           <div class="body">
             <div class="name">${esc(c.customerName || 'Unknown')} <span class="value">${money(c.value)}</span></div>
@@ -285,6 +315,10 @@
               <a class="btn ghost" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
             <div class="actions">
+              ${['confirmed', 'declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '✓ ' : ''}${OUT_LABEL[o]}</button>`).join('')}
+            </div>
+            ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' · ')}</div>` : ''}
+            <div class="actions"${isDead(c) ? ' hidden' : ''}>
               <button class="btn pos${picks[c.jobId] === 'before' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="before">${picks[c.jobId] === 'before' ? '✓ Before appts' : '+ Before appts'}</button>
               <button class="btn pos${picks[c.jobId] === 'after' ? ' on' : ''}" data-pick="${esc(c.jobId)}" data-pos="after">${picks[c.jobId] === 'after' ? '✓ After appts' : '+ After appts'}</button>
             </div>
@@ -308,6 +342,14 @@
       }
       return;
     }
+    const ob = e.target.closest('[data-outcome]');
+    if (ob) {
+      const id = ob.dataset.job, o = ob.dataset.outcome;
+      const cur = outcomes[id]?.today;
+      if (cur !== o && (o === 'declined' || o === 'no_answer') && picks[id]) { delete picks[id]; savePicks(); refreshDrive(); }
+      setOutcome(id, cur === o ? null : o);   // tap again to undo
+      return;
+    }
     const cp = e.target.closest('[data-copy]');
     if (cp) {
       const num = String(cp.dataset.copy).replace(/[^0-9+]/g, '');
@@ -327,6 +369,7 @@
     document.querySelectorAll('#radius .chip').forEach(x => x.classList.toggle('on', x === b));
     render();
   });
+  fetch('/api/check-outcomes?days=60').then(r => r.json()).then(d => { ingestOutcomes(d.outcomes || []); render(); }).catch(() => {});
   fetch('/api/insurance-checks').then(r => r.json()).then(d => { checks = d.checks || []; render(); refreshDrive(); })
     .catch(() => { checksEl.innerHTML = '<div class="empty">Could not load checks.</div>'; });
 })();
