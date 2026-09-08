@@ -18,7 +18,20 @@
   #mapWrap { position: sticky; top: 52px; z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
   #map { height: 240px; transition: height .2s; }
   body.map-min #map { height: 0; }
-  body.map-min #mapWrap { box-shadow: none; }
+  #cal { background: #fff; padding: 8px 10px 10px; }
+  #cal .calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  #cal .calhead b { font-size: 14px; }
+  #cal .calhead button { border: 1px solid #d4d4d8; background: #fff; border-radius: 8px; width: 34px; height: 30px; font: inherit; font-size: 16px; }
+  #cal .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  #cal .dow { text-align: center; font-size: 10px; text-transform: uppercase; color: #71717a; font-weight: 700; }
+  #cal .day { position: relative; height: 40px; border-radius: 8px; border: 1px solid #e4e4e7; background: #fafafa; font: inherit; font-size: 13px; color: #3f3f46; padding: 0; }
+  #cal .day.has { background: #fff; border-color: #c7d2fe; font-weight: 700; color: #18181b; }
+  #cal .day.sel { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  #cal .day.today { outline: 2px solid #f59e0b; outline-offset: -2px; }
+  #cal .day .n { position: absolute; top: 3px; right: 4px; min-width: 16px; height: 16px; border-radius: 8px; background: #059669; color: #fff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 4px; }
+  #cal .day.sel .n { background: #fff; color: #4f46e5; }
+  #cal .day.pad { visibility: hidden; }
+  #cal .calmsg { text-align: center; font-size: 11px; color: #71717a; margin-top: 6px; }
   section { padding: 12px 12px 4px; }
   h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #52525b; margin: 6px 0 8px; display: flex; justify-content: space-between; align-items: center; }
   .card.done { opacity: .5; background: #fafafa; }
@@ -81,10 +94,10 @@
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <a id="routeLink" class="hbtn" href="#" target="_blank" rel="noopener" hidden style="background:#fff;color:#4f46e5;border-color:#fff;text-decoration:none">▶ Drive</a>
-    <button class="hbtn" id="mapToggle" type="button">Hide map</button>
+    <button class="hbtn" id="mapToggle" type="button">📅 Calendar</button>
   </div>
 </header>
-<div id="mapWrap"><div id="map"></div></div>
+<div id="mapWrap"><div id="map"></div><div id="cal" hidden></div></div>
 <div class="routebar" id="routeBar"></div>
 <div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
 
@@ -386,16 +399,57 @@
   }
   drawLine();
   let checkLayer = L.featureGroup().addTo(map);
+  // The sticky box at the top holds either the map or a month calendar (adjuster-meeting counts per
+  // day; tapping a day reloads the page for that day). One header button swaps between them.
   const mapToggle = document.getElementById('mapToggle');
-  function setMapMin(min) {
-    document.body.classList.toggle('map-min', min);
-    document.getElementById('map').style.height = min ? '0px' : '240px';
-    mapToggle.textContent = min ? 'Show map' : 'Hide map';
-    try { localStorage.setItem('m-map-min', min ? '1' : ''); } catch (e) {}
-    if (!min) setTimeout(() => { map.invalidateSize(); fit(); }, 220);
+  const calEl = document.getElementById('cal');
+  function setView(v) {
+    const cal = v === 'cal';
+    document.body.classList.toggle('map-min', cal);
+    document.getElementById('map').style.height = cal ? '0px' : '240px';
+    calEl.hidden = !cal;
+    mapToggle.textContent = cal ? '🗺 Map' : '📅 Calendar';
+    if (cal) renderCal(); else setTimeout(() => { map.invalidateSize(); fit(); }, 220);
   }
-  mapToggle.addEventListener('click', () => setMapMin(!document.body.classList.contains('map-min')));
-  try { if (localStorage.getItem('m-map-min')) setMapMin(true); } catch (e) {}
+  mapToggle.addEventListener('click', () => setView(calEl.hidden ? 'cal' : 'map'));
+  const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  let calMonth = (date || todayStr).slice(0, 7);
+  const calCounts = {};   // 'YYYY-MM' -> { 'YYYY-MM-DD': n }
+  async function renderCal() {
+    const [y, m] = calMonth.split('-').map(Number);
+    const counts = calCounts[calMonth];
+    const first = new Date(y, m - 1, 1), days = new Date(y, m, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < first.getDay(); i++) cells.push('<div class="day pad"></div>');
+    for (let d = 1; d <= days; d++) {
+      const k = `${calMonth}-${String(d).padStart(2, '0')}`, n = counts ? (counts[k] || 0) : 0;
+      cells.push(`<button type="button" class="day${n ? ' has' : ''}${k === date ? ' sel' : ''}${k === todayStr ? ' today' : ''}" data-day="${k}">${d}${n ? `<span class="n">${n}</span>` : ''}</button>`);
+    }
+    const total = counts ? Object.values(counts).reduce((s, n) => s + n, 0) : null;
+    calEl.innerHTML = `<div class="calhead"><button type="button" data-nav="-1">‹</button><b>${first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</b><button type="button" data-nav="1">›</button></div>
+      <div class="grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<div class="dow">${x}</div>`).join('')}${cells.join('')}</div>
+      <div class="calmsg">${counts ? (total ? `${total} adjuster meeting${total === 1 ? '' : 's'} this month · tap a day to open it` : 'No adjuster meetings on your calendar this month') : 'Loading…'}</div>`;
+    if (!counts) {
+      try {
+        const r = await fetch(`/api/adjuster-days?rep=${encodeURIComponent(rep)}&month=${calMonth}`);
+        const d = await r.json(); calCounts[calMonth] = d.counts || {};
+      } catch (e) { calCounts[calMonth] = {}; }
+      if (!calEl.hidden) renderCal();
+    }
+  }
+  calEl.addEventListener('click', async e => {
+    const nb = e.target.closest('[data-nav]');
+    if (nb) { const [y, m] = calMonth.split('-').map(Number); const d = new Date(y, m - 1 + Number(nb.dataset.nav), 1); calMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; renderCal(); return; }
+    const db = e.target.closest('[data-day]'); if (!db) return;
+    const k = db.dataset.day; if (k === date) { setView('map'); return; }
+    db.classList.add('sel'); toast('Loading ' + k + '…');
+    try {
+      const r = await fetch(`/api/adjuster-days?rep=${encodeURIComponent(rep)}&date=${k}`);
+      const d = await r.json();
+      const packed = btoa(unescape(encodeURIComponent(JSON.stringify(d.stops || [])))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      location.href = `/m/?rep=${encodeURIComponent(rep)}&date=${k}&s=${packed}`;
+    } catch (err) { toast('Could not load that day'); }
+  });
   const fit = () => { const b = group.getBounds(); if (meMarker) b.extend(meMarker.getLatLng()); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
   fit();
 
