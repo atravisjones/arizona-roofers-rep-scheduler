@@ -467,7 +467,7 @@
             ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' \u00b7 ')}</div>` : ''}
           </div>
         </div>`);
-      if (c.lat != null && c.lon != null) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
+      if (c.lat != null && c.lon != null && !isDead(c)) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(selectedId === c.jobId ? '#f59e0b' : (c.isD2D ? '#8b5cf6' : '#059669'), '$', selectedId === c.jobId ? 34 : 22), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
         .addTo(checkLayer)
         .on('click', () => { selectedId = c.jobId; render(); scrollToCard(c.jobId); });
     });
