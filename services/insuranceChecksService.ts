@@ -1,5 +1,5 @@
 import { InsuranceCheck, RouteInfo } from '../types';
-import { Coordinates, fetchRoute } from './osmService';
+import { Coordinates, fetchRoute, geocodeAddresses } from './osmService';
 import { haversineDistance } from './geography';
 
 const KM_TO_MI = 0.621371;
@@ -13,10 +13,36 @@ export async function fetchInsuranceChecks(): Promise<InsuranceCheck[]> {
             return [];
         }
         const data = await res.json();
-        return Array.isArray(data?.checks) ? data.checks : [];
+        const checks: InsuranceCheck[] = Array.isArray(data?.checks) ? data.checks : [];
+        return fillMissingCoords(checks);
     } catch (err) {
         console.error('Error fetching insurance checks:', err);
         return [];
+    }
+}
+
+/**
+ * Jobs created after the Roofr lat/lon sync stalled carry an address but no coords.
+ * Resolve those through the app's cached geocoder so every check can hit the map.
+ */
+async function fillMissingCoords(checks: InsuranceCheck[]): Promise<InsuranceCheck[]> {
+    const missing = checks.filter(c => (c.lat == null || c.lon == null) && c.address);
+    if (missing.length === 0) return checks;
+    try {
+        const results = await geocodeAddresses(missing.map(c => c.address));
+        const byAddress = new Map<string, Coordinates>();
+        missing.forEach((c, i) => {
+            const coord = results[i]?.coordinates;
+            if (coord) byAddress.set(c.address, coord);
+        });
+        return checks.map(c => {
+            if (c.lat != null && c.lon != null) return c;
+            const coord = byAddress.get(c.address);
+            return coord ? { ...c, lat: coord.lat, lon: coord.lon } : c;
+        });
+    } catch (err) {
+        console.error('Failed to geocode insurance checks:', err);
+        return checks;
     }
 }
 
