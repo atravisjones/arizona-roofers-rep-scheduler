@@ -122,17 +122,15 @@
 
   /* ---- Tablet / desktop: map or calendar pinned on the left, lists scroll on the right ---- */
   @media (min-width: 900px) {
-    body { display: grid; grid-template-columns: minmax(360px, 42%) 1fr; column-gap: 0; align-content: start; }
-    header { grid-column: 1 / -1; }
-    #mapWrap, #routeBar, #locBar { grid-column: 1; }
-    #tabs, #tab-adj, #tab-day, footer { grid-column: 2; }
-    #mapWrap { position: sticky; top: 52px; align-self: start; box-shadow: 2px 0 8px rgba(0,0,0,.12); }
-    #map { height: calc(100vh - 100px); max-height: none; }
-    body.map-min #map { height: 0; }
-    #cal { min-height: calc(100vh - 100px); padding: 16px 18px; }
+    #cols { display: flex; align-items: flex-start; }
+    #left { flex: 0 0 42%; min-width: 360px; position: sticky; top: 52px; height: calc(100vh - 52px); display: flex; flex-direction: column; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,.12); z-index: 1000; }
+    #right { flex: 1; min-width: 0; }
+    #mapWrap { position: static; flex: 1; min-height: 0; display: flex; flex-direction: column; box-shadow: none; }
+    #map { height: auto; flex: 1; min-height: 0; max-height: none; }
+    body.map-min #map { flex: 0 0 0; }
+    #cal { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px; }
     #cal .day { height: 56px; font-size: 15px; }
-    /* Route / location bar rides just under the pinned map */
-    #routeBar, #locBar { position: sticky; top: calc(100vh - 48px); margin: 0; padding: 8px 12px; background: #fff; border-top: 1px solid #e4e4e7; z-index: 1001; min-height: 48px; display: flex; align-items: center; justify-content: center; }
+    #routeBar, #locBar { margin: 0; padding: 8px 12px; border-top: 1px solid #e4e4e7; }
     #routeBar:empty { display: none; }
     #tabs { padding-top: 12px; }
     section { padding: 12px 20px 4px; }
@@ -152,10 +150,14 @@
     <button class="hbtn" id="mapToggle" type="button">📅 Calendar</button>
   </div>
 </header>
+<div id="cols">
+<div id="left">
 <div id="mapWrap"><div id="map"></div><div id="cal" hidden></div></div>
 <div class="routebar" id="routeBar"></div>
 <div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
 
+</div>
+<div id="right">
 <div class="tabs" id="tabs">
   <button class="tab on" type="button" data-tab="day">Today</button>
   <button class="tab" type="button" data-tab="adj">Needs Adjuster <span id="adjCount"></span></button>
@@ -209,6 +211,8 @@
 </section>
 </div>
 <footer>Arizona Roofers · checks = jobs in “INS: Collect ACV”, refreshed every 5 min · call ahead before you swing by</footer>
+</div>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -673,7 +677,8 @@
   // Bring a check's card into view just under the sticky header + map.
   function scrollToCard(id, root) {
     const card = (root || checksEl).querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (!card) return;
-    const top = card.getBoundingClientRect().top + window.scrollY - document.getElementById('mapWrap').getBoundingClientRect().bottom - 8;
+    const stickyBottom = matchMedia('(min-width: 900px)').matches ? 52 : document.getElementById('mapWrap').getBoundingClientRect().bottom;
+    const top = card.getBoundingClientRect().top + window.scrollY - stickyBottom - 8;
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
   // Animate a check off the screen (card slides out and collapses, pin shrinks away) before the
