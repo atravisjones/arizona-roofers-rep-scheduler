@@ -281,8 +281,8 @@
     const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
     sc.onload = () => {
       google.accounts.id.initialize({ client_id: clientId, callback: async resp => {
-        err.textContent = 'Checking…';
-        try { start(await verify(resp.credential)); } catch (e) { err.textContent = e.message; write(null); }
+        err.textContent = 'Checking your access… this takes a few seconds the first time.'; err.style.color = '#4f46e5';
+        try { start(await verify(resp.credential)); } catch (e) { err.style.color = ''; err.textContent = e.message; write(null); }
       } });
       google.accounts.id.renderButton(document.getElementById('gsiBtn'), { theme: 'filled_blue', size: 'large', shape: 'pill', width: 280 });
       google.accounts.id.prompt();
