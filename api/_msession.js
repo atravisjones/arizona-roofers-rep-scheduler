@@ -33,6 +33,14 @@ async function rosterNames() {
       if (active && DEPTS.includes(String(row.department || '').toLowerCase())) names.add(norm(row.name));
     }
   } catch (e) { /* keep whatever we had */ }
+  // The scheduler's own rep profiles carry the MANAGEMENT / INSURANCE sections the planner already
+  // trusts for manager rights (api/_session.js isManager) — honour those too.
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rep_profiles?select=display_name,section&active=eq.true`, { headers: { apikey: KEY, Authorization: `Bearer ${KEY}` } });
+    if (r.ok) for (const row of await r.json()) {
+      if (DEPTS.includes(String(row.section || '').toLowerCase())) names.add(norm(row.display_name));
+    }
+  } catch (e) { /* ignore */ }
   rosterCache = { at: Date.now(), names: [...names] };
   return rosterCache.names;
 }
