@@ -674,9 +674,7 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             <div className="px-2 pb-2 border-t border-border-primary">
                 <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between">
-                        <span className={MICRO_LABEL}>
-                            Checks near route · {nearbyChecks.length}{nearbyValue ? ` · ${formatMoney(nearbyValue)}` : ''}
-                        </span>
+                        <span className={MICRO_LABEL}>{pickupIds.size ? `${pickupIds.size} on route · ${formatMoney(pickedValue)}` : 'Add folds a pickup into the route'}</span>
                         {pickupIds.size > 0 && (
                             <button
                                 onClick={() => setPickupIds(new Set())}
