@@ -71,6 +71,7 @@
 <div id="mapWrap"><div id="map"></div></div>
 <a id="routeLink" class="btn big" href="#" target="_blank" rel="noopener" hidden>▶ Drive the whole route in Google Maps</a>
 <div class="routebar" id="routeBar"></div>
+<div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
 
 <section>
   <h2>Appointments <span id="stopCount"></span></h2>
@@ -303,13 +304,28 @@
   const fit = () => { const b = group.getBounds(); if (meMarker) b.extend(meMarker.getLatLng()); if (b.isValid()) map.fitBounds(b.pad(0.25)); else map.setView([33.5, -112.07], 10); };
   fit();
 
-  if (navigator.geolocation) {
+  // Location: iOS Safari is stingy with prompts that fire on page load, so we also offer a
+  // tap-driven request and explain a denial (Settings > Privacy > Location Services > Safari Websites).
+  const locBar = document.getElementById('locBar'), locMsg = document.getElementById('locMsg');
+  function locate(fromTap) {
+    if (!navigator.geolocation) { locBar.hidden = false; locMsg.textContent = 'This browser has no location support.'; return; }
+    if (fromTap) locMsg.textContent = 'Asking for your location…';
     navigator.geolocation.getCurrentPosition(pos => {
       me = { la: pos.coords.latitude, lo: pos.coords.longitude };
-      meMarker = L.marker([me.la, me.lo], { icon: pin('#2563eb', '●', 20), zIndexOffset: 2000 }).bindPopup('You are here').addTo(group);
+      if (meMarker) meMarker.setLatLng([me.la, me.lo]); else meMarker = L.marker([me.la, me.lo], { icon: pin('#2563eb', '●', 20), zIndexOffset: 2000 }).bindPopup('You are here').addTo(group);
+      locBar.hidden = true;
       drawLine(); fit(); render(); refreshDrive();
-    }, () => { /* denied or unavailable: route starts at the first appointment */ }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+    }, err => {
+      locBar.hidden = false;
+      const why = err && err.code === 1
+        ? 'Location is blocked for this site. iPhone: Settings › Privacy & Security › Location Services › Safari Websites › While Using, then tap again. Android: tap the lock icon in the address bar › Permissions › Location.'
+        : err && err.code === 3 ? 'Timed out getting your location — tap to try again.'
+        : 'Could not get your location — tap to try again.';
+      locMsg.textContent = fromTap ? why : 'Route starts at your first appointment until you share your location.';
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   }
+  document.getElementById('locBtn').addEventListener('click', () => locate(true));
+  locate(false);
 
   // Checks
   let checks = [];
