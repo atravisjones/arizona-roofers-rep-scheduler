@@ -41,23 +41,26 @@ const digits = s => String(s || '').replace(/\D/g, '');
 const PHONE_RE = /\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})/;
 
 // "Adjuster \nJason Fecher\n469-357-9329" (or "Adjuster: Jason 469…") -> { name, phone }
-function parseAdjuster(notes) {
+// Every phone in the notes is a candidate; the caller drops the carrier's own line.
+function parseAdjusters(notes) {
   const text = String(notes || '');
-  if (!text.trim()) return null;
+  if (!text.trim()) return [];
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  let phone = '', name = '';
+  const clean = l => l.replace(/adjuster[:\s-]*/i, '').replace(/[:\-–]\s*$/, '').trim();
+  const PH = /\(?(\d{3})\)?[\s.-]*(\d{3})[\s.-]*(\d{4})/g;
+  const found = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = PHONE_RE.exec(lines[i]);
-    if (!m) continue;
-    phone = m[1] + m[2] + m[3];
-    const before = lines[i].slice(0, m.index).replace(/adjuster[:\s-]*/i, '').replace(/[:\-–]\s*$/, '').trim();
-    if (before) name = before;
-    else for (let k = i - 1; k >= 0; k--) { const l = lines[k].replace(/adjuster[:\s-]*/i, '').trim(); if (l) { name = l; break; } }
-    break;
+    let m; PH.lastIndex = 0;
+    while ((m = PH.exec(lines[i]))) {
+      const phone = m[1] + m[2] + m[3];
+      let name = clean(lines[i].slice(0, m.index));
+      if (!name) for (let k = i - 1; k >= 0; k--) { const l = clean(lines[k]); if (l && !PHONE_RE.test(l)) { name = l; break; } }
+      name = name.replace(/^[^A-Za-z]+/, '').replace(/\s*[-–|]\s*\S+@\S+$/, '').replace(/\s*\(\d*$/, '').trim();
+      if (/callback|claims? line|main line/i.test(name)) name = '';
+      found.push({ name: name.slice(0, 60), phone });
+    }
   }
-  if (!phone) return null;
-  name = name.replace(/^[^A-Za-z]+/, '').replace(/\s*[-–|]\s*\S+@\S+$/, '').trim();
-  return { name: name.slice(0, 60), phone };
+  return found;
 }
 
 async function roofrGet(headers, path) {
@@ -92,13 +95,15 @@ export default async function handler(req, res) {
         out.claimNumber = ins.claim_number || '';
         out.insuranceCompany = ins.insurance_company || '';
         out.insuranceNotes = ins.notes || '';
-        out.adjuster = parseAdjuster(ins.notes);
+        out.adjusters = parseAdjusters(ins.notes);
       }
       const list = contacts && Array.isArray(contacts.data) ? contacts.data : [];
       const insC = list.map(x => x.contact || {}).find(c => c.contact_type === 'insurance' && !c.deleted_at);
       if (insC) out.carrier = { name: insC.name || insC.company_name || insC.first_name || '', phone: digits(insC.phone), email: insC.email || '' };
-      // Notes that just repeat the carrier's number are not an adjuster.
-      if (out.adjuster && out.carrier && out.adjuster.phone === out.carrier.phone) out.adjuster = null;
+      // First phone in the notes that is not the carrier's own line (or a toll-free number) = the adjuster.
+      const cp = out.carrier ? out.carrier.phone : '';
+      out.adjuster = (out.adjusters || []).find(a => a.phone !== cp && !/^8(00|33|44|55|66|77|88)/.test(a.phone)) || null;
+      delete out.adjusters;
       return out;
     };
     const results = [];
