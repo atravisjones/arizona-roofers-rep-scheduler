@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import ReactDOM from 'react-dom/client';
 import { geocodeAddresses, Coordinates, fetchRoute } from '../services/osmService';
 import { LoadingIcon } from './icons';
-import { RouteInfo, DisplayJob, Rep, InstallJob } from '../types';
+import { RouteInfo, DisplayJob, Rep, InstallJob, InsuranceCheck } from '../types';
+import { milesOffRoute, formatMoney, roofrJobUrl } from '../services/insuranceChecksService';
 import { JobCard } from './JobCard';
 import { useAppContext, AppContext } from '../context/AppContext';
 import { TAG_KEYWORDS } from '../constants';
@@ -46,13 +47,21 @@ interface LeafletMapProps {
   showRepHomes?: boolean;
   showInstalls?: boolean;
   reps?: Rep[];
+  /** Insurance checks waiting for pickup (Insurance section overlay). */
+  checks?: InsuranceCheck[];
+  showChecks?: boolean;
+  /** Checks within this many straight-line miles of the drawn route light up; others dim. */
+  checkRadiusMiles?: number;
+  /** Check jobIds already folded into the route as pickup stops. */
+  pickupIds?: Set<string>;
+  onTogglePickup?: (check: InsuranceCheck) => void;
 }
 
 const PHOENIX_COORDS: [number, number] = [33.4484, -112.0740];
 const DEFAULT_ZOOM = 9;
 const ROUTE_ZOOM = 12;
 
-const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob, showRepHomes, showInstalls, reps }) => {
+const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRouteInfo, mapType = 'route', placementJobId, onPlaceJob, showRepHomes, showInstalls, reps, checks, showChecks, checkRadiusMiles = 5, pickupIds, onTogglePickup }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const featureGroupRef = useRef<any>(null);
@@ -83,6 +92,9 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
   const jobRepNameMapRef = useRef<Map<string, string | undefined>>(new Map()); // Map jobId to assignedRepName
   const repHomesLayerRef = useRef<any>(null); // Separate layer for rep home markers
   const installsLayerRef = useRef<any>(null); // Separate layer for install markers
+  const checksLayerRef = useRef<any>(null); // Separate layer for insurance-check pickups
+  const onTogglePickupRef = useRef(onTogglePickup);
+  onTogglePickupRef.current = onTogglePickup;
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -723,6 +735,98 @@ const LeafletMap: React.FC<LeafletMapProps> = ({ jobs, routeInfo: preloadedRoute
       }
     };
   }, [showInstalls, installJobs, installsByRep, reps]);
+
+  // Insurance-check pickups overlay (Insurance section). Checks near the drawn route glow,
+  // the rest dim, and anything already folded into the route gets an amber ring.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (checksLayerRef.current) {
+      mapRef.current.removeLayer(checksLayerRef.current);
+      checksLayerRef.current = null;
+    }
+    if (!showChecks || !checks || checks.length === 0) return;
+
+    const hasRoute = mapType === 'route' && !!effectiveRouteInfo && (effectiveRouteInfo.coordinates?.length || 0) > 1;
+    const layer = L.featureGroup();
+    checksLayerRef.current = layer;
+
+    checks.forEach((check) => {
+      if (check.lat == null || check.lon == null) return;
+      const off = hasRoute ? milesOffRoute(check, effectiveRouteInfo) : null;
+      const near = off != null && off <= checkRadiusMiles;
+      const picked = !!pickupIds?.has(check.jobId);
+      const dim = hasRoute && !near && !picked;
+
+      const fill = check.isD2D ? '#8b5cf6' : '#059669';
+      const size = picked ? 22 : near ? 18 : 14;
+      const ring = picked ? '3px solid #f59e0b' : near ? '2px solid white' : '1.5px solid rgba(255,255,255,0.7)';
+      const glow = picked
+        ? 'box-shadow: 0 0 0 3px #f59e0b55, 0 2px 8px rgba(0,0,0,0.45);'
+        : near ? `box-shadow: 0 0 0 3px ${fill}40, 0 2px 6px rgba(0,0,0,0.4);` : 'box-shadow: 0 1px 3px rgba(0,0,0,0.25);';
+      const fade = dim ? 'opacity: 0.35;' : '';
+      const fontSize = Math.round(size * 0.6);
+      const markerHtml = `<div style="width:${size}px;height:${size}px;background:${fill};border-radius:50%;border:${ring};${glow}${fade}display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:${fontSize}px;line-height:1;font-family:system-ui,sans-serif;">$</div>`;
+      const icon = L.divIcon({
+        html: markerHtml,
+        className: 'custom-div-icon',
+        iconSize: [size + 6, size + 6],
+        iconAnchor: [(size + 6) / 2, (size + 6) / 2],
+      });
+
+      const valueStr = formatMoney(check.value);
+      const days = check.daysInStage != null ? `${check.daysInStage}d${check.daysIsStageTime ? ' in Collect ACV' : ' old'}` : '';
+      const offStr = off != null ? `${off < 0.1 ? '<0.1' : off.toFixed(1)} mi off route` : '';
+      const who = check.assignees ? `${check.jobOwner} → ${check.assignees}` : check.jobOwner;
+      const tooltip = `
+        <div style="text-align:center;line-height:1.3;min-width:120px;">
+          <div style="font-weight:bold;font-size:10px;color:${fill};text-transform:uppercase;">Insurance check${check.isD2D ? ' · D2D' : ''}${picked ? ' · ON ROUTE' : ''}</div>
+          <div style="font-weight:800;font-size:12px;">${check.customerName}</div>
+          <div style="font-size:10px;color:#666;">${check.address}</div>
+          ${valueStr ? `<div style="font-weight:bold;font-size:11px;color:#047857;margin-top:2px;">${valueStr}</div>` : ''}
+          <div style="font-size:9px;color:#888;margin-top:2px;">${[days, offStr].filter(Boolean).join(' · ')}</div>
+          ${who ? `<div style="font-size:9px;color:#888;">${who}</div>` : ''}
+        </div>`;
+
+      const tel = (check.phone || '').replace(/[^0-9]/g, '');
+      const popup = `
+        <div style="min-width:200px;line-height:1.35;font-family:system-ui,sans-serif;">
+          <div style="font-weight:800;font-size:13px;">${check.customerName}</div>
+          <div style="font-size:11px;color:#555;">${check.address}</div>
+          <div style="font-size:12px;margin-top:4px;"><b style="color:#047857;">${valueStr || 'value n/a'}</b>${days ? ` · ${days}` : ''}${offStr ? ` · ${offStr}` : ''}</div>
+          ${who ? `<div style="font-size:11px;color:#666;">${who}</div>` : ''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:11px;">
+            ${tel ? `<a href="tel:${tel}" style="padding:3px 8px;border:1px solid #ccc;border-radius:4px;text-decoration:none;color:#111;">📞 ${check.phone}</a>` : ''}
+            <a href="${roofrJobUrl(check.jobId)}" target="_blank" rel="noopener" style="padding:3px 8px;border:1px solid #ccc;border-radius:4px;text-decoration:none;color:#111;">Open in Roofr</a>
+            ${hasRoute && onTogglePickupRef.current ? `<button type="button" data-pickup="${check.jobId}" style="padding:3px 8px;border:none;border-radius:4px;background:${picked ? '#b45309' : '#4f46e5'};color:#fff;font-weight:700;cursor:pointer;">${picked ? 'Remove from route' : 'Add to route'}</button>` : ''}
+          </div>
+        </div>`;
+
+      const marker = L.marker([check.lat, check.lon], { icon, zIndexOffset: picked ? 900 : near ? 700 : 300 })
+        .bindTooltip(tooltip, { direction: 'top', offset: [0, -10] })
+        .bindPopup(popup, { closeButton: true });
+      marker.on('popupopen', (e: any) => {
+        const btn = e?.popup?.getElement?.()?.querySelector?.('[data-pickup]');
+        if (btn) {
+          btn.addEventListener('click', () => {
+            onTogglePickupRef.current?.(check);
+            marker.closePopup();
+          });
+        }
+      });
+      marker.addTo(layer);
+    });
+
+    if (mapRef.current && checksLayerRef.current === layer) {
+      layer.addTo(mapRef.current);
+    }
+
+    return () => {
+      if (mapRef.current && checksLayerRef.current) {
+        mapRef.current.removeLayer(checksLayerRef.current);
+        checksLayerRef.current = null;
+      }
+    };
+  }, [showChecks, checks, checkRadiusMiles, pickupIds, effectiveRouteInfo, mapType]);
 
   return (
     <div className="w-full h-full relative rounded-lg overflow-hidden bg-bg-tertiary">

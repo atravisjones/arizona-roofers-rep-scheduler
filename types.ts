@@ -306,6 +306,25 @@ export interface LoadOptionsModalState {
   isLoading: boolean;
 }
 
+/** A job sitting in "INS: Collect ACV" — the homeowner holds an insurance check we need to pick up. */
+export interface InsuranceCheck {
+  jobId: string;
+  customerName: string;
+  address: string;
+  city: string;
+  value: number | null;
+  phone: string;
+  jobOwner: string;
+  assignees: string;
+  leadSource: string;
+  isD2D: boolean;
+  /** Days sitting in Collect ACV (falls back to job age when the timeline is missing). */
+  daysInStage: number | null;
+  daysIsStageTime: boolean;
+  lat: number | null;
+  lon: number | null;
+}
+
 export interface InstallJob {
   jobId: string;
   address: string;

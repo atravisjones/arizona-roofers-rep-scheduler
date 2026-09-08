@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
-import { DisplayJob, RouteInfo, TimeSlot } from '../types';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { DisplayJob, RouteInfo, TimeSlot, InsuranceCheck } from '../types';
+import { fetchInsuranceChecks, milesOffRoute, buildRouteWithPickups, formatMoney, roofrJobUrl } from '../services/insuranceChecksService';
 import LeafletMap from './LeafletMap';
 import { LoadingIcon, RefreshIcon, MapPinIcon, VariationsIcon, ChevronDownIcon, ChevronUpIcon, TagIcon, StarIcon, HomeIcon, HardHatIcon } from './icons';
 import { useAppContext } from '../context/AppContext';
@@ -156,7 +157,7 @@ interface TagFilters {
 }
 
 const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) => {
-    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings, placementJobId, setPlacementJobId, handlePlaceJobOnMap, selectedRepId, appState, boardReps } = useAppContext();
+    const { handleUpdateJob, handleUnassignJob, handleRemoveJob, handleRefreshRoute, handleShowAllJobsOnMap, handleTryAddressVariations, isTryingVariations, uiSettings, placementJobId, setPlacementJobId, handlePlaceJobOnMap, selectedRepId, appState, boardReps, boardKind } = useAppContext();
     // selectedRepFilters may not exist in context yet - default to empty Set
     const selectedRepFilters = new Set<string>();
     const [copySuccess, setCopySuccess] = useState(false);
@@ -165,6 +166,27 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
     const [showTagFilters, setShowTagFilters] = useState(false);
     const [showRepHomes, setShowRepHomes] = useState(false);
     const [showInstalls, setShowInstalls] = useState(false);
+
+    // ── Insurance-check pickups (Insurance section) ──────────────────────────────
+    // Every job sitting in "INS: Collect ACV" is a check a homeowner is holding. On the
+    // Insurance section they overlay the map so whoever is driving to adjuster meetings
+    // can grab the ones on the way; picked checks are folded into the drawn route.
+    const isInsuranceBoard = boardKind === 'insurance';
+    const [checks, setChecks] = useState<InsuranceCheck[]>([]);
+    const [checksLoaded, setChecksLoaded] = useState(false);
+    const [showChecks, setShowChecks] = useState(false);
+    const [checkRadius, setCheckRadius] = useState<number>(5);
+    const [pickupIds, setPickupIds] = useState<Set<string>>(() => new Set());
+    const [pickupRoute, setPickupRoute] = useState<{ routeInfo: RouteInfo; stopOrder: InsuranceCheck[] } | null>(null);
+    const [isRoutingPickups, setIsRoutingPickups] = useState(false);
+
+    useEffect(() => {
+        setShowChecks(isInsuranceBoard);
+        if (isInsuranceBoard && !checksLoaded) {
+            setChecksLoaded(true);
+            fetchInsuranceChecks().then(setChecks);
+        }
+    }, [isInsuranceBoard, checksLoaded]);
 
     // State for filtering
     const [selectedTimeSlotId, setSelectedTimeSlotId] = useState<string | null>(null);
@@ -275,8 +297,51 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
         });
     }, [routeData, selectedTimeSlotId, tagFilters, jobTagsMap, selectedRepFilters, appState.reps, appState.timeSlots]);
 
-    const routeInfoForMap = routeData?.routeInfo || null;
     const mapType = (routeData?.repName === 'Unassigned Jobs' || routeData?.repName === 'Job Map' || routeData?.repName === 'All Rep Locations' || routeData?.repName?.startsWith('Zip:')) ? 'unassigned' : 'route';
+    const baseRouteInfo = routeData?.routeInfo || null;
+    const isRepRoute = mapType === 'route' && !!baseRouteInfo && (baseRouteInfo.coordinates?.length || 0) > 1;
+
+    // A new rep / a re-drawn route drops the pickups — they were chosen against the old line.
+    const routeKey = routeData ? `${routeData.repName}|${baseRouteInfo?.coordinates?.length || 0}|${baseRouteInfo?.distance?.toFixed(2) || ''}` : '';
+    useEffect(() => {
+        setPickupIds(new Set());
+        setPickupRoute(null);
+    }, [routeKey]);
+
+    // Re-route through OSRM whenever the pickup set changes.
+    useEffect(() => {
+        if (!isRepRoute || !baseRouteInfo || pickupIds.size === 0) { setPickupRoute(null); return; }
+        const picks = checks.filter(c => pickupIds.has(c.jobId));
+        if (picks.length === 0) { setPickupRoute(null); return; }
+        let cancelled = false;
+        setIsRoutingPickups(true);
+        buildRouteWithPickups(baseRouteInfo, picks)
+            .then(r => { if (!cancelled) setPickupRoute(r); })
+            .finally(() => { if (!cancelled) setIsRoutingPickups(false); });
+        return () => { cancelled = true; };
+    }, [pickupIds, checks, isRepRoute, baseRouteInfo]);
+
+    const togglePickup = useCallback((check: InsuranceCheck) => {
+        setPickupIds(prev => {
+            const next = new Set(prev);
+            next.has(check.jobId) ? next.delete(check.jobId) : next.add(check.jobId);
+            return next;
+        });
+    }, []);
+
+    // Checks worth showing in the side list: near the base route, or already picked.
+    const nearbyChecks = useMemo(() => {
+        if (!showChecks || !isRepRoute || !baseRouteInfo) return [] as { check: InsuranceCheck; off: number | null }[];
+        return checks
+            .map(check => ({ check, off: milesOffRoute(check, baseRouteInfo) }))
+            .filter(x => pickupIds.has(x.check.jobId) || (x.off != null && x.off <= checkRadius))
+            .sort((a, b) => (a.off ?? 999) - (b.off ?? 999));
+    }, [showChecks, isRepRoute, baseRouteInfo, checks, checkRadius, pickupIds]);
+
+    const nearbyValue = nearbyChecks.reduce((sum, x) => sum + (x.check.value || 0), 0);
+    const pickedValue = checks.filter(c => pickupIds.has(c.jobId)).reduce((sum, c) => sum + (c.value || 0), 0);
+
+    const routeInfoForMap = (pickupRoute && pickupIds.size > 0) ? pickupRoute.routeInfo : baseRouteInfo;
 
     return (
         <div className="w-full h-full flex flex-col bg-bg-secondary rounded-lg overflow-hidden">
@@ -317,7 +382,86 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
                             <HardHatIcon className="h-3.5 w-3.5" />
                             <span>Installs</span>
                         </button>
+                        {isInsuranceBoard && (
+                            <button
+                                onClick={() => setShowChecks(!showChecks)}
+                                className={`${SEG_BTN} ${showChecks ? 'bg-tag-green-bg text-tag-green-text' : SEG_OFF}`}
+                                title="Toggle insurance checks waiting for pickup (jobs in INS: Collect ACV)"
+                            >
+                                <span className="font-black">$</span>
+                                <span>Checks{checks.length ? ` (${checks.length})` : ''}</span>
+                            </button>
+                        )}
+                        {isInsuranceBoard && showChecks && isRepRoute && (
+                            <>
+                                <span className={`${MICRO_LABEL} ml-1`}>Within</span>
+                                {[2, 5, 10].map(mi => (
+                                    <button
+                                        key={mi}
+                                        onClick={() => setCheckRadius(mi)}
+                                        className={`${SEG_BTN} px-2 ${checkRadius === mi ? SEG_ON : SEG_OFF}`}
+                                        title={`Highlight checks within ${mi} miles of the route`}
+                                    >{mi} mi</button>
+                                ))}
+                            </>
+                        )}
                     </div>
+
+                    {isInsuranceBoard && showChecks && isRepRoute && (
+                        <>
+                            <div className="border-t -mx-2 border-border-primary"></div>
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                    <span className={MICRO_LABEL}>
+                                        Checks near route · {nearbyChecks.length}{nearbyValue ? ` · ${formatMoney(nearbyValue)}` : ''}
+                                    </span>
+                                    {pickupIds.size > 0 && (
+                                        <button
+                                            onClick={() => setPickupIds(new Set())}
+                                            className="text-[10px] font-semibold text-text-secondary hover:text-text-primary"
+                                        >Clear {pickupIds.size} pickup{pickupIds.size === 1 ? '' : 's'}</button>
+                                    )}
+                                </div>
+                                {nearbyChecks.length === 0 ? (
+                                    <div className="text-[11px] text-text-tertiary">No checks within {checkRadius} mi of this route. Widen the radius or look at the dimmed $ pins.</div>
+                                ) : (
+                                    <ul className="max-h-44 overflow-y-auto divide-y divide-border-primary">
+                                        {nearbyChecks.map(({ check, off }) => {
+                                            const picked = pickupIds.has(check.jobId);
+                                            const stopIdx = pickupRoute?.stopOrder.findIndex(c => c.jobId === check.jobId) ?? -1;
+                                            const tel = (check.phone || '').replace(/[^0-9]/g, '');
+                                            return (
+                                                <li key={check.jobId} className="py-1 flex items-center gap-2 text-[11px]">
+                                                    <span
+                                                        className="flex-shrink-0 w-4 h-4 rounded-full text-white text-[9px] font-black flex items-center justify-center"
+                                                        style={{ background: check.isD2D ? '#8b5cf6' : '#059669', outline: picked ? '2px solid #f59e0b' : 'none' }}
+                                                        title={check.isD2D ? 'D2D-sourced' : 'Retail/insurance'}
+                                                    >{picked && stopIdx >= 0 ? stopIdx + 1 : '$'}</span>
+                                                    <div className="min-w-0 flex-grow leading-tight">
+                                                        <div className="truncate">
+                                                            <a href={roofrJobUrl(check.jobId)} target="_blank" rel="noopener" className="font-semibold text-text-primary hover:underline">{check.customerName || 'Unknown'}</a>
+                                                            {check.city ? <span className="text-text-tertiary"> · {check.city}</span> : null}
+                                                        </div>
+                                                        <div className="text-text-secondary truncate">
+                                                            {formatMoney(check.value) || 'value n/a'}
+                                                            {check.daysInStage != null ? ` · ${check.daysInStage}d` : ''}
+                                                            {off != null ? ` · ${off < 0.1 ? '<0.1' : off.toFixed(1)} mi off` : ''}
+                                                            {tel ? <> · <a href={`tel:${tel}`} className="hover:underline">{check.phone}</a></> : null}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => togglePickup(check)}
+                                                        className={`flex-shrink-0 px-2 h-5 rounded text-[10px] font-bold ${picked ? 'bg-tag-amber-bg text-tag-amber-text' : 'bg-brand-primary text-brand-text-on-primary'}`}
+                                                        title={picked ? 'Remove this pickup from the route' : 'Fold this pickup into the route'}
+                                                    >{picked ? 'Remove' : 'Add'}</button>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                            </div>
+                        </>
+                    )}
 
                     <div className="border-t -mx-2 border-border-primary"></div>
 
@@ -521,12 +665,20 @@ const RouteMapPanel: React.FC<RouteMapPanelProps> = ({ routeData, isLoading }) =
             </header>
 
             <div className="flex-grow relative bg-bg-quaternary">
-                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} placementJobId={placementJobId} onPlaceJob={handlePlaceJobOnMap} showRepHomes={showRepHomes} showInstalls={showInstalls} reps={boardReps} />
+                <LeafletMap jobs={jobsForMap} routeInfo={routeInfoForMap} mapType={mapType} placementJobId={placementJobId} onPlaceJob={handlePlaceJobOnMap} showRepHomes={showRepHomes} showInstalls={showInstalls} reps={boardReps}
+                    checks={checks} showChecks={isInsuranceBoard && showChecks} checkRadiusMiles={checkRadius} pickupIds={pickupIds} onTogglePickup={isRepRoute ? togglePickup : undefined} />
             </div>
 
             {routeData && routeData.routeInfo && (routeData.repName !== 'Unassigned Jobs' && routeData.repName !== 'Job Map' && routeData.repName !== 'All Rep Locations' && !routeData.repName.startsWith('Zip:')) && !isLoading && (
                 <footer className="p-2 border-t border-border-primary text-center bg-bg-primary text-sm font-semibold text-text-secondary flex-shrink-0">
                     Estimated Route: {routeData.routeInfo.distance.toFixed(1)} miles / {routeData.routeInfo.duration.toFixed(0)} mins driving
+                    {pickupIds.size > 0 && (
+                        <span className="block text-xs font-semibold text-tag-amber-text mt-0.5">
+                            {isRoutingPickups || !pickupRoute
+                                ? `Routing ${pickupIds.size} pickup${pickupIds.size === 1 ? '' : 's'}…`
+                                : `With ${pickupIds.size} pickup${pickupIds.size === 1 ? '' : 's'} (${formatMoney(pickedValue)}): ${pickupRoute.routeInfo.distance.toFixed(1)} mi / ${pickupRoute.routeInfo.duration.toFixed(0)} mins (+${Math.max(0, pickupRoute.routeInfo.distance - routeData.routeInfo.distance).toFixed(1)} mi, +${Math.max(0, pickupRoute.routeInfo.duration - routeData.routeInfo.duration).toFixed(0)} mins)`}
+                        </span>
+                    )}
                 </footer>
             )}
         </div>
