@@ -135,3 +135,10 @@ CTM hand-off — VERIFIED ON DEVICE 2026-09-08 (Travis's S22 Ultra over ADB, CTM
   Chrome on the phone: toast "Copied to clipboard", CTM Phone foreground on Dialpad.
 - APK pulled to inspect: `adb pull $(pm path …)` then read `assets/index.android.bundle` (Hermes;
   strings still greppable). Test page for future candidates: `/m/ctm-test.html`.
+
+Phone page v4 (2026-09-08): Drive button lives in the header ("▶ Drive (n)" = remaining stops,
+Google Maps from Your location). Appointments have "Mark ran" (localStorage `m-ran:<rep>:<date>`),
+added checks get "Picked up" (outcome `picked_up`, logged like the others; migration widened the
+CHECK constraint). Ran stops and picked-up checks are greyed, drop out of the Google link and the
+OSRM drive line, and picked-up checks sink to the bottom. Picking up fires a confetti popup with the
+check value and the day's running total. Undo: tap again (picked up → back to confirmed).
