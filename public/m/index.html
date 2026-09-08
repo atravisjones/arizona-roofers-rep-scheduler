@@ -459,7 +459,7 @@
             <div class="meta">${[dist, days, c.jobOwner ? 'Rep: ' + esc(c.jobOwner) : ''].filter(Boolean).join(' · ')}</div>
             <div class="addr">${esc(c.address)}</div>
             <div class="actions">
-              ${c.phone ? `<button class="btn call" type="button" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}</button>` : ''}
+              ${c.phone ? `<button class="btn call" type="button" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}${c.phoneContact ? ' · ' + esc(c.phoneContact.split(' ')[0]) : ''}</button>` : `<span class="meta">No phone in Roofr</span>`}
               <a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>
               <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>

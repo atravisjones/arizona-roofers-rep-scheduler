@@ -314,6 +314,7 @@ export interface InsuranceCheck {
   city: string;
   value: number | null;
   phone: string;
+  phoneContact?: string;
   jobOwner: string;
   assignees: string;
   leadSource: string;

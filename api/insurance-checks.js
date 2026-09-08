@@ -9,6 +9,25 @@
  * Returns: { success: true, count, checks: [...] }
  * Cached at the CDN edge for 5 minutes.
  */
+// Roofr jobs can carry several contacts (carrier, adjuster, spouse...). When the primary contact has no
+// phone (e.g. primary = insurance company), pick the first non-toll-free 10-digit number from the other
+// contacts. all_contacts is a " | "-joined dump: tokens are names, phones (raw + formatted) and emails.
+const TOLL_FREE = /^(800|888|877|866|855|844|833)/;
+function fallbackPhone(allContacts) {
+  const tokens = String(allContacts || '').split('|').map(t => t.trim()).filter(Boolean);
+  let lastName = '';
+  for (const t of tokens) {
+    const d = t.replace(/[^0-9]/g, '');
+    if (/^\d{10,11}$/.test(d) && !/[a-z@]/i.test(t)) {
+      const ten = d.length === 11 ? d.slice(1) : d;
+      if (!TOLL_FREE.test(ten)) return { phone: ten, name: lastName };
+      continue;
+    }
+    if (!/@/.test(t) && !/^\(?\d/.test(t)) lastName = t;
+  }
+  return { phone: '', name: '' };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -23,7 +42,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const select = 'job_id,name,address,value,phone,job_owner,assignees,latitude,longitude,lead_source,stage_timeline,created_at';
+    const select = 'job_id,name,address,value,phone,job_owner,assignees,latitude,longitude,lead_source,stage_timeline,created_at,all_contacts';
     const url = `${SUPABASE_URL}/rest/v1/jobs?select=${select}&deleted_at=is.null&stage=ilike.${encodeURIComponent('INS: Collect ACV')}&order=value.desc.nullslast&limit=500`;
 
     const resp = await fetch(url, {
@@ -50,6 +69,7 @@ export default async function handler(req, res) {
       const lat = j.latitude != null ? parseFloat(j.latitude) : null;
       const lon = j.longitude != null ? parseFloat(j.longitude) : null;
       const cityMatch = /,\s*([^,]+),\s*AZ\b/i.exec(j.address || '');
+      const fallback = j.phone ? { phone: '', name: '' } : fallbackPhone(j.all_contacts);
 
       return {
         jobId: String(j.job_id),
@@ -57,7 +77,8 @@ export default async function handler(req, res) {
         address: j.address || '',
         city: cityMatch ? cityMatch[1].trim() : '',
         value: typeof j.value === 'number' ? j.value : (j.value != null ? parseFloat(j.value) : null),
-        phone: j.phone || '',
+        phone: (j.phone || fallback.phone) || '',
+        phoneContact: j.phone ? '' : fallback.name,
         jobOwner: j.job_owner || '',
         assignees: j.assignees || '',
         leadSource: j.lead_source || '',
