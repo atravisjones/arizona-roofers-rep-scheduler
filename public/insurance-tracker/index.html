@@ -15,6 +15,9 @@
   header h1 { margin: 0; font-size: 17px; white-space: nowrap; }
   header > div:first-child { min-width: 0; }
   header .sub { font-size: 13px; opacity: .9; margin-top: 2px; }
+  .reppick { margin-top: 4px; max-width: 100%; border: 1px solid rgba(255,255,255,.55); background: rgba(255,255,255,.14); color: #fff; border-radius: 8px; padding: 4px 8px; font: inherit; font-size: 12px; font-weight: 700; }
+  .reppick option { color: #18181b; }
+  .reppick[hidden] { display: none; }
   #mapWrap { position: sticky; top: 52px; z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
   #map { height: 240px; transition: height .2s; }
   body.map-min #map { height: 0; }
@@ -160,6 +163,7 @@
 <header>
   <div>
     <h1 id="title">My Day</h1>
+    <select id="repPick" class="reppick" hidden aria-label="Viewing rep"></select>
     <div class="sub" id="subtitle">Loading…</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
@@ -270,7 +274,12 @@
   };
   window.mSignOut = () => { write(null); location.reload(); };
   const gate = document.getElementById('gate'), err = document.getElementById('gateErr');
-  const start = s => { gate.hidden = true; window.mUser = s; if (window.__bootMyDay) window.__bootMyDay(); };
+  // After sign-in: learn who the door knockers are (own calendar + map each), then boot.
+  const start = async s => {
+    gate.hidden = true; window.mUser = s;
+    try { window.mReps = (await window.fetch('/api/adjuster-days?reps=1').then(r => r.json())).reps || []; } catch (e) { window.mReps = []; }
+    if (window.__bootMyDay) window.__bootMyDay();
+  };
   const verify = async token => {
     const r = await origFetch('/api/m-auth', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
     const d = await r.json().catch(() => ({}));
@@ -305,7 +314,40 @@
 window.__bootMyDay = function () {
   const params = new URLSearchParams(location.search);
   // Rep = the signed-in person unless a share link names one (office sending a rep his day).
-  const rep = params.get('rep') || (window.mUser && window.mUser.name) || 'Rep';
+  // Whose day is this? A door knocker always sees his own. Office users pick one from the header
+  // dropdown (defaults to the first door knocker); the choice rides in ?rep= so every per-day key
+  // (ran / called / picks / outcomes) and the calendar stay tied to that rep.
+  const reps = window.mReps || [];
+  const nrm = s => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const meName = window.mUser && window.mUser.name;
+  const meRep = reps.find(r => nrm(r.name) === nrm(meName));
+  // Switching rep (or opening with no stops in the link) pulls that rep's meetings for the day from
+  // the Roofr calendar mirror and reloads with them packed in ?s= — same shape as a shared link.
+  const goRep = async name => {
+    const q = new URLSearchParams(location.search); q.set('rep', name);
+    const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : today; q.set('date', day);
+    let packed = 'W10';
+    try {
+      const r = await fetch(`/api/adjuster-days?rep=${encodeURIComponent(name)}&date=${day}`); const dd = await r.json();
+      const stops = dd.stops || [];
+      if (typeof geocodeMissing === 'function') await geocodeMissing(stops);
+      packed = btoa(unescape(encodeURIComponent(JSON.stringify(stops)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') || 'W10';
+    } catch (e) { /* empty day */ }
+    q.set('s', packed);
+    location.replace('/insurance-tracker/?' + q.toString());
+  };
+  if (meRep && nrm(params.get('rep')) !== nrm(meRep.name)) { goRep(meRep.name); return; }
+  if (!meRep && reps.length && !params.get('rep')) { goRep(reps[0].name); return; }
+  const rep = params.get('rep') || meName || 'Rep';
+  if (!params.has('s') && reps.some(r => nrm(r.name) === nrm(rep))) { goRep(rep); return; }
+  if (!meRep && reps.length) {
+    const sel = document.getElementById('repPick');
+    sel.innerHTML = reps.map(r => `<option value="${r.name.replace(/"/g, '&quot;')}"${nrm(r.name) === nrm(rep) ? ' selected' : ''}>${r.name}</option>`).join('');
+    if (!reps.some(r => nrm(r.name) === nrm(rep))) sel.insertAdjacentHTML('afterbegin', `<option selected>${rep}</option>`);
+    sel.hidden = false;
+    sel.addEventListener('change', () => goRep(sel.value));
+  }
   const date = params.get('date') || '';
   let stops = [];
   try {

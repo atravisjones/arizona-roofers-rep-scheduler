@@ -11,7 +11,18 @@
  */
 import { requireM } from './_msession.js';
 
-const DOOR_KNOCKER_IDS = { 'michael hurff': '507565' };
+// Door knockers = active rep_profiles in the INSURANCE / D2D sections that carry a Roofr user id
+// (the id is how calendar_events.attendees names them). Add a person there and they appear in the
+// tracker's rep dropdown with their own calendar — no code change.
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+let repCache = { at: 0, reps: [] };
+async function doorKnockers(SUPABASE_URL, headers) {
+  if (Date.now() - repCache.at < 5 * 60e3 && repCache.reps.length) return repCache.reps;
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rep_profiles?select=display_name,section,roofr_user_id,sort_order&active=eq.true&section=in.(INSURANCE,D2D)&roofr_user_id=not.is.null&order=sort_order.asc,display_name.asc`, { headers });
+  const rows = r.ok ? await r.json() : [];
+  repCache = { at: Date.now(), reps: rows.map(x => ({ name: x.display_name, uid: String(x.roofr_user_id), section: x.section })) };
+  return repCache.reps;
+}
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, max-age=60');
@@ -22,7 +33,9 @@ export default async function handler(req, res) {
   const headers = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 
   const rep = String(req.query.rep || '').trim();
-  const uid = DOOR_KNOCKER_IDS[rep.toLowerCase()] || '';
+  const reps = await doorKnockers(SUPABASE_URL, headers);
+  if (req.query.reps) return res.status(200).json({ reps });
+  const uid = (reps.find(x => norm(x.name) === norm(rep)) || {}).uid || '';
   const month = String(req.query.month || '');
   const date = String(req.query.date || '');
   let from, to;
