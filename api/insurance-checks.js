@@ -9,6 +9,8 @@
  * Returns: { success: true, count, checks: [...] }
  * Cached at the CDN edge for 5 minutes.
  */
+import { requireSession } from './_session.js';
+
 // Roofr jobs can carry several contacts (carrier, adjuster, spouse...). When the primary contact has no
 // phone (e.g. primary = insurance company), pick the first non-toll-free 10-digit number from the other
 // contacts. all_contacts is a " | "-joined dump: tokens are names, phones (raw + formatted) and emails.
@@ -32,6 +34,8 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
+  // Any signed-in scheduler user (planner) or /m/ user; open only when auth is disabled.
+  if (!requireSession(req)) return res.status(401).json({ error: 'Sign in required' });
 
   const SUPABASE_URL = process.env.KPI_SUPABASE_URL || 'https://ucfqgkbkxbztxlyniuph.supabase.co';
   const SUPABASE_KEY = process.env.KPI_SUPABASE_ANON_KEY || '';

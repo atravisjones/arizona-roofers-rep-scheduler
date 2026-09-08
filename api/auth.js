@@ -15,16 +15,16 @@
  */
 import crypto from 'crypto';
 
-const CLIENT_ID = (process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
-const SECRET = (process.env.SESSION_JWT_SECRET || '').trim();
-const TTL_SECONDS = parseInt(process.env.SESSION_TTL_HOURS || '168', 10) * 3600;
+export const CLIENT_ID = (process.env.GOOGLE_OAUTH_CLIENT_ID || '').trim();
+export const SECRET = (process.env.SESSION_JWT_SECRET || '').trim();
+export const TTL_SECONDS = parseInt(process.env.SESSION_TTL_HOURS || '168', 10) * 3600;
 const ALLOWED = (process.env.ALLOWED_EMAILS || '')
   .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 
 const b64url = (input) => Buffer.from(input).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-function signSession(payload) {
+export function signSession(payload) {
   const head = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = b64url(JSON.stringify(payload));
   const sig = b64url(crypto.createHmac('sha256', SECRET).update(`${head}.${body}`).digest());
@@ -46,7 +46,7 @@ function verifySession(token) {
   } catch { return null; }
 }
 
-function emailAllowed(email) {
+export function emailAllowed(email) {
   if (ALLOWED.length === 0) return true;
   return ALLOWED.some(entry => entry.startsWith('@') ? email.endsWith(entry) : email === entry);
 }

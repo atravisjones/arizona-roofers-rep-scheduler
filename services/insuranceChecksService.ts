@@ -1,13 +1,15 @@
 import { InsuranceCheck, RouteInfo } from '../types';
 import { Coordinates, fetchRoute, geocodeAddresses } from './osmService';
 import { haversineDistance } from './geography';
+import { getAuthUser } from '../components/AuthGate';
 
 const KM_TO_MI = 0.621371;
 
 /** Every job sitting in "INS: Collect ACV" — a check waiting to be picked up. */
 export async function fetchInsuranceChecks(): Promise<InsuranceCheck[]> {
     try {
-        const res = await fetch('/api/insurance-checks');
+        const token = getAuthUser()?.token;
+        const res = await fetch('/api/insurance-checks', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
         if (!res.ok) {
             console.error(`Failed to fetch insurance checks: ${res.status}`);
             return [];

@@ -9,11 +9,12 @@
  * tie-broken by customer name. Same Supabase mirror the checks feed reads.
  */
 import { fallbackPhone } from './insurance-checks.js';
+import { requireM } from './_msession.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!(await requireM(req))) return res.status(401).json({ error: 'Sign in required' });
   const SUPABASE_URL = (process.env.KPI_SUPABASE_URL || 'https://ucfqgkbkxbztxlyniuph.supabase.co').replace(/\/$/, '');
   const KEY = process.env.KPI_SUPABASE_ANON_KEY || process.env.KPI_SUPABASE_SERVICE_KEY || '';
   if (!KEY) return res.status(500).json({ error: 'Server configuration error' });

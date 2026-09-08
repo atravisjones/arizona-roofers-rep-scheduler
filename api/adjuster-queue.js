@@ -11,6 +11,8 @@
  * ("Adjuster\nJason F\n469-357-9329"); both come from Roofr live, READ-ONLY, through the same
  * borrowed session as api/roofr-tasks.js (GETs only, never touches auth_sessions).
  */
+import { requireM } from './_msession.js';
+
 const SUPABASE_URL = (process.env.KPI_SUPABASE_URL || 'https://ucfqgkbkxbztxlyniuph.supabase.co').replace(/\/$/, '');
 const SERVICE_KEY = (process.env.KPI_SUPABASE_SERVICE_KEY || '').trim();
 const ANON_KEY = process.env.KPI_SUPABASE_ANON_KEY || SERVICE_KEY;
@@ -72,9 +74,9 @@ async function roofrGet(headers, path) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+  res.setHeader('Cache-Control', 'private, max-age=120');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+  if (!(await requireM(req))) return res.status(401).json({ error: 'Sign in required' });
   if (!ANON_KEY) return res.status(500).json({ error: 'Server configuration error' });
 
   try {

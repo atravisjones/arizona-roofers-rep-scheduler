@@ -6,7 +6,10 @@
  *
  * Latest row per job+date wins. Uses the service key server-side; the table has no anon policy.
  */
+import { requireM } from './_msession.js';
+
 export default async function handler(req, res) {
+  if (!(await requireM(req))) return res.status(401).json({ error: 'Sign in required' });
   const SUPABASE_URL = (process.env.KPI_SUPABASE_URL || 'https://ucfqgkbkxbztxlyniuph.supabase.co').replace(/\/$/, '');
   const KEY = process.env.KPI_SUPABASE_SERVICE_KEY || '';
   if (!KEY) return res.status(500).json({ error: 'Server configuration error' });

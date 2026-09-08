@@ -106,6 +106,14 @@
   .btn.carrier { background: #52525b; }
   .num.adj { background: #b45309; font-size: 11px; }
   footer { text-align: center; color: #a1a1aa; font-size: 11px; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  footer a { color: #71717a; }
+  #gate { position: fixed; inset: 0; z-index: 5000; background: #4f46e5; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .gatebox { background: #fff; border-radius: 18px; padding: 28px 24px; max-width: 360px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .gatelogo { font-size: 40px; line-height: 1; }
+  .gatebox h2 { display: block; font-size: 17px; text-transform: none; letter-spacing: 0; color: #18181b; margin: 10px 0 6px; }
+  .gatebox p { font-size: 13px; color: #52525b; margin: 0 0 16px; }
+  .gatebox #gsiBtn { display: flex; justify-content: center; min-height: 44px; }
+  .gateerr { color: #b91c1c; font-weight: 700; min-height: 18px; margin: 12px 0 0 !important; }
 
   /* ---- Touch + phone ---- */
   button, .btn, .chip, .tab, a.btn { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
@@ -234,9 +242,66 @@
 </div>
 </div>
 
+<div id="gate" hidden>
+  <div class="gatebox">
+    <div class="gatelogo">🏠</div>
+    <h2>Arizona Roofers · My Day</h2>
+    <p>Sign in with your work Google account. This page is for Michael, Management and the Insurance department.</p>
+    <div id="gsiBtn"></div>
+    <p class="gateerr" id="gateErr"></p>
+  </div>
+</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
+// ---- Sign-in gate (same Google client + session JWT as the scheduler; /api/m-auth applies the
+// Michael / Management / Insurance rule). Every /api/ call from this page carries the session.
 (function () {
+  const KEY = 'mAuth';
+  const read = () => { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } };
+  const write = s => { try { s ? localStorage.setItem(KEY, JSON.stringify(s)) : localStorage.removeItem(KEY); } catch (e) {} };
+  const origFetch = window.fetch.bind(window);
+  window.fetch = (url, init) => {
+    const s = read();
+    if (s && s.token && typeof url === 'string' && url.startsWith('/api/')) {
+      init = init || {}; const h = new Headers(init.headers || {}); h.set('Authorization', 'Bearer ' + s.token); init = { ...init, headers: h };
+    }
+    return origFetch(url, init);
+  };
+  window.mSignOut = () => { write(null); location.reload(); };
+  const gate = document.getElementById('gate'), err = document.getElementById('gateErr');
+  const start = s => { gate.hidden = true; window.mUser = s; if (window.__bootMyDay) window.__bootMyDay(); };
+  const verify = async token => {
+    const r = await origFetch('/api/m-auth', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.success) { const s = { token: d.session_token, email: d.email, name: d.name, exp: d.exp }; write(s); return s; }
+    throw new Error(d.error || ('Sign-in failed (' + r.status + ')'));
+  };
+  const showGate = clientId => {
+    gate.hidden = false;
+    const sc = document.createElement('script'); sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+    sc.onload = () => {
+      google.accounts.id.initialize({ client_id: clientId, callback: async resp => {
+        err.textContent = 'Checking…';
+        try { start(await verify(resp.credential)); } catch (e) { err.textContent = e.message; write(null); }
+      } });
+      google.accounts.id.renderButton(document.getElementById('gsiBtn'), { theme: 'filled_blue', size: 'large', shape: 'pill', width: 280 });
+      google.accounts.id.prompt();
+    };
+    sc.onerror = () => { err.textContent = 'Could not load Google Sign-In. Check your connection and reload.'; };
+    document.head.appendChild(sc);
+  };
+  window.addEventListener('DOMContentLoaded', async () => {
+    let cfg = null;
+    try { cfg = await origFetch('/api/m-auth').then(r => r.json()); } catch (e) {}
+    if (!cfg || !cfg.auth_required) { start(null); return; }   // auth off, or config unreachable: stay usable
+    const s = read();
+    if (s && s.token) { try { start(await verify(s.token)); return; } catch (e) { write(null); err.textContent = /authorized|department/i.test(e.message) ? e.message : ''; } }
+    showGate(cfg.client_id);
+  });
+})();
+</script>
+<script>
+window.__bootMyDay = function () {
   const params = new URLSearchParams(location.search);
   const rep = params.get('rep') || 'Rep';
   const date = params.get('date') || '';
@@ -397,6 +462,7 @@
 
   const prettyDate = date ? new Date(date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }) : '';
   document.getElementById('title').textContent = rep.split(' ')[0] + "'s day";
+  if (window.mUser) document.querySelector('footer').insertAdjacentHTML('beforeend', ` · Signed in as ${esc(window.mUser.name || window.mUser.email)} · <a href="#" onclick="mSignOut();return false">Sign out</a>`);
   document.getElementById('subtitle').textContent = prettyDate || 'Today';
   document.title = rep + ' · ' + (prettyDate || 'My Day');
 
@@ -683,7 +749,7 @@
               <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
             </div>
             ${(called[c.jobId] || outcomes[c.jobId]?.today) ? `<div class="actions">
-              ${['before', 'between', 'after'].map(p => `<button class="btn pos${picks[c.jobId] === p ? ' on on-' + p : ''}" type="button" data-pick="${esc(c.jobId)}" data-pos="${p}">${picks[c.jobId] === p ? '\u2713 ' : '+ '}${p === 'before' ? 'Before appts' : p === 'between' ? 'Between appts' : 'After appts'}</button>`).join('')}
+              ${(stops.length ? ['before', 'between', 'after'] : ['before']).map(p => `<button class="btn pos${picks[c.jobId] === p ? ' on on-' + p : ''}" type="button" data-pick="${esc(c.jobId)}" data-pos="${p}">${picks[c.jobId] === p ? '\u2713 ' : '+ '}${!stops.length ? (picks[c.jobId] === p ? 'On the route' : 'Add to route') : p === 'before' ? 'Before appts' : p === 'between' ? 'Between appts' : 'After appts'}</button>`).join('')}
               ${['declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '✓ ' : ''}${OUT_LABEL[o]}</button>`).join('')}
               ${(picks[c.jobId] || checkDone(c.jobId)) ? `<button class="btn out${checkDone(c.jobId) ? ' on-picked_up' : ''}" type="button" data-outcome="picked_up" data-job="${esc(c.jobId)}">${checkDone(c.jobId) ? '✓ Picked up' : 'Picked up'}</button>` : ''}
             </div>` : ''}
@@ -869,7 +935,7 @@
     geocodeMissing(checks, () => render());
   })
     .catch(() => { checksEl.innerHTML = '<div class="empty">Could not load checks.</div>'; });
-})();
+};
 </script>
 </body>
 </html>

@@ -9,11 +9,13 @@
  * Source: Supabase calendar_events (event_subtype = 'Adjuster meeting', attendees = comma list of
  * Roofr user ids) joined to jobs. Mirrors the door-knocker rule in api/roofr-appointments.py.
  */
+import { requireM } from './_msession.js';
+
 const DOOR_KNOCKER_IDS = { 'michael hurff': '507565' };
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=60');
+  res.setHeader('Cache-Control', 'private, max-age=60');
+  if (!(await requireM(req))) return res.status(401).json({ error: 'Sign in required' });
   const SUPABASE_URL = (process.env.KPI_SUPABASE_URL || 'https://ucfqgkbkxbztxlyniuph.supabase.co').replace(/\/$/, '');
   const KEY = process.env.KPI_SUPABASE_ANON_KEY || process.env.KPI_SUPABASE_SERVICE_KEY || '';
   if (!KEY) return res.status(500).json({ error: 'Server configuration error' });
