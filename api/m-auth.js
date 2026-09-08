@@ -8,13 +8,13 @@
  */
 import { signSession, CLIENT_ID, SECRET, emailAllowed, TTL_SECONDS } from './auth.js';
 import { verifySession } from './_session.js';
-import { mAllowed } from './_msession.js';
+import { mAllowed, rosterHealth } from './_msession.js';
 
-const DENIED = 'This page is for Michael, Management and the Insurance department. Ask Travis if you need access.';
+const DENIED = 'This page is for the office team (Management, Administration, Lead Center, Insurance, Production) and Michael. Ask Travis if you need access.';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  if (req.method === 'GET') return res.status(200).json({ auth_required: !!CLIENT_ID, client_id: CLIENT_ID });
+  if (req.method === 'GET') return res.status(200).json({ auth_required: !!CLIENT_ID, client_id: CLIENT_ID, ...(req.query.health ? await rosterHealth() : {}) });
   if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method not allowed' });
   if (!CLIENT_ID || !SECRET) return res.status(500).json({ success: false, error: 'Auth not configured' });
   const auth = req.headers.authorization || '';
