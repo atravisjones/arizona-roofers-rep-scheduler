@@ -31,7 +31,7 @@ export default async function handler(req, res) {
       const date = String(body.date || '').trim();
       const outcome = body.outcome == null ? null : String(body.outcome);
       if (!jobId || !rep || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'jobId, rep, date required' });
-      if (outcome != null && !['confirmed', 'declined', 'no_answer'].includes(outcome)) return res.status(400).json({ error: 'bad outcome' });
+      if (outcome != null && !['confirmed', 'declined', 'no_answer', 'picked_up'].includes(outcome)) return res.status(400).json({ error: 'bad outcome' });
 
       if (outcome == null) {
         const r = await fetch(`${base}?job_id=eq.${encodeURIComponent(jobId)}&date_key=eq.${date}&rep=eq.${encodeURIComponent(rep)}`, { method: 'DELETE', headers });

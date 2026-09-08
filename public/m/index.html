@@ -10,9 +10,10 @@
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif; background: #f4f4f5; color: #18181b; }
-  header { background: #4f46e5; color: #fff; padding: 10px 12px 10px 16px; position: sticky; top: 0; z-index: 1100; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  header { background: #4f46e5; color: #fff; padding: 10px 12px 10px 14px; position: sticky; top: 0; z-index: 1100; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   header .hbtn { border: 1px solid rgba(255,255,255,.5); background: rgba(255,255,255,.12); color: #fff; border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; }
-  header h1 { margin: 0; font-size: 18px; }
+  header h1 { margin: 0; font-size: 17px; white-space: nowrap; }
+  header > div:first-child { min-width: 0; }
   header .sub { font-size: 13px; opacity: .9; margin-top: 2px; }
   #mapWrap { position: sticky; top: 52px; z-index: 1000; background: #e4e4e7; box-shadow: 0 2px 6px rgba(0,0,0,.15); }
   #map { height: 240px; transition: height .2s; }
@@ -26,6 +27,7 @@
   .btn.out.on-confirmed { background: #059669; color: #fff; }
   .btn.out.on-declined { background: #dc2626; color: #fff; }
   .btn.out.on-no_answer { background: #52525b; color: #fff; }
+  .btn.out.on-picked_up { background: #047857; color: #fff; }
   .hist { font-size: 11px; color: #71717a; margin-top: 4px; }
   .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
   .card[data-id] { cursor: pointer; }
@@ -45,6 +47,15 @@
   .btn.copied { background: #d1fae5; color: #065f46; }
   .btn.roofr { background: #2C9BD6; color: #fff; }
   .btn.pos.on-between { background: #b45309; color: #fff; }
+  .party { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.35); }
+  .party .box { background: #fff; border-radius: 18px; padding: 26px 28px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.35); animation: pop .45s cubic-bezier(.2,1.4,.4,1); max-width: 80vw; }
+  .party .big { font-size: 54px; line-height: 1; animation: bounce 1s ease-in-out infinite; }
+  .party h3 { margin: 10px 0 4px; font-size: 20px; }
+  .party .amt { font-size: 28px; font-weight: 900; color: #047857; }
+  .party p { margin: 6px 0 0; color: #52525b; font-size: 13px; }
+  .party canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+  @keyframes bounce { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-10px) } }
   .toast { font-size: 18px; letter-spacing: .02em; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #18181b; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px; font-weight: 700; z-index: 2000; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
   .btn.ghost { background: #f4f4f5; color: #27272a; border: 1px solid #e4e4e7; }
@@ -66,10 +77,12 @@
     <h1 id="title">My Day</h1>
     <div class="sub" id="subtitle">Loading…</div>
   </div>
-  <button class="hbtn" id="mapToggle" type="button">Hide map</button>
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+    <a id="routeLink" class="hbtn" href="#" target="_blank" rel="noopener" hidden style="background:#fff;color:#4f46e5;border-color:#fff;text-decoration:none">▶ Drive</a>
+    <button class="hbtn" id="mapToggle" type="button">Hide map</button>
+  </div>
 </header>
 <div id="mapWrap"><div id="map"></div></div>
-<a id="routeLink" class="btn big" href="#" target="_blank" rel="noopener" hidden>▶ Drive the whole route in Google Maps</a>
 <div class="routebar" id="routeBar"></div>
 <div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
 
@@ -174,9 +187,9 @@
   // Ordered route: [before] -> appointments with "between" checks slotted into their cheapest gap -> [after]
   function orderedRoute() {
     const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
-    const of = p => Object.keys(picks).filter(id => picks[id] === p && byId[id]).map(id => byId[id]);
+    const of = p => Object.keys(picks).filter(id => picks[id] === p && byId[id] && !checkDone(id)).map(id => byId[id]);
     const toPt = c => ({ a: c.address, la: c.lat, lo: c.lon, check: c });
-    const seq = stops.map(s => ({ a: s.a, la: s.la, lo: s.lo }));
+    const seq = stops.map((s, i) => ({ a: s.a, la: s.la, lo: s.lo, i })).filter(p => !stopRan(p.i));
     of('between').forEach(c => {
       const pt = toPt(c);
       if (pt.la == null || seq.length < 2) { seq.push(pt); return; }
@@ -228,6 +241,26 @@
     return best;
   }
 
+  function celebrate(name, value, totalToday) {
+    const wrap = document.createElement('div'); wrap.className = 'party';
+    wrap.innerHTML = `<canvas></canvas><div class="box"><div class="big">🎉</div><h3>Check picked up!</h3><div class="amt">${money(value) || ''}</div><p>${esc(name)}${totalToday ? ` · ${money(totalToday)} collected today` : ''}</p></div>`;
+    document.body.appendChild(wrap);
+    try { navigator.vibrate && navigator.vibrate([40, 30, 40]); } catch (e) {}
+    const cv = wrap.querySelector('canvas'), ctx = cv.getContext('2d');
+    cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio; ctx.scale(devicePixelRatio, devicePixelRatio);
+    const colors = ['#f59e0b', '#059669', '#4f46e5', '#ef4444', '#3b82f6', '#fbbf24'];
+    const bits = Array.from({ length: 140 }, () => ({ x: innerWidth / 2, y: innerHeight * .45, vx: (Math.random() - .5) * 18, vy: -Math.random() * 16 - 4, r: Math.random() * 6 + 3, c: colors[Math.random() * colors.length | 0], a: Math.random() * Math.PI, va: (Math.random() - .5) * .3 }));
+    let t0 = performance.now();
+    (function frame(now) {
+      const dt = Math.min(32, now - t0) / 16; t0 = now;
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      bits.forEach(b => { b.vy += .35 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.a += b.va; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a); ctx.fillStyle = b.c; ctx.fillRect(-b.r / 2, -b.r / 2, b.r, b.r * .6); ctx.restore(); });
+      if (wrap.isConnected && now - start < 2600) requestAnimationFrame(frame);
+    })(t0); const start = t0;
+    const close = () => { wrap.remove(); };
+    wrap.addEventListener('click', close);
+    setTimeout(close, 3200);
+  }
   let toastTimer = null;
   function toast(msg) {
     let t = document.getElementById('toast');
@@ -249,6 +282,12 @@
   let called = {};
   try { called = JSON.parse(localStorage.getItem(CALLED_KEY) || '{}') || {}; } catch (e) { called = {}; }
   const saveCalled = () => { try { localStorage.setItem(CALLED_KEY, JSON.stringify(called)); } catch (e) {} };
+  const RAN_KEY = 'm-ran:' + rep + ':' + date;
+  let ran = {};   // { 'stop:<index>': true }
+  try { ran = JSON.parse(localStorage.getItem(RAN_KEY) || '{}') || {}; } catch (e) { ran = {}; }
+  const saveRan = () => { try { localStorage.setItem(RAN_KEY, JSON.stringify(ran)); } catch (e) {} };
+  const stopRan = i => !!ran['stop:' + i];
+  const checkDone = id => outcomes[id]?.today === 'picked_up';
   const savePicks = () => { try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) {} };
 
   // Whole-route link: [checks before] → appointments in order → [checks after]
@@ -259,32 +298,48 @@
     const addrs = [...before, ...r.seq.map(p => p.a), ...after];
     const a = document.getElementById('routeLink');
     const bar = document.getElementById('routeBar');
-    if (!addrs.length) { a.hidden = true; bar.textContent = ''; return; }
+    if (!addrs.length) { a.hidden = true; bar.textContent = stops.length ? 'All appointments marked ran.' : ''; return; }
     // Empty origin segment = "Your location" in Google Maps; each following segment is a stop in order.
     const url = 'https://www.google.com/maps/dir//' + addrs.map(x => encodeURIComponent(x).replace(/%20/g, '+')).join('/');
     a.href = url; a.hidden = false;
     const n = before.length + between.length + after.length;
-    a.textContent = n ? `▶ Drive the route · ${stops.length} appt${stops.length === 1 ? '' : 's'} + ${n} check${n === 1 ? '' : 's'}` : '▶ Drive the whole route in Google Maps';
+    a.textContent = `▶ Drive (${addrs.length})`;
+    a.title = 'Open the remaining stops in Google Maps from your location';
     const start = (drive ? `${drive.miles.toFixed(1)} mi · ${Math.round(drive.mins)} min by road · ` : '') + 'starts from your location';
-    bar.textContent = start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', between.length ? `${between.length} between` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
+    const ranN = stops.filter((s, i) => stopRan(i)).length;
+    bar.textContent = (ranN ? `${ranN} appt${ranN === 1 ? '' : 's'} ran · ` : '') + start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', between.length ? `${between.length} between` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
   }
 
   // Stops
   const stopsEl = document.getElementById('stops');
-  document.getElementById('stopCount').textContent = stops.length ? '· ' + stops.length : '';
-  if (!stops.length) stopsEl.innerHTML = '<div class="empty">No appointments in this link.</div>';
-  stops.forEach((s, i) => {
-    stopsEl.insertAdjacentHTML('beforeend', `
-      <div class="card">
-        <div class="num stop">${i + 1}</div>
-        <div class="body">
-          <div class="name">${esc(s.n)}</div>
-          ${s.t ? `<div class="meta">${esc(s.t)}</div>` : ''}
-          <div class="addr">${esc(s.a)}</div>
-          <div class="actions"><a class="btn" href="${nav(s.a)}" target="_blank" rel="noopener">🧭 Navigate</a></div>
-        </div>
-      </div>`);
+  function renderStops() {
+    const left = stops.filter((s, i) => !stopRan(i)).length;
+    document.getElementById('stopCount').textContent = stops.length ? `· ${left} of ${stops.length} left` : '';
+    stopsEl.innerHTML = stops.length ? '' : '<div class="empty">No appointments in this link.</div>';
+    stops.forEach((s, i) => {
+      const done = stopRan(i);
+      stopsEl.insertAdjacentHTML('beforeend', `
+        <div class="card${done ? ' done' : ''}">
+          <div class="num stop">${i + 1}</div>
+          <div class="body">
+            <div class="name">${esc(s.n)}</div>
+            ${s.t ? `<div class="meta">${esc(s.t)}</div>` : ''}
+            <div class="addr">${esc(s.a)}</div>
+            <div class="actions">
+              ${done ? '' : `<a class="btn" href="${nav(s.a)}" target="_blank" rel="noopener">🧭 Navigate</a>`}
+              <button class="btn ${done ? 'out on-confirmed' : 'ghost'}" type="button" data-ran="${i}">${done ? '✓ Ran' : 'Mark ran'}</button>
+            </div>
+          </div>
+        </div>`);
+    });
+  }
+  stopsEl.addEventListener('click', e => {
+    const b = e.target.closest('[data-ran]'); if (!b) return;
+    const k = 'stop:' + b.dataset.ran;
+    if (ran[k]) delete ran[k]; else ran[k] = true;
+    saveRan(); renderStops(); drawStops(); render(); refreshDrive();
   });
+  renderStops();
 
   // Map
   const map = L.map('map', { zoomControl: false, attributionControl: false });
@@ -293,16 +348,16 @@
   const pin = (color, label, size) => L.divIcon({ className: '', iconSize: [size, size], iconAnchor: [size / 2, size / 2],
     html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);color:#fff;font-weight:800;font-size:${Math.round(size * .5)}px;display:flex;align-items:center;justify-content:center">${label}</div>` });
   const coordStops = stops.filter(s => s.la != null && s.lo != null);
-  coordStops.forEach((s, i) => L.marker([s.la, s.lo], { icon: pin('#6366f1', stops.indexOf(s) + 1, 28), zIndexOffset: 1000 }).bindPopup(`<b>${esc(s.n)}</b><br>${esc(s.a)}`).addTo(group));
-  let lineLayer = L.featureGroup().addTo(map);
-  let meMarker = null;
-  function drawLine() {
-    lineLayer.clearLayers();
-    if (drive && drive.verts.length > 1) { L.polyline(drive.verts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 5, opacity: .7 }).addTo(lineLayer); return; }
-    const pts = routePoints();
-    if (pts.length > 1) L.polyline(pts.map(p => [p.la, p.lo]), { color: '#6366f1', weight: 4, opacity: .6, dashArray: '6 8' }).addTo(lineLayer);
+  const stopLayer = L.featureGroup().addTo(group);
+  function drawStops() {
+    stopLayer.clearLayers();
+    coordStops.forEach(s => {
+      const i = stops.indexOf(s), done = stopRan(i);
+      L.marker([s.la, s.lo], { icon: pin(done ? '#9ca3af' : '#6366f1', i + 1, 28), zIndexOffset: done ? 500 : 1000 })
+        .bindPopup(`<b>${esc(s.n)}</b>${done ? ' ✓ ran' : ''}<br>${esc(s.a)}`).addTo(stopLayer);
+    });
   }
-  drawLine();
+  drawStops();
   let checkLayer = L.featureGroup().addTo(map);
   const mapToggle = document.getElementById('mapToggle');
   function setMapMin(min) {
@@ -347,9 +402,9 @@
   const checkMarkers = {};
   // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
   let outcomes = {};
-  const OUT_LABEL = { confirmed: 'Pickup confirmed', declined: 'Declined', no_answer: 'No answer' };
+  const OUT_LABEL = { confirmed: 'Pickup confirmed', declined: 'Declined', no_answer: 'No answer', picked_up: 'Picked up' };
   const todayKey = date || new Date().toISOString().slice(0, 10);
-  const isDead = c => { const t = outcomes[c.jobId]?.today; return t === 'declined' || t === 'no_answer'; };
+  const isDead = c => { const t = outcomes[c.jobId]?.today; return t === 'declined' || t === 'no_answer' || t === 'picked_up'; };
   function ingestOutcomes(rows) {
     outcomes = {};
     // rows arrive newest-first; first row per job+date is the latest
@@ -400,7 +455,8 @@
             </div>
             ${(called[c.jobId] || outcomes[c.jobId]?.today) ? `<div class="actions">
               ${['before', 'between', 'after'].map(p => `<button class="btn pos${picks[c.jobId] === p ? ' on on-' + p : ''}" type="button" data-pick="${esc(c.jobId)}" data-pos="${p}">${picks[c.jobId] === p ? '\u2713 ' : '+ '}${p === 'before' ? 'Before appts' : p === 'between' ? 'Between appts' : 'After appts'}</button>`).join('')}
-              ${['declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '\u2713 ' : ''}${OUT_LABEL[o]}</button>`).join('')}
+              ${['declined', 'no_answer'].map(o => `<button class="btn out${outcomes[c.jobId]?.today === o ? ' on-' + o : ''}" type="button" data-outcome="${o}" data-job="${esc(c.jobId)}">${outcomes[c.jobId]?.today === o ? '✓ ' : ''}${OUT_LABEL[o]}</button>`).join('')}
+              ${(picks[c.jobId] || checkDone(c.jobId)) ? `<button class="btn out${checkDone(c.jobId) ? ' on-picked_up' : ''}" type="button" data-outcome="picked_up" data-job="${esc(c.jobId)}">${checkDone(c.jobId) ? '✓ Picked up' : 'Picked up'}</button>` : ''}
             </div>` : ''}
             ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' \u00b7 ')}</div>` : ''}
           </div>
@@ -426,7 +482,16 @@
       const id = ob.dataset.job, o = ob.dataset.outcome;
       const cur = outcomes[id]?.today;
       if (cur !== o && (o === 'declined' || o === 'no_answer') && picks[id]) { delete picks[id]; savePicks(); refreshDrive(); }
-      setOutcome(id, cur === o ? null : o);   // tap again to undo
+      if (cur === o) setOutcome(id, (o === 'picked_up' && picks[id]) ? 'confirmed' : null);   // undo (picked up -> back to confirmed)
+      else {
+        setOutcome(id, o);
+        if (o === 'picked_up') {
+          const c = checks.find(x => x.jobId === id);
+          const total = checks.filter(x => outcomes[x.jobId]?.today === 'picked_up').reduce((s, x) => s + (x.value || 0), 0);
+          celebrate(c ? c.customerName : '', c ? c.value : null, total);
+        }
+      }
+      refreshDrive();
       return;
     }
     const b = e.target.closest('[data-pick]'); if (!b) return;
