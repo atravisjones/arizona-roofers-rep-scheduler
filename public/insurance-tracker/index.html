@@ -204,7 +204,6 @@
   .chip.on { background: var(--brand); border-color: var(--brand); }
   .routebar { color: var(--bg1); text-shadow: 0 1px 2px rgba(0,0,0,.3); }
   @media (min-width: 900px) { .routebar { color: var(--tx3); text-shadow: none; } #left { background: var(--bg1); } #routeBar, #locBar { border-color: var(--bd1); } .toolbar, .tabs .tab { box-shadow: 0 1px 3px rgba(0,0,0,.12); } }
-  #locBtn { background: var(--brand) !important; }
   #mapWrap { background: var(--bg3); }
   #map .leaflet-tile-pane { filter: sepia(.25) saturate(1.05); }
   #cal { background: var(--bg1); }
@@ -223,19 +222,40 @@
   .gatebox { background: var(--bg1); border: 1px solid var(--bd1); }
   .gatebox h2 { font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; color: var(--tx1); text-shadow: none; }
   .gatebox p { color: var(--tx3); }
+
+  /* Compact centred header: [spacer] [name · date] [Drive · Calendar] */
+  header { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; padding: 8px 10px; gap: 8px; }
+  .hcenter { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; min-width: 0; text-align: center; }
+  .hcenter h1 { font-size: 16px; }
+  .hcenter .sub { margin: 0; font-size: 12px; white-space: nowrap; }
+  .hcenter .sub::before { content: '· '; }
+  .hcenter h1[hidden], .hcenter select[hidden] { display: none; }
+  .reppick { margin: 0; font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; font-size: 14px; padding: 3px 6px; }
+  .hright { display: flex; gap: 6px; align-items: center; justify-self: end; }
+  @media (max-width: 560px) { header { grid-template-columns: 0 1fr auto; } .hcenter { justify-content: flex-start; text-align: left; } .hcenter .sub { width: 100%; } .hcenter .sub::before { content: ''; } }
+  /* Location request as a popup */
+  #locBar { position: fixed; inset: 0; z-index: 4000; background: rgba(26,22,18,.45); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #locBar[hidden] { display: none; }
+  .locbox { background: var(--bg1); border: 1px solid var(--bd1); border-radius: 18px; padding: 22px 20px; max-width: 340px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  .locicon { font-size: 36px; line-height: 1; }
+  .locbox h3 { margin: 8px 0 4px; font-size: 17px; font-family: 'Archivo Black', 'Arial Black', sans-serif; font-weight: 400; }
+  .locbox p { margin: 0 0 14px; font-size: 13px; color: var(--tx3); }
+  .locbtns { display: flex; gap: 8px; justify-content: center; }
+  .locmsg { font-size: 12px; color: var(--orange-tx); margin-top: 10px; min-height: 16px; }
   .party .box { background: var(--bg1); }
   .party .amt { color: var(--brand); }
 </style>
 </head>
 <body>
 <header>
-  <div>
+  <div></div>
+  <div class="hcenter">
     <h1 id="title">My Day</h1>
     <select id="repPick" class="reppick" hidden aria-label="Viewing rep"></select>
-    <div class="sub" id="subtitle">Loading…</div>
+    <span class="sub" id="subtitle">Loading…</span>
   </div>
-  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-    <a id="routeLink" class="hbtn" href="#" target="_blank" rel="noopener" hidden style="background:#fff;color:#4f46e5;border-color:#fff;text-decoration:none">▶ Drive</a>
+  <div class="hright">
+    <a id="routeLink" class="hbtn" href="#" target="_blank" rel="noopener" hidden style="text-decoration:none">▶ Drive</a>
     <button class="hbtn" id="mapToggle" type="button">📅 Calendar</button>
   </div>
 </header>
@@ -243,7 +263,15 @@
 <div id="left">
 <div id="mapWrap"><div id="map"></div><div id="cal" hidden></div></div>
 <div class="routebar" id="routeBar"></div>
-<div class="routebar" id="locBar" hidden><button class="btn" id="locBtn" type="button" style="background:#2563eb">📍 Use my location</button><div id="locMsg" style="margin-top:6px"></div></div>
+<div id="locBar" hidden>
+  <div class="locbox">
+    <div class="locicon">📍</div>
+    <h3>Use your location?</h3>
+    <p>The route and the nearest checks start from where you are. Nothing is stored.</p>
+    <div class="locbtns"><button class="btn" id="locBtn" type="button">Use my location</button><button class="btn ghost" id="locSkip" type="button">Not now</button></div>
+    <div id="locMsg" class="locmsg"></div>
+  </div>
+</div>
 
 </div>
 <div id="right">
@@ -413,7 +441,7 @@ window.__bootMyDay = function () {
     const sel = document.getElementById('repPick');
     sel.innerHTML = reps.map(r => `<option value="${r.name.replace(/"/g, '&quot;')}"${nrm(r.name) === nrm(rep) ? ' selected' : ''}>${r.name}</option>`).join('');
     if (!reps.some(r => nrm(r.name) === nrm(rep))) sel.insertAdjacentHTML('afterbegin', `<option selected>${rep}</option>`);
-    sel.hidden = false;
+    sel.hidden = false; document.getElementById('title').hidden = true;
     sel.addEventListener('change', () => goRep(sel.value));
   }
   const date = params.get('date') || '';
@@ -773,10 +801,13 @@ window.__bootMyDay = function () {
         ? 'Location is blocked for this site. iPhone: Settings › Privacy & Security › Location Services › Safari Websites › While Using, then tap again. Android: tap the lock icon in the address bar › Permissions › Location.'
         : err && err.code === 3 ? 'Timed out getting your location — tap to try again.'
         : 'Could not get your location — tap to try again.';
-      locMsg.textContent = fromTap ? why : 'Route starts at your first appointment until you share your location.';
+      locMsg.textContent = fromTap ? why : '';
+      let skipped = false; try { skipped = !!sessionStorage.getItem('m-loc-skip'); } catch (e) {}
+      if (!fromTap && skipped) locBar.hidden = true;
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   }
   document.getElementById('locBtn').addEventListener('click', () => locate(true));
+  document.getElementById('locSkip').addEventListener('click', () => { locBar.hidden = true; try { sessionStorage.setItem('m-loc-skip', '1'); } catch (e) {} });
   locate(false);
 
   // Checks
