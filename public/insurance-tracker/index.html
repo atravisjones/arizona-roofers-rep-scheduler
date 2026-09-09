@@ -52,7 +52,9 @@
   .hist { font-size: 11px; color: #71717a; margin-top: 4px; }
   .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
   .grip { flex: 0 0 18px; align-self: stretch; margin: -12px 0 -12px -6px; display: flex; align-items: center; justify-content: center; color: #a1a1aa; font-size: 18px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-  .card.dragging { opacity: .85; box-shadow: 0 8px 24px rgba(0,0,0,.25); transform: scale(1.02); position: relative; z-index: 5; }
+  .card.dragging { opacity: .92; box-shadow: 0 8px 24px rgba(0,0,0,.25); position: relative; z-index: 5; pointer-events: none; }
+  .card.dragging .grip { pointer-events: auto; }
+  #stops .card { will-change: transform; }
   .card.dragging .grip { cursor: grabbing; }
   .card.bye { transition: opacity .35s ease, transform .35s ease, height .3s ease .15s, padding .3s ease .15s, margin .3s ease .15s; overflow: hidden; opacity: 0; transform: translateX(60px) scale(.95); height: 0 !important; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
   .pin-bye { transition: transform .4s cubic-bezier(.5,-.6,.6,1), opacity .4s ease; transform: scale(0) rotate(90deg); opacity: 0; }
@@ -735,25 +737,45 @@ window.__bootMyDay = function () {
         </div>`);
     });
   }
-  // Drag to reorder (mouse or finger): grab the ⠇ handle, the card follows, drop anywhere in the list.
+  // Drag to reorder (mouse or finger): grab the ⠇ handle, the card rides with the pointer and the
+  // other cards slide out of its way; let go to drop it there.
   stopsEl.addEventListener('pointerdown', e => {
     const h = e.target.closest('[data-grip]'); if (!h || dragging) return;
     const el = h.closest('.card[data-key]'); if (!el) return;
     e.preventDefault();
     dragging = { key: el.dataset.key, el };
+    const grab = e.clientY - el.getBoundingClientRect().top;   // where on the card the finger is
+    let shift = 0;                                             // current translateY of the card
     el.classList.add('dragging');
     try { h.setPointerCapture(e.pointerId); } catch (err) {}
-    const move = ev => {
-      if (!dragging) return;
-      ev.preventDefault();
-      const over = document.elementsFromPoint(ev.clientX, ev.clientY).find(x => x.matches && x.matches('.card[data-key]') && x !== el);
-      if (!over) return;
-      const r = over.getBoundingClientRect();
-      if (ev.clientY < r.top + r.height / 2) over.before(el); else over.after(el);
+    const others = () => [...stopsEl.querySelectorAll('.card[data-key]')].filter(x => x !== el);
+    const follow = y => { shift = (y - grab) - (el.getBoundingClientRect().top - shift); el.style.transform = `translateY(${shift}px) scale(1.02)`; };
+    let raf = 0, lastY = e.clientY;
+    const step = () => {
+      raf = 0;
+      follow(lastY);
+      // Slot the card wherever its midline is, animating whichever cards it passes (FLIP).
+      const mid = el.getBoundingClientRect().top + el.offsetHeight / 2;
+      const list = others();
+      const target = list.find(x => { const r = x.getBoundingClientRect(); return mid < r.top + r.height / 2; });
+      const nextNow = el.nextElementSibling;
+      if ((target || null) === (nextNow && nextNow.matches('.card[data-key]') ? nextNow : null)) return;
+      const before = new Map(list.map(x => [x, x.getBoundingClientRect().top]));
+      if (target) target.before(el); else stopsEl.append(el);
+      follow(lastY);
+      list.forEach(x => {
+        const d = before.get(x) - x.getBoundingClientRect().top;
+        if (!d) return;
+        x.style.transition = 'none'; x.style.transform = `translateY(${d}px)`;
+        requestAnimationFrame(() => { x.style.transition = 'transform .15s ease'; x.style.transform = ''; });
+      });
     };
+    const move = ev => { if (!dragging) return; ev.preventDefault(); lastY = ev.clientY; if (!raf) raf = requestAnimationFrame(step); };
     const up = () => {
       h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
-      el.classList.remove('dragging');
+      if (raf) cancelAnimationFrame(raf);
+      el.classList.remove('dragging'); el.style.transform = '';
+      others().forEach(x => { x.style.transition = ''; x.style.transform = ''; });
       order = [...stopsEl.querySelectorAll('.card[data-key]')].map(x => x.dataset.key);
       saveOrder(); dragging = null;
       render(); refreshDrive();
