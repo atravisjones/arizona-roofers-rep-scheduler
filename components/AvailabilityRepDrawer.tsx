@@ -63,6 +63,30 @@ const PatternEditor: React.FC<{
   const [slots, setSlots] = useState(() => patternDefaults(pattern));
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // Grid orientation: horizontal = days across the top like the sheet (default); vertical = days down.
+  const [orientation, setOrientation] = useState<'horizontal' | 'vertical'>(() => {
+    try {
+      return localStorage.getItem('availability.patternLayout') === 'vertical' ? 'vertical' : 'horizontal';
+    } catch {
+      return 'horizontal';
+    }
+  });
+  const pickOrientation = (value: 'horizontal' | 'vertical') => {
+    setOrientation(value);
+    try {
+      localStorage.setItem('availability.patternLayout', value);
+    } catch {
+      // storage unavailable; keep the in-memory choice
+    }
+  };
+  const toggle = (weekday: number, slot: string) =>
+    setSlots((current) => ({
+      ...current,
+      [weekday]: { ...current[weekday], [slot]: !current[weekday][slot] },
+    }));
+  const slotLabel = (slot: string) => (slot === 's5' ? 'Storm' : SLOT_LABELS[slot].split(' ')[0]);
+  const cellClass = (available: boolean) =>
+    `h-7 w-full rounded border text-[9px] font-bold disabled:cursor-default disabled:opacity-60 ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`;
   // Patterns start on a Monday; any picked date snaps to the Monday of its week.
   const pickDate = (value: string) => {
     if (!value) return;
@@ -118,24 +142,87 @@ const PatternEditor: React.FC<{
           <h3 className="text-sm font-semibold text-text-primary">Standing pattern</h3>
           <p className="text-[10px] text-text-tertiary">Set the weekly default from a Monday.</p>
         </div>
-        <input
-          type="date"
-          value={effectiveFrom}
-          onChange={(event) => pickDate(event.target.value)}
-          aria-label="Pattern effective date (snaps to Monday)"
-          className="w-[126px] rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
-        />
+        <div className="flex items-center gap-1.5">
+          <div className="flex rounded border border-border-secondary bg-bg-primary p-0.5" role="group" aria-label="Pattern grid layout">
+            {(['horizontal', 'vertical'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => pickOrientation(option)}
+                aria-pressed={orientation === option}
+                title={option === 'horizontal' ? 'Days across' : 'Days down'}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${orientation === option ? 'bg-brand-primary text-brand-text-on-primary' : 'text-text-tertiary'}`}
+              >
+                {option === 'horizontal' ? '\u2194' : '\u2195'}
+              </button>
+            ))}
+          </div>
+          <input
+            type="date"
+            value={effectiveFrom}
+            onChange={(event) => pickDate(event.target.value)}
+            aria-label="Pattern effective date (snaps to Monday)"
+            className="w-[126px] rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
+          />
+        </div>
       </div>
       {!pattern && (
         <p className="mb-2 text-[10px] text-text-tertiary">
-          No standing pattern yet - all slots start OFF
+          No standing pattern yet - all slots start OFF (Mon and Fri 8am stay off for company meetings)
         </p>
       )}
+      {orientation === 'horizontal' ? (
+        <div className="space-y-1">
+          <div className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] items-center gap-1 text-center text-[10px] font-bold text-text-tertiary">
+            <span />
+            {WEEKDAYS.map((day) => (
+              <span key={day}>{day}</span>
+            ))}
+          </div>
+          {SLOTS.map((slot) => (
+            <div key={slot} className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] items-center gap-1">
+              <span className="text-[10px] font-bold text-text-tertiary">{slotLabel(slot)}</span>
+              {WEEKDAYS.map((day, weekday) => {
+                const available = slots[weekday][slot];
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggle(weekday, slot)}
+                    disabled={!editable}
+                    className={cellClass(available)}
+                    aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
+                  >
+                    {available ? 'ON' : 'OFF'}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          {editable && (
+            <div className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] items-center gap-1">
+              <span className="text-[9px] text-text-quaternary">copy</span>
+              {WEEKDAYS.map((day, weekday) => (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => copyRowToAll(weekday)}
+                  className="rounded py-0.5 text-[10px] text-text-tertiary hover:bg-bg-tertiary"
+                  aria-label={`Copy ${day} to all days`}
+                  title={`Copy ${day} to all days`}
+                >
+                  {'\u29c9'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="space-y-1.5">
         <div className="grid grid-cols-[28px_repeat(5,minmax(0,1fr))_28px] items-center gap-1 text-center text-[10px] font-bold text-text-tertiary">
           <span className="text-left">Day</span>
           {SLOTS.map((slot) => (
-            <span key={slot}>{slot === 's5' ? 'Storm' : SLOT_LABELS[slot].split(' ')[0]}</span>
+            <span key={slot}>{slotLabel(slot)}</span>
           ))}
           <span>copy</span>
         </div>
@@ -148,14 +235,9 @@ const PatternEditor: React.FC<{
                 <button
                   key={slot}
                   type="button"
-                  onClick={() =>
-                    setSlots((current) => ({
-                      ...current,
-                      [weekday]: { ...current[weekday], [slot]: !available },
-                    }))
-                  }
+                  onClick={() => toggle(weekday, slot)}
                   disabled={!editable}
-                  className={`h-7 flex-1 rounded border text-[9px] font-bold disabled:cursor-default disabled:opacity-60 ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`}
+                  className={cellClass(available)}
                   aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
                 >
                   {available ? 'ON' : 'OFF'}
@@ -176,6 +258,7 @@ const PatternEditor: React.FC<{
           </div>
         ))}
       </div>
+      )}
       {editable && (
         <div className="mt-3 flex flex-wrap gap-2">
           <button
