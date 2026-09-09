@@ -43,6 +43,7 @@ export interface Request {
   rep_id: string;
   request_date?: string;
   dates?: string[];
+  days?: Array<{ date: string; slots: string[] }>;
   slot?: string;
   status: string;
   note?: string | null;
@@ -119,8 +120,15 @@ export async function loadAvailability(from: string, to: string): Promise<Availa
   return request<AvailabilityData>(`/api/availability?${query.toString()}`);
 }
 
-export async function saveAvailability(payload: Record<string, unknown>): Promise<{ ok: true }> {
-  return request<{ ok: true }>('/api/availability', {
+export async function saveAvailability(payload: Record<string, unknown>): Promise<{
+  ok?: boolean;
+  sheet_synced?: boolean;
+  error?: string;
+  audit_logged?: boolean;
+  warning?: string;
+  [key: string]: unknown;
+}> {
+  return request<Awaited<ReturnType<typeof saveAvailability>>>('/api/availability', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

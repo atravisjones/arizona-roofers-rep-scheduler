@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AvailabilityRepDrawer from './AvailabilityRepDrawer';
 import { HoldRuleChip } from './AvailabilityHoldRule';
 import {
@@ -180,7 +180,7 @@ interface CapacityStripProps {
   rule: AvailabilityData['hold_rule'];
   editable: boolean;
   onSection: (section: string) => void;
-  onSaveRule: (rule: AvailabilityData['hold_rule']) => Promise<void>;
+  onSaveRule: (rule: AvailabilityData['hold_rule']) => Promise<boolean>;
   sundayCollapsed: boolean;
   holidays: Map<string, Holiday>;
 }
@@ -578,7 +578,7 @@ const isZeroAvailability = (
   !days.some((day) =>
     SLOTS.slice(0, 4).some((slot) => {
       const key = `${profile.id}:${day}:${slot}`;
-      return Boolean(resolved.get(key)?.available) || exceptions.has(key);
+      return exceptions.get(key)?.available ?? resolved.get(key)?.available ?? false;
     }),
   );
 const exceptionsForProfile = (
@@ -704,9 +704,11 @@ const Board: React.FC<BoardProps> = ({
   const [drag, setDrag] = useState<{ id: string; section: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const canDrag = editable && editing;
-  const finishDrop = (section: string, reps: Profile[], targetId: string, after: boolean) => {
+  const finishDrop = (section: string, targetId: string, after: boolean) => {
     if (!drag || drag.section !== section || drag.id === targetId) return;
-    const ids = reps.map((profile) => profile.id).filter((id) => id !== drag.id);
+    const ids = profiles.filter((profile) => profile.section === section)
+      .map((profile) => profile.id).filter((id) => id !== drag.id);
+    if (!ids.includes(targetId)) return;
     const at = ids.indexOf(targetId) + (after ? 1 : 0);
     ids.splice(at, 0, drag.id);
     onReorder(section, ids);
@@ -784,7 +786,7 @@ const Board: React.FC<BoardProps> = ({
         shown={filteredProfiles.length}
         onChange={onFilters}
       />
-      {/* Stacked fits the page, so no horizontal scroll wrapper — that lets the day header stick. */}
+      {/* Stacked fits the page, so no horizontal scroll wrapper - that lets the day header stick. */}
       <div className={layout === 'wide' ? 'overflow-x-auto' : ''}>
         <div className="min-w-[1050px]">
           <div
@@ -836,7 +838,7 @@ const Board: React.FC<BoardProps> = ({
                         key={`${day}-stub`}
                         className="border-l border-border-secondary/60 py-1 text-[8px] font-bold text-text-quaternary"
                       >
-                        —
+                        -
                       </div>,
                     ]
                   : SLOTS.slice(0, 4).map((slot) => (
@@ -892,7 +894,7 @@ const Board: React.FC<BoardProps> = ({
                     onDrop={(event) => {
                       event.preventDefault();
                       const box = event.currentTarget.getBoundingClientRect();
-                      finishDrop(group, reps, profile.id, event.clientY > box.top + box.height / 2);
+                      finishDrop(group, profile.id, event.clientY > box.top + box.height / 2);
                       setDrag(null);
                       setDropTarget(null);
                     }}
@@ -969,8 +971,7 @@ const Board: React.FC<BoardProps> = ({
                                     (request) =>
                                       request.rep_id === profile.id &&
                                       request.status === 'pending' &&
-                                      (request.request_date === day ||
-                                        request.dates?.includes(day)),
+                                      request.days?.some((d) => d.date === day && d.slots.includes(slot)),
                                   );
                                   return (
                                     <Cell
@@ -1004,7 +1005,7 @@ const Board: React.FC<BoardProps> = ({
                                 (request) =>
                                   request.rep_id === profile.id &&
                                   request.status === 'pending' &&
-                                  (request.request_date === day || request.dates?.includes(day)),
+                                  request.days?.some((d) => d.date === day && d.slots.includes(slot)),
                               );
                               const dayHoliday = holidays.get(day);
                               return (
@@ -1162,9 +1163,10 @@ const Legend: React.FC = () => {
 
 interface AddRepFormProps {
   onCancel: () => void;
-  onSave: (payload: Record<string, unknown>) => Promise<void>;
+  onSave: (payload: Record<string, unknown>) => Promise<boolean>;
+  editable: boolean;
 }
-const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave }) => {
+const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave, editable }) => {
   const [form, setForm] = useState({
     display_name: '',
     section: 'PHX',
@@ -1174,10 +1176,10 @@ const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave }) => {
   const [saving, setSaving] = useState(false);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.display_name.trim()) return;
+    if (!editable || saving || !form.display_name.trim()) return;
     setSaving(true);
     try {
-      await onSave({ action: 'upsert_rep', ...form, active: true });
+      if (await onSave({ action: 'upsert_rep', ...form, active: true })) onCancel();
     } finally {
       setSaving(false);
     }
@@ -1203,6 +1205,11 @@ const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave }) => {
             onChange={(event) => setForm({ ...form, [field]: event.target.value })}
             className="mt-1 w-full rounded border border-border-secondary bg-bg-secondary px-2 py-2 text-xs text-text-primary"
           />
+          {field === 'display_name' && (
+            <span className="mt-1 block text-[10px] text-text-tertiary">
+              Re-adding a removed rep? Use Restore under Removed reps.
+            </span>
+          )}
         </label>
       ))}
       <label className="text-[10px] text-text-tertiary">
@@ -1227,10 +1234,10 @@ const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave }) => {
         </button>
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !editable}
           className="rounded-md bg-brand-primary px-3 py-2 text-xs font-semibold text-brand-text-on-primary disabled:opacity-50"
         >
-          {saving ? 'Adding…' : 'Add rep'}
+          {saving ? 'Adding...' : 'Add rep'}
         </button>
       </div>
     </form>
@@ -1242,6 +1249,11 @@ const AvailabilityPage: React.FC = () => {
   const [monday, setMonday] = useState(dateKey(mondayOf(new Date())));
   const [data, setData] = useState<AvailabilityData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedMonday, setLoadedMonday] = useState('');
+  const selectedMonday = useRef(monday);
+  selectedMonday.current = monday;
+  const fetchSequence = useRef(0);
+  const pendingCells = useRef(new Set<string>());
   const [error, setError] = useState('');
   const [section, setSection] = useState('PHX');
   const [showNonSelling, setShowNonSelling] = useState(false);
@@ -1279,16 +1291,25 @@ const AvailabilityPage: React.FC = () => {
     company_meeting_fri: true,
   };
   const isManager = Boolean(data?.me.is_manager);
-  const editable = isManager && editMode;
+  const editable = isManager && editMode && !loading && loadedMonday === monday;
   const fetchData = useCallback(async () => {
+    const requestedMonday = selectedMonday.current;
+    const sequence = ++fetchSequence.current;
+    const current = () => sequence === fetchSequence.current && selectedMonday.current === requestedMonday;
     setLoading(true);
     setError('');
     try {
-      setData(await loadAvailability(monday, addWeeks(monday, 2)));
+      const nextData = await loadAvailability(requestedMonday, addWeeks(requestedMonday, 2));
+      if (!current()) return;
+      setData(nextData);
+      setLoadedMonday(requestedMonday);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load availability.');
+      if (current()) {
+        setError(err instanceof Error ? err.message : 'Could not load availability.');
+        setLoadedMonday('');
+      }
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   }, [monday]);
   useEffect(() => {
@@ -1354,14 +1375,31 @@ const AvailabilityPage: React.FC = () => {
         ),
     [data, showNonSelling],
   );
-  const runWrite = async (payload: Record<string, unknown>, success: string, after = true) => {
-    await saveAvailability(payload);
-    if (after) await fetchData();
-    showToast(success, 'success');
+  const runWrite = async (
+    payload: Record<string, unknown>, success: string, after = true,
+  ): Promise<boolean> => {
+    try {
+      const result = await saveAvailability(payload);
+      if (after) await fetchData();
+      if (result.sheet_synced === false) {
+        showToast(`Saved to database; sheet sync failed: ${result.error || 'Unknown error'}`, 'error');
+      }
+      if (result.audit_logged === false) {
+        showToast(result.warning || 'Saved to database; audit logging failed.', 'warning');
+      }
+      if (result.sheet_synced !== false && result.audit_logged !== false) showToast(success, 'success');
+      return true;
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not save change', 'error');
+      await fetchData();
+      return false;
+    }
   };
   const cycleCell = async (profile: Profile, day: string, slot: string) => {
     if (!editable) return;
     const key = `${profile.id}:${day}:${slot}`;
+    if (pendingCells.current.has(key)) return;
+    pendingCells.current.add(key);
     const current = maps.exceptions.get(key);
     const baseAvailable = maps.resolved.get(key)?.available ?? false;
     const next = current ? null : !baseAvailable;
@@ -1398,7 +1436,7 @@ const AvailabilityPage: React.FC = () => {
         : old,
     );
     try {
-      await runWrite(
+      const saved = await runWrite(
         {
           action: 'set_exception',
           rep_id: profile.id,
@@ -1407,21 +1445,26 @@ const AvailabilityPage: React.FC = () => {
           available: next,
         },
         `${profile.display_name} ${next === null ? 'reverted to pattern' : next ? 'given added coverage' : 'marked off'}`,
-        false,
+        true,
       );
+      if (!saved) return;
       setUndo({
         label: `${profile.display_name} · ${displayDate(day)} · ${SLOT_LABELS[slot] || slot}`,
         run: async () => {
-          await runWrite(
-            { action: 'set_exception', rep_id: profile.id, date: day, slot, available: previous },
-            'Change undone',
-          );
-          setUndo(null);
+          if (pendingCells.current.has(key)) return;
+          pendingCells.current.add(key);
+          try {
+            if (await runWrite(
+              { action: 'set_exception', rep_id: profile.id, date: day, slot, available: previous },
+              'Change undone',
+            )) setUndo(null);
+          } finally {
+            pendingCells.current.delete(key);
+          }
         },
       });
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Could not save exception', 'error');
-      await fetchData();
+    } finally {
+      pendingCells.current.delete(key);
     }
   };
   if (loading && !data)
@@ -1429,7 +1472,7 @@ const AvailabilityPage: React.FC = () => {
       <div className="flex h-full items-center justify-center">
         <div className="w-full max-w-xl rounded-lg border border-border-secondary bg-bg-primary p-8 text-center">
           <div className="mx-auto h-3 w-32 animate-pulse rounded bg-bg-tertiary" />
-          <p className="mt-3 text-sm text-text-tertiary">Loading the live availability board…</p>
+          <p className="mt-3 text-sm text-text-tertiary">Loading the live availability board...</p>
         </div>
       </div>
     );
@@ -1438,7 +1481,7 @@ const AvailabilityPage: React.FC = () => {
       <div className="flex h-full items-center justify-center">
         <div className="max-w-md rounded-lg border border-tag-red-border bg-tag-red-bg p-6 text-center">
           <p className="text-sm font-semibold text-tag-red-text">Availability is unavailable</p>
-          <p className="mt-2 text-xs text-text-secondary">{error}</p>
+          <p role="alert" className="mt-2 text-xs text-text-secondary">{error}</p>
           <button
             type="button"
             onClick={() => void fetchData()}
@@ -1452,6 +1495,7 @@ const AvailabilityPage: React.FC = () => {
   return (
     <main className="h-full min-h-0 overflow-y-auto bg-bg-secondary px-4 py-5 lg:px-6">
       <div className="mx-auto max-w-[1600px] space-y-5">
+        {error && <p role="alert" className="text-sm text-tag-red-text">Could not refresh availability: {error}</p>}
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[.2em] text-brand-primary">
@@ -1461,7 +1505,7 @@ const AvailabilityPage: React.FC = () => {
               Availability
             </h1>
             <p className="mt-1 text-xs text-text-tertiary">
-              See the week’s bookable coverage before the first appointment lands.
+              See the week's bookable coverage before the first appointment lands.
             </p>
           </div>
           <WeekNav
@@ -1469,7 +1513,12 @@ const AvailabilityPage: React.FC = () => {
             days={days}
             onMove={(amount) => setMonday(addWeeks(monday, amount))}
             onToday={() => setMonday(dateKey(mondayOf(new Date())))}
-            onDate={(date) => setMonday(dateKey(mondayOf(new Date(`${date}T12:00:00`))))}
+            onDate={(date) => {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+              const parsed = new Date(`${date}T12:00:00`);
+              if (Number.isNaN(parsed.getTime()) || dateKey(parsed) !== date) return;
+              setMonday(dateKey(mondayOf(parsed)));
+            }}
           />
           {isManager && (
             <label className="flex items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-[11px] font-semibold text-text-secondary">
@@ -1507,7 +1556,7 @@ const AvailabilityPage: React.FC = () => {
             onSection={setSection}
             holidays={holidays}
             onSaveRule={async (rule) => {
-              await runWrite({ action: 'set_hold_rule', ...rule }, 'Hold rule updated');
+              return runWrite({ action: 'set_hold_rule', ...rule }, 'Hold rule updated');
             }}
           />
         )}
@@ -1522,13 +1571,14 @@ const AvailabilityPage: React.FC = () => {
             editable={editable}
             onRep={setDrawer}
             onCycle={(profile, day, slot) => void cycleCell(profile, day, slot)}
-            onClearTimeOff={(profile, from, to) =>
-              void runWrite(
+            onClearTimeOff={async (profile, from, to) => {
+              if (await runWrite(
                 { action: 'clear_exceptions', rep_id: profile.id, from, to },
                 `${profile.display_name} time off cleared`,
-              )
-            }
-            onReorder={(section, repIds) => {
+              )) setUndo(null);
+            }}
+            onReorder={async (section, repIds) => {
+              const oldProfiles = data.profiles;
               const rank = new Set(repIds);
               // Swap the section's rows into the new order in place; other sections untouched.
               setData((old) => {
@@ -1543,7 +1593,9 @@ const AvailabilityPage: React.FC = () => {
                   ),
                 };
               });
-              void runWrite({ action: 'set_rep_order', section, rep_ids: repIds }, 'Rep order saved');
+              if (!await runWrite({ action: 'set_rep_order', section, rep_ids: repIds }, 'Rep order saved')) {
+                setData((old) => old ? { ...old, profiles: oldProfiles } : old);
+              }
             }}
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
             layout={layout}
@@ -1555,19 +1607,20 @@ const AvailabilityPage: React.FC = () => {
             holidays={holidays}
           />
         )}
-        {editable &&
+        {isManager && editMode &&
           (adding ? (
             <AddRepForm
+              editable={editable}
               onCancel={() => setAdding(false)}
               onSave={async (payload) => {
-                await runWrite(payload, 'Rep added');
-                setAdding(false);
+                return runWrite(payload, 'Rep added');
               }}
             />
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
+                disabled={!editable}
                 onClick={() => setAdding(true)}
                 className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-xs font-semibold text-text-secondary`}
               >
@@ -1588,12 +1641,13 @@ const AvailabilityPage: React.FC = () => {
                         <span className="text-[10px] text-text-quaternary">{rep.section}</span>
                         <button
                           type="button"
-                          onClick={() =>
-                            void runWrite(
+                          disabled={!editable}
+                          onClick={async () => {
+                            if (await runWrite(
                               { action: 'set_rep_active', rep_id: rep.id, active: true },
                               `${rep.display_name} restored`,
-                            )
-                          }
+                            )) setUndo(null);
+                          }}
                           className={`${FOCUS} rounded px-2 py-0.5 text-[11px] font-semibold text-brand-primary hover:bg-brand-bg-light`}
                         >
                           Restore

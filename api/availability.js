@@ -193,7 +193,7 @@ async function write(action, body, email) {
     if (!rep_id || !validDate(date) || !/^s[1-5]$/.test(slot)
       || ![true, false, null].includes(available)) throw new Error('invalid exception');
     if (available === null) {
-      await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(rep_id)}&exception_date=${date}`
+      await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(rep_id)}&exception_date=eq.${date}`
         + `&slot=eq.${slot}`, { method: 'DELETE' });
     } else {
       await sb('availability_exceptions?on_conflict=rep_id,exception_date,slot', {
@@ -203,16 +203,42 @@ async function write(action, body, email) {
       });
     }
   } else if (action === 'set_week_policy') {
-    const { monday, template_kind = 'standard', sales_meeting_mon = true, company_meeting_fri = true } = body;
-    if (!validDate(monday) || !['standard', 'storm'].includes(template_kind)) throw new Error('invalid week policy');
+    const { monday } = body;
+    const weekDate = new Date(`${monday}T00:00:00Z`);
+    if (!validDate(monday) || !Number.isFinite(weekDate.getTime())
+      || weekDate.toISOString().slice(0, 10) !== monday || weekDate.getUTCDay() !== 1) {
+      throw new Error('invalid week policy: monday must be a Monday in YYYY-MM-DD format');
+    }
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'template_kind')) {
+      if (!['standard', 'storm'].includes(body.template_kind)) throw new Error('invalid template_kind');
+      patch.template_kind = body.template_kind;
+    }
+    for (const field of ['sales_meeting_mon', 'company_meeting_fri']) {
+      if (!Object.prototype.hasOwnProperty.call(body, field)) continue;
+      if (typeof body[field] !== 'boolean') throw new Error(`${field} must be a boolean`);
+      patch[field] = body[field];
+    }
+    const rows = await sb(`sra_template_policy?select=*&effective_week=eq.${monday}&limit=1`);
+    const policy = { template_kind: 'standard', sales_meeting_mon: true, company_meeting_fri: true,
+      ...rows?.[0], ...patch, effective_week: monday };
     await sb('sra_template_policy?on_conflict=effective_week', {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-      body: JSON.stringify({ effective_week: monday, template_kind,
-        sales_meeting_mon: !!sales_meeting_mon, company_meeting_fri: !!company_meeting_fri }),
+      body: JSON.stringify(policy),
     });
   } else if (action === 'set_pattern') {
     const { rep_id, effective_from, slots } = body;
-    if (!rep_id || !validDate(effective_from) || !Array.isArray(slots)) throw new Error('invalid pattern');
+    if (!rep_id || !validDate(effective_from) || !Array.isArray(slots)
+      || slots.length === 0 || slots.length > 35) throw new Error('invalid pattern');
+    const pairs = new Set();
+    for (const row of slots) {
+      if (!row || !Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6
+        || typeof row.slot !== 'string' || !/^s[1-5]$/.test(row.slot)
+        || typeof row.available !== 'boolean') throw new Error('invalid pattern slot');
+      const pair = `${row.weekday}:${row.slot}`;
+      if (pairs.has(pair)) throw new Error('duplicate pattern weekday:slot');
+      pairs.add(pair);
+    }
     await rpc('set_rep_pattern', {
       p_rep_id: rep_id, p_effective_from: effective_from, p_slots: slots, p_created_by: email,
     });
@@ -224,14 +250,22 @@ async function write(action, body, email) {
       .filter(key => Object.prototype.hasOwnProperty.call(body, key)).map(key => [key, body[key]]));
     if (!profile.display_name || !profile.section) throw new Error('display_name and section are required');
     if (!profile.id) {
+      if (typeof profile.display_name !== 'string' || !profile.display_name.trim()) {
+        throw new Error('display_name is required');
+      }
+      // Quote the filter value and escape LIKE wildcards for an exact, case-insensitive match.
+      const nameFilter = profile.display_name.replace(/[\\%_*]/g, '\\$&');
+      const duplicates = await sb(`rep_profiles?select=id&display_name=ilike.${encodeURIComponent(JSON.stringify(nameFilter))}&limit=1`);
+      if (duplicates?.length) {
+        throw new Error(`A rep named ${profile.display_name} already exists - use Restore under Removed reps`);
+      }
       const rows = await sb('rep_profiles?select=sort_order&order=sort_order.desc&limit=1');
       profile.sort_order = (rows[0]?.sort_order || 0) + 1;
     }
-    // New reps upsert on display_name so re-adding a removed rep reactivates them in place.
     if (!profile.id) profile.active = true;
-    await sb(`rep_profiles${profile.id ? `?id=eq.${encodeURIComponent(profile.id)}` : '?on_conflict=display_name'}`, {
+    await sb(`rep_profiles${profile.id ? `?id=eq.${encodeURIComponent(profile.id)}` : ''}`, {
       method: profile.id ? 'PATCH' : 'POST',
-      headers: { Prefer: profile.id ? 'return=representation' : 'return=representation,resolution=merge-duplicates' },
+      headers: { Prefer: 'return=representation' },
       body: JSON.stringify(profile),
     });
   } else if (action === 'clear_exceptions') {
@@ -262,7 +296,7 @@ async function write(action, body, email) {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ sort_order: offset + index + 1 }),
     })));
-    result = { count: body.rep_ids.length };
+    result = { ok: true, count: body.rep_ids.length };
   } else if (action === 'set_hold_rule') {
     const { per, cap, min_reps, warn_below } = body;
     if (![per, cap, min_reps, warn_below].every(Number.isInteger)) throw new Error('hold rule values must be integers');
@@ -275,10 +309,18 @@ async function write(action, body, email) {
       method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify({ date_key: 'availability_hold_rule', config: rule, updated_by: email }),
     });
-    result = await syncHoldRule(rule);
+    const syncResult = await syncHoldRule(rule);
+    // The database write committed; preserve sheet failures as HTTP 200 warnings.
+    result = { ok: true, sheet_synced: syncResult.sheet_synced,
+      ...(syncResult.error ? { error: syncResult.error } : {}) };
   } else throw new Error('unknown action');
-  await logAction(action, body, email, result);
-  return result;
+  try {
+    await logAction(action, body, email, result);
+  } catch (error) {
+    console.error('Availability audit logging failed', error);
+    result = { ...result, audit_logged: false, warning: 'Changes saved, but audit logging failed.' };
+  }
+  return { ...result, ok: true };
 }
 
 export default async function handler(req, res) {
@@ -287,7 +329,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') return res.status(200).json(await getData({ ...range(req), session }));
     if (req.method !== 'POST') return fail(res, 405, 'Method not allowed');
-    const profiles = await sb('rep_profiles?select=email,section');
+    const profiles = await sb('rep_profiles?select=email,section&active=eq.true');
     if (!isManager(session.email, profiles || [])) return fail(res, 403, 'Manager access required');
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     return res.status(200).json(await write(body.action, body, session.email));

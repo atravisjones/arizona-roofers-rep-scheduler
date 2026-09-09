@@ -5,7 +5,7 @@ import { heldFor, holdRuleLabel, netBookable } from '../utils/availability';
 interface Props {
   rule: HoldRule;
   editable: boolean;
-  onSave: (rule: HoldRule) => Promise<void>;
+  onSave: (rule: HoldRule) => Promise<boolean>;
 }
 
 const EXAMPLES = [12, 10, 8, 6, 4, 3, 2];
@@ -18,9 +18,11 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
 }) => {
   const [draft, setDraft] = useState(rule);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!editable || saving) return;
     if (
       draft.per < 1 ||
       draft.cap < 0 ||
@@ -30,9 +32,12 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
     )
       return;
     setSaving(true);
+    setError('');
     try {
-      await onSave(draft);
-      onClose();
+      if (await onSave(draft)) onClose();
+      else setError('Could not save hold rule. Your changes have been kept; please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save hold rule.');
     } finally {
       setSaving(false);
     }
@@ -96,13 +101,14 @@ export const HoldRulePopover: React.FC<Props & { onClose: () => void }> = ({
           ))}
         </tbody>
       </table>
+      {error && <p role="alert" className="mt-3 text-xs text-tag-red-text">{error}</p>}
       {editable && (
         <button
           type="submit"
           disabled={saving}
           className="mt-4 w-full rounded-md bg-brand-primary px-3 py-2 text-xs font-semibold text-brand-text-on-primary disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save hold rule'}
+          {saving ? 'Saving...' : 'Save hold rule'}
         </button>
       )}
     </form>

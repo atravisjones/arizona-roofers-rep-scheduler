@@ -44,10 +44,10 @@ const patternDefaults = (pattern?: Pattern): PatternState =>
     WEEKDAYS.map((_, weekday) => [
       weekday,
       Object.fromEntries(
-        SLOTS.slice(0, 4).map((slot) => [
+        SLOTS.map((slot) => [
           slot,
           pattern?.slots.find((item) => item.weekday === weekday && item.slot === slot)
-            ?.available ?? true,
+            ?.available ?? false,
         ]),
       ),
     ]),
@@ -126,11 +126,23 @@ const PatternEditor: React.FC<{
           className="w-[126px] rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
         />
       </div>
+      {!pattern && (
+        <p className="mb-2 text-[10px] text-text-tertiary">
+          No standing pattern yet - all slots start OFF
+        </p>
+      )}
       <div className="space-y-1.5">
+        <div className="grid grid-cols-[28px_repeat(5,minmax(0,1fr))_28px] items-center gap-1 text-center text-[10px] font-bold text-text-tertiary">
+          <span className="text-left">Day</span>
+          {SLOTS.map((slot) => (
+            <span key={slot}>{slot === 's5' ? 'Storm' : SLOT_LABELS[slot].split(' ')[0]}</span>
+          ))}
+          <span>copy</span>
+        </div>
         {WEEKDAYS.map((day, weekday) => (
-          <div key={day} className="flex items-center gap-2">
+          <div key={day} className="grid grid-cols-[28px_repeat(5,minmax(0,1fr))_28px] items-center gap-1">
             <span className="w-7 text-[10px] font-bold text-text-tertiary">{day}</span>
-            {SLOTS.slice(0, 4).map((slot) => {
+            {SLOTS.map((slot) => {
               const available = slots[weekday][slot];
               return (
                 <button
@@ -171,14 +183,14 @@ const PatternEditor: React.FC<{
             onClick={() => copyDay([1, 2, 3, 4])}
             className="rounded border border-border-secondary bg-bg-primary px-2 py-1.5 text-[10px] font-semibold text-text-secondary"
           >
-            Copy Mon → Tue–Fri
+            Copy Mon → Tue-Fri
           </button>
           <button
             type="button"
             onClick={() => copyDay([1, 2, 3, 4, 5])}
             className="rounded border border-border-secondary bg-bg-primary px-2 py-1.5 text-[10px] font-semibold text-text-secondary"
           >
-            Copy Mon → Mon–Sat
+            Copy Mon → Mon-Sat
           </button>
         </div>
       )}
@@ -211,6 +223,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
   onClose,
   onSaved,
 }) => {
+  const [error, setError] = useState<string | null>(null);
   const history = useMemo(
     () =>
       [...exceptions].sort((a, b) =>
@@ -219,14 +232,19 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
     [exceptions],
   );
   const deleteException = async (item: Exception) => {
-    await saveAvailability({
-      action: 'set_exception',
-      rep_id: profile.id,
-      date: item.exception_date,
-      slot: item.slot,
-      available: null,
-    });
-    onSaved();
+    setError(null);
+    try {
+      await saveAvailability({
+        action: 'set_exception',
+        rep_id: profile.id,
+        date: item.exception_date,
+        slot: item.slot,
+        available: null,
+      });
+      onSaved();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not revert to pattern');
+    }
   };
   return (
     <>
@@ -262,10 +280,18 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
           </button>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          {error && (
+            <p
+              role="alert"
+              className="mt-2 rounded border border-tag-red-border bg-tag-red-bg px-2 py-1.5 text-[11px] font-semibold text-tag-red-text"
+            >
+              {error}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3 text-[11px]">
             <div className="rounded-md bg-bg-secondary p-3">
               <span className="block text-text-quaternary">Home zip</span>
-              <strong className="text-text-primary">{profile.home_zip || '—'}</strong>
+              <strong className="text-text-primary">{profile.home_zip || '-'}</strong>
             </div>
             <div className="rounded-md bg-bg-secondary p-3">
               <span className="block text-text-quaternary">Roofr ID</span>
@@ -288,7 +314,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
             </div>
           </div>
           {editable && !profile.is_placeholder && (
-            <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} />
+            <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} onError={setError} />
           )}
           {isManager && (
             <PatternEditor
@@ -331,7 +357,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
                         onClick={() => void deleteException(item)}
                         className="rounded px-2 py-1 text-[10px] font-semibold text-text-quaternary hover:bg-tag-red-bg hover:text-tag-red-text"
                       >
-                        Delete
+                        Revert to pattern
                       </button>
                     )}
                   </div>
@@ -345,21 +371,30 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
   );
 };
 
-// Two-step "Remove from schedule": deactivates the rep (history is kept; re-adding the same
-// name from "+ Add rep" reactivates them).
-const RemoveRep: React.FC<{ profile: Profile; onSaved: () => void; onClose: () => void }> = ({
+// Two-step "Remove from schedule": deactivates the rep (history is kept; bring them back with
+// Restore under "Removed reps" - "+ Add rep" is create-only and rejects an existing name).
+const RemoveRep: React.FC<{
+  profile: Profile;
+  onSaved: () => void;
+  onClose: () => void;
+  onError: (error: string | null) => void;
+}> = ({
   profile,
   onSaved,
   onClose,
+  onError,
 }) => {
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const remove = async () => {
     setSaving(true);
+    onError(null);
     try {
       await saveAvailability({ action: 'set_rep_active', rep_id: profile.id, active: false });
       onSaved();
       onClose();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'Could not remove rep');
     } finally {
       setSaving(false);
     }
