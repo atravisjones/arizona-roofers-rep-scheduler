@@ -51,6 +51,9 @@
   .btn.out.on-picked_up { background: #047857; color: #fff; }
   .hist { font-size: 11px; color: #71717a; margin-top: 4px; }
   .card.sel { outline: 3px solid #f59e0b; box-shadow: 0 0 0 4px #f59e0b33; }
+  .grip { flex: 0 0 18px; align-self: stretch; margin: -12px 0 -12px -6px; display: flex; align-items: center; justify-content: center; color: #a1a1aa; font-size: 18px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .card.dragging { opacity: .85; box-shadow: 0 8px 24px rgba(0,0,0,.25); transform: scale(1.02); position: relative; z-index: 5; }
+  .card.dragging .grip { cursor: grabbing; }
   .card.bye { transition: opacity .35s ease, transform .35s ease, height .3s ease .15s, padding .3s ease .15s, margin .3s ease .15s; overflow: hidden; opacity: 0; transform: translateX(60px) scale(.95); height: 0 !important; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
   .pin-bye { transition: transform .4s cubic-bezier(.5,-.6,.6,1), opacity .4s ease; transform: scale(0) rotate(90deg); opacity: 0; }
   .card[data-id] { cursor: pointer; }
@@ -522,34 +525,16 @@ window.__bootMyDay = function () {
   // plus distance/time. Falls back to straight segments until it arrives.
   let drive = null; // { verts: [{la,lo}], miles, mins, key }
   let driveTimer = null;
-  // Ordered route: [before] -> appointments with "between" checks slotted into their cheapest gap -> [after]
-  function orderedRoute() {
-    const byId = Object.fromEntries(checks.map(c => [c.jobId, c]));
-    const of = p => Object.keys(picks).filter(id => picks[id] === p && byId[id] && !checkDone(id)).map(id => byId[id]);
-    const toPt = c => ({ a: c.address, la: c.lat, lo: c.lon, check: c });
-    const seq = stops.map((s, i) => ({ a: s.a, la: s.la, lo: s.lo, i })).filter(p => !stopRan(p.i));
-    of('between').forEach(c => {
-      const pt = toPt(c);
-      if (pt.la == null || seq.length < 2) { seq.push(pt); return; }
-      let best = seq.length, bestCost = Infinity;
-      for (let i = 0; i < seq.length - 1; i++) {
-        const A = seq[i], B = seq[i + 1];
-        if (A.la == null || B.la == null) continue;
-        const cost = miles(A, pt) + miles(pt, B) - miles(A, B);
-        if (cost < bestCost) { bestCost = cost; best = i + 1; }
-      }
-      seq.splice(best, 0, pt);
-    });
-    return { before: of('before').map(toPt), seq, after: of('after').map(toPt) };
-  }
-  function drivePoints() { const r = orderedRoute(); return [...(me ? [me] : []), ...r.before, ...r.seq, ...r.after].filter(p => p.la != null && p.lo != null); }
+  // The drive, in the rep's chosen order, skipping ran appointments and picked-up checks.
+  function orderedRoute() { return routeItems().map(itemPt).filter(itemActive); }
+  function drivePoints() { return [...(me ? [me] : []), ...orderedRoute()].filter(p => p.la != null && p.lo != null); }
   function refreshDrive() {
     clearTimeout(driveTimer);
     driveTimer = setTimeout(async () => {
       const pts = drivePoints();
       if (pts.length < 2) { drive = null; drawLine(); render(); return; }
       const key = pts.map(p => p.la.toFixed(4) + ',' + p.lo.toFixed(4)).join(';');
-      if (drive && drive.key === key) return;
+      if (drive && drive.key === key) { render(); return; }
       try {
         const url = 'https://router.project-osrm.org/route/v1/driving/' + pts.map(p => p.lo + ',' + p.la).join(';') + '?overview=full&geometries=geojson';
         const d = await (await fetch(url)).json();
@@ -629,38 +614,93 @@ window.__bootMyDay = function () {
   const stopRan = i => !!ran['stop:' + i];
   const checkDone = id => outcomes[id]?.today === 'picked_up';
   const savePicks = () => { try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) {} };
+  let checks = [];
+  // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
+  let outcomes = {};
+  // The day as one ordered list the rep can drag around: 'stop:<i>' (appointment) and
+  // 'check:<jobId>' (pickup on the route). Remembered per rep/day on this phone.
+  const ORDER_KEY = 'm-route-order:' + rep + ':' + date;
+  let order = [];
+  try { order = JSON.parse(localStorage.getItem(ORDER_KEY) || '[]') || []; } catch (e) { order = []; }
+  const saveOrder = () => { try { localStorage.setItem(ORDER_KEY, JSON.stringify(order)); } catch (e) {} };
+  const checkById = id => checks.find(c => c.jobId === id);
+  const itemPt = k => {
+    if (k.startsWith('stop:')) { const i = +k.slice(5), st = stops[i]; return { key: k, a: st.a, la: st.la, lo: st.lo, i, stop: st }; }
+    const c = checkById(k.slice(6)); return { key: k, a: c.address, la: c.lat, lo: c.lon, check: c };
+  };
+  const itemActive = p => p.check ? !checkDone(p.check.jobId) : !stopRan(p.i);
+  // Stored order wins. Appointments not yet in it keep their link order; a newly added check is
+  // slotted by the button the rep tapped (before / cheapest gap between / after), then remembered.
+  function routeItems() {
+    const onRoute = id => !!picks[id] && !!checkById(id);
+    // Before the checks load, keep picked check keys in place (don't forget the rep's order).
+    const loaded = checks.length > 0;
+    const seq = order.filter(k => k.startsWith('stop:') ? !!stops[+k.slice(5)] : !!picks[k.slice(6)] && (!loaded || !!checkById(k.slice(6))));
+    let dirty = seq.length !== order.length;
+    stops.forEach((st, i) => {
+      const k = 'stop:' + i; if (seq.includes(k)) return;
+      let at = 0;
+      for (let j = i - 1; j >= 0; j--) { const pos = seq.indexOf('stop:' + j); if (pos >= 0) { at = pos + 1; break; } }
+      seq.splice(at, 0, k); dirty = true;
+    });
+    if (loaded) Object.keys(picks).filter(id => onRoute(id) && !seq.includes('check:' + id)).forEach(id => {
+      const k = 'check:' + id, pt = itemPt(k), pos = picks[id];
+      const live = seq.map(itemPt).filter(itemActive);
+      if (pos === 'before') seq.unshift(k);
+      else if (pos === 'after' || pt.la == null || live.length < 2) seq.push(k);
+      else {
+        let best = seq.length, bestCost = Infinity;
+        for (let i = 0; i < live.length - 1; i++) {
+          const A = live[i], B = live[i + 1];
+          if (A.la == null || B.la == null) continue;
+          const cost = miles(A, pt) + miles(pt, B) - miles(A, B);
+          if (cost < bestCost) { bestCost = cost; best = seq.indexOf(B.key); }
+        }
+        seq.splice(best, 0, k);
+      }
+      dirty = true;
+    });
+    if (dirty) { order = seq; saveOrder(); }
+    return seq.filter(k => k.startsWith('stop:') || onRoute(k.slice(6)));
+  }
+  const routePos = () => Object.fromEntries(routeItems().map((k, i) => [k, i + 1]));
 
   // Whole-route link: [checks before] → appointments in order → [checks after]
   function buildRoute() {
     const r = orderedRoute();
-    const before = r.before.map(p => p.a), after = r.after.map(p => p.a);
-    const between = r.seq.filter(p => p.check).map(p => p.a);
-    const addrs = [...before, ...r.seq.map(p => p.a), ...after];
+    const addrs = r.map(p => p.a);
     const a = document.getElementById('routeLink');
     const bar = document.getElementById('routeBar');
     if (!addrs.length) { a.hidden = true; bar.textContent = stops.length ? 'All appointments marked ran.' : ''; return; }
     // Empty origin segment = "Your location" in Google Maps; each following segment is a stop in order.
     const url = 'https://www.google.com/maps/dir//' + addrs.map(x => encodeURIComponent(x).replace(/%20/g, '+')).join('/');
     a.href = url; a.hidden = false;
-    const n = before.length + between.length + after.length;
+    const n = r.filter(p => p.check).length;
     a.textContent = `▶ Drive (${addrs.length})`;
     a.title = 'Open the remaining stops in Google Maps from your location';
     const start = (drive ? `${drive.miles.toFixed(1)} mi · ${Math.round(drive.mins)} min by road · ` : '') + 'starts from your location';
     const ranN = stops.filter((s, i) => stopRan(i)).length;
-    bar.textContent = (ranN ? `${ranN} appt${ranN === 1 ? '' : 's'} ran · ` : '') + start + ' · ' + (n ? [before.length ? `${before.length} check${before.length === 1 ? '' : 's'} before` : '', between.length ? `${between.length} between` : '', after.length ? `${after.length} check${after.length === 1 ? '' : 's'} after` : ''].filter(Boolean).join(' · ') + ' the appointments' : 'call a check, then add it before or after your appointments');
+    bar.textContent = (ranN ? `${ranN} appt${ranN === 1 ? '' : 's'} ran · ` : '') + start + ' · ' + (n ? `${n} check${n === 1 ? '' : 's'} on the route · drag ⠇ to reorder` : 'call a check, then add it before or after your appointments');
   }
 
   // Stops
   const stopsEl = document.getElementById('stops');
+  let dragging = null;   // { key, el } while a card is being dragged
   function renderStops() {
+    if (dragging) return;   // never rebuild the list under a finger
     const left = stops.filter((s, i) => !stopRan(i)).length;
     document.getElementById('stopCount').textContent = stops.length ? `· ${left} of ${stops.length} left` : '';
-    stopsEl.innerHTML = stops.length ? '' : '<div class="empty">No appointments in this link.</div>';
-    stops.forEach((s, i) => {
-      const done = stopRan(i);
-      stopsEl.insertAdjacentHTML('beforeend', `
-        <div class="card${done ? ' done' : ''}">
-          <div class="num stop">${i + 1}</div>
+    const items = routeItems();
+    stopsEl.innerHTML = items.length ? '' : '<div class="empty">No appointments in this link.</div>';
+    const grip = '<div class="grip" data-grip title="Drag to reorder" aria-label="Drag to reorder">\u2807</div>';
+    items.forEach((k, n) => {
+      const p = itemPt(k);
+      if (p.stop) {
+        const s = p.stop, i = p.i, done = stopRan(i);
+        stopsEl.insertAdjacentHTML('beforeend', `
+        <div class="card${done ? ' done' : ''}" data-key="${esc(k)}">
+          ${grip}
+          <div class="num stop">${n + 1}</div>
           <div class="body">
             <div class="name">${esc(s.n)}</div>
             ${s.t ? `<div class="meta">${esc(s.t)}</div>` : ''}
@@ -673,8 +713,53 @@ window.__bootMyDay = function () {
             </div>
           </div>
         </div>`);
+        return;
+      }
+      const c = p.check, done = checkDone(c.jobId);
+      stopsEl.insertAdjacentHTML('beforeend', `
+        <div class="card${done ? ' done' : ''}" data-key="${esc(k)}">
+          ${grip}
+          <div class="num check${c.scheduled ? ' sched' : c.isD2D ? ' d2d' : ''}">${n + 1}</div>
+          <div class="body">
+            <div class="name">${esc(c.customerName || 'Unknown')} <span class="value">${money(c.value)}</span>${c.scheduled ? '<span class="sched-tag">Pickup scheduled</span>' : ''}</div>
+            <div class="meta">Check pickup${c.jobOwner ? ' · Rep: ' + esc(c.jobOwner) : ''}</div>
+            <div class="addr">${esc(c.address)}</div>
+            <div class="actions">
+              ${c.phone ? `<button class="btn call" type="button" data-call="${esc(c.jobId)}" data-num="${digits(c.phone)}">📞 CTM · ${digits(c.phone).replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3')}</button>` : ''}
+              ${done ? '' : `<a class="btn" href="${nav(c.address)}" target="_blank" rel="noopener">🧭 Navigate</a>`}
+              <a class="btn roofr" href="https://app.roofr.com/dashboard/jobs/list-view?selectedJobId=${encodeURIComponent(c.jobId)}" target="_blank" rel="noopener">Roofr</a>
+              <button class="btn out${done ? ' on-picked_up' : ''}" type="button" data-outcome="picked_up" data-job="${esc(c.jobId)}">${done ? '✓ Picked up' : 'Picked up'}</button>
+              ${done ? '' : `<button class="btn ghost" type="button" data-unpick="${esc(c.jobId)}">Off route</button>`}
+            </div>
+          </div>
+        </div>`);
     });
   }
+  // Drag to reorder (mouse or finger): grab the ⠇ handle, the card follows, drop anywhere in the list.
+  stopsEl.addEventListener('pointerdown', e => {
+    const h = e.target.closest('[data-grip]'); if (!h || dragging) return;
+    const el = h.closest('.card[data-key]'); if (!el) return;
+    e.preventDefault();
+    dragging = { key: el.dataset.key, el };
+    el.classList.add('dragging');
+    try { h.setPointerCapture(e.pointerId); } catch (err) {}
+    const move = ev => {
+      if (!dragging) return;
+      ev.preventDefault();
+      const over = document.elementsFromPoint(ev.clientX, ev.clientY).find(x => x.matches && x.matches('.card[data-key]') && x !== el);
+      if (!over) return;
+      const r = over.getBoundingClientRect();
+      if (ev.clientY < r.top + r.height / 2) over.before(el); else over.after(el);
+    };
+    const up = () => {
+      h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+      el.classList.remove('dragging');
+      order = [...stopsEl.querySelectorAll('.card[data-key]')].map(x => x.dataset.key);
+      saveOrder(); dragging = null;
+      render(); refreshDrive();
+    };
+    h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+  });
   // Appointments only carry name/address in the link; ask the server which Roofr job each one is
   // so the card can show the customer's number (CTM) and a Roofr button.
   if (stops.length) {
@@ -687,11 +772,15 @@ window.__bootMyDay = function () {
   }
   stopsEl.addEventListener('click', e => {
     const callA = e.target.closest('[data-call]');
-    if (callA) { startCall('', callA.dataset.num || ''); return; }
+    if (callA) { startCall(callA.dataset.call.startsWith('stop:') ? '' : callA.dataset.call, callA.dataset.num || ''); return; }
+    const ob = e.target.closest('[data-outcome]');
+    if (ob) { onOutcomeClick(ob); return; }
+    const un = e.target.closest('[data-unpick]');
+    if (un) { delete picks[un.dataset.unpick]; savePicks(); setOutcome(un.dataset.unpick, null); refreshDrive(); return; }
     const b = e.target.closest('[data-ran]'); if (!b) return;
     const k = 'stop:' + b.dataset.ran;
     if (ran[k]) delete ran[k]; else ran[k] = true;
-    saveRan(); renderStops(); drawStops(); render(); refreshDrive();
+    saveRan(); render(); refreshDrive();
   });
   renderStops();
 
@@ -707,9 +796,10 @@ window.__bootMyDay = function () {
   const stopLayer = L.featureGroup().addTo(group);
   function drawStops() {
     stopLayer.clearLayers();
+    const pos = routePos();
     coordStops.forEach(s => {
       const i = stops.indexOf(s), done = stopRan(i);
-      L.marker([s.la, s.lo], { icon: pin(done ? '#9ca3af' : '#dc2626', i + 1, 28), zIndexOffset: done ? 500 : 1000 })
+      L.marker([s.la, s.lo], { icon: pin(done ? '#9ca3af' : '#dc2626', pos['stop:' + i] || i + 1, 28), zIndexOffset: done ? 500 : 1000 })
         .bindPopup(`<b>${esc(s.n)}</b>${done ? ' ✓ ran' : ''}<br>${esc(s.a)}`).addTo(stopLayer);
     });
   }
@@ -819,7 +909,6 @@ window.__bootMyDay = function () {
   locate(false);
 
   // Checks
-  let checks = [];
   let radius = 5;
   let kind = 'all';   // 'all' | 'retail' | 'd2d' | 'sched' — checks filter by lead source / pickup already scheduled
   // Sort per list. near = distance off route (checks only, falls through to the default order),
@@ -835,8 +924,6 @@ window.__bootMyDay = function () {
   };
   let selectedId = null;
   const checkMarkers = {};
-  // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
-  let outcomes = {};
   const OUT_LABEL = { confirmed: 'Pickup confirmed', declined: 'Declined', no_answer: 'No answer', picked_up: 'Picked up' };
   const todayKey = date || new Date().toISOString().slice(0, 10);
   const isDead = c => { const t = outcomes[c.jobId]?.today; return t === 'declined' || t === 'no_answer' || t === 'picked_up'; };
@@ -874,7 +961,8 @@ window.__bootMyDay = function () {
         return { c, d };
       })
       .filter(x => kind === 'all' || (kind === 'sched' ? !!x.c.scheduled : (kind === 'd2d') === !!x.c.isD2D));
-    const within = mi => scored.filter(x => picks[x.c.jobId] || (routePoints().length === 0 ? mi >= 999 : (x.d != null && x.d <= mi)));
+    // Scheduled pickups and anything already on the route always show, whatever the radius.
+    const within = mi => scored.filter(x => x.c.scheduled || picks[x.c.jobId] || (routePoints().length === 0 ? mi >= 999 : (x.d != null && x.d <= mi)));
     // Always show at least one live check: if the current radius has none, widen to the first
     // radius that does (up to All). Only stays empty when there is genuinely nothing to pick up.
     if (checks.length && !within(radius).some(x => !isDead(x.c))) {
@@ -884,6 +972,7 @@ window.__bootMyDay = function () {
     const rows = within(radius)
       .sort((a, b) => (isDead(a.c) - isDead(b.c)) || sortBy(sorts.check, a.c, b.c) || (a.d ?? 1e9) - (b.d ?? 1e9) || (b.c.value || 0) - (a.c.value || 0));
     const live = rows.filter(x => !isDead(x.c));
+    const pos = routePos();
     document.getElementById('checkCount').textContent = '· ' + live.length + (live.length ? ' · ' + money(live.reduce((s, x) => s + (x.c.value || 0), 0)) : '') + (rows.length > live.length ? ` · ${rows.length - live.length} done` : '');
     checksEl.innerHTML = rows.length ? '' : `<div class="empty">${routePoints().length ? 'No checks within ' + radius + ' mi of your route. Try a wider radius.' : 'No stops with coordinates in this link — showing nothing until you pick “All”.'}</div>`;
     rows.forEach(({ c, d }) => {
@@ -909,10 +998,11 @@ window.__bootMyDay = function () {
             ${(outcomes[c.jobId]?.history || []).length ? `<div class="hist">History: ${outcomes[c.jobId].history.slice(0, 5).map(h => `${new Date(h.date_key + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' })} ${OUT_LABEL[h.outcome] || h.outcome}${h.rep && h.rep !== rep ? ' (' + esc(h.rep.split(' ')[0]) + ')' : ''}`).join(' \u00b7 ')}</div>` : ''}
           </div>
         </div>`);
-      if (c.lat != null && c.lon != null && !isDead(c)) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(c.scheduled ? '#f97316' : c.isD2D ? '#8b5cf6' : '#059669', '$', selectedId === c.jobId ? 34 : 22, selectedId === c.jobId), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
+      if (c.lat != null && c.lon != null && !isDead(c)) checkMarkers[c.jobId] = L.marker([c.lat, c.lon], { icon: pin(c.scheduled ? '#f97316' : c.isD2D ? '#8b5cf6' : '#059669', pos['check:' + c.jobId] || '$', selectedId === c.jobId ? 34 : 22, selectedId === c.jobId), zIndexOffset: selectedId === c.jobId ? 1500 : 0 })
         .addTo(checkLayer)
         .on('click', () => { selectedId = c.jobId; render(); scrollToCard(c.jobId); });
     });
+    renderStops(); drawStops();
     buildRoute();
   }
   // Bring a check's card into view just under the sticky header + map.
@@ -931,6 +1021,24 @@ window.__bootMyDay = function () {
     if (el && el.firstElementChild) el.firstElementChild.classList.add('pin-bye');
     return new Promise(r => setTimeout(r, 480));
   }
+  async function onOutcomeClick(ob) {
+    const id = ob.dataset.job, o = ob.dataset.outcome;
+    const cur = outcomes[id]?.today;
+    if (cur !== o && (o === 'declined' || o === 'no_answer') && picks[id]) { delete picks[id]; savePicks(); refreshDrive(); }
+    if (cur === o) setOutcome(id, (o === 'picked_up' && picks[id]) ? 'confirmed' : null);   // undo (picked up -> back to confirmed)
+    else {
+      if (ob.disabled) return;
+      ob.disabled = true;
+      await dismiss(id);
+      setOutcome(id, o);
+      if (o === 'picked_up') {
+        const c = checks.find(x => x.jobId === id);
+        const total = checks.filter(x => outcomes[x.jobId]?.today === 'picked_up').reduce((s, x) => s + (x.value || 0), 0);
+        celebrate(c ? c.customerName : '', c ? c.value : null, total);
+      }
+    }
+    refreshDrive();
+  }
   checksEl.addEventListener('click', async e => {
     const callA = e.target.closest('[data-call]');
     if (callA) { startCall(callA.dataset.call, callA.dataset.num || ''); return; }
@@ -943,25 +1051,7 @@ window.__bootMyDay = function () {
       return;
     }
     const ob = e.target.closest('[data-outcome]');
-    if (ob) {
-      const id = ob.dataset.job, o = ob.dataset.outcome;
-      const cur = outcomes[id]?.today;
-      if (cur !== o && (o === 'declined' || o === 'no_answer') && picks[id]) { delete picks[id]; savePicks(); refreshDrive(); }
-      if (cur === o) setOutcome(id, (o === 'picked_up' && picks[id]) ? 'confirmed' : null);   // undo (picked up -> back to confirmed)
-      else {
-        if (ob.disabled) return;
-        ob.disabled = true;
-        await dismiss(id);
-        setOutcome(id, o);
-        if (o === 'picked_up') {
-          const c = checks.find(x => x.jobId === id);
-          const total = checks.filter(x => outcomes[x.jobId]?.today === 'picked_up').reduce((s, x) => s + (x.value || 0), 0);
-          celebrate(c ? c.customerName : '', c ? c.value : null, total);
-        }
-      }
-      refreshDrive();
-      return;
-    }
+    if (ob) { onOutcomeClick(ob); return; }
     const b = e.target.closest('[data-pick]'); if (!b) return;
     const id = b.dataset.pick, pos = b.dataset.pos;
     if (picks[id] === pos) { delete picks[id]; savePicks(); setOutcome(id, null); }   // tap again = undo
