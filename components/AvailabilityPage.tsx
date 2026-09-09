@@ -1625,7 +1625,12 @@ const AvailabilityPage: React.FC = () => {
             isManager={isManager}
             editable={editable}
             onClose={() => setDrawer(null)}
-            onSaved={() => void fetchData()}
+            onSaved={(effectiveFrom) => {
+              // A pattern that starts in a later week is invisible on the current board;
+              // jump there so the save is visible.
+              if (effectiveFrom && effectiveFrom > monday) setMonday(effectiveFrom);
+              else void fetchData();
+            }}
           />
         )}
       </div>

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Exception, Pattern, Profile, saveAvailability } from '../services/availabilityApi';
-import { SLOT_LABELS, SLOTS, WEEKDAYS, nextMonday } from '../utils/availability';
+import { SLOT_LABELS, SLOTS, WEEKDAYS, dateKey, mondayOf, nextMonday } from '../utils/availability';
 
 interface Props {
   profile: Profile;
@@ -9,7 +9,7 @@ interface Props {
   isManager: boolean;
   editable: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (effectiveFrom?: string) => void;
 }
 type PatternState = Record<number, Record<string, boolean>>;
 const initials = (name: string) =>
@@ -56,14 +56,21 @@ const patternDefaults = (pattern?: Pattern): PatternState =>
 const PatternEditor: React.FC<{
   pattern?: Pattern;
   repId: string;
-  onSaved: () => void;
+  onSaved: (effectiveFrom?: string) => void;
   editable: boolean;
 }> = ({ pattern, repId, onSaved, editable }) => {
   const [effectiveFrom, setEffectiveFrom] = useState(nextMonday());
   const [slots, setSlots] = useState(() => patternDefaults(pattern));
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // Patterns start on a Monday; any picked date snaps to the Monday of its week.
+  const pickDate = (value: string) => {
+    if (!value) return;
+    setEffectiveFrom(dateKey(mondayOf(new Date(`${value}T12:00:00`))));
+  };
   const savePattern = async () => {
     setSaving(true);
+    setStatus(null);
     try {
       await saveAvailability({
         action: 'set_pattern',
@@ -77,7 +84,13 @@ const PatternEditor: React.FC<{
           })),
         ),
       });
-      onSaved();
+      setStatus({ kind: 'ok', text: `Saved. Applies from ${effectiveFrom}.` });
+      onSaved(effectiveFrom);
+    } catch (error) {
+      setStatus({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'Pattern did not save',
+      });
     } finally {
       setSaving(false);
     }
@@ -108,8 +121,8 @@ const PatternEditor: React.FC<{
         <input
           type="date"
           value={effectiveFrom}
-          onChange={(event) => setEffectiveFrom(event.target.value)}
-          aria-label="Pattern effective date"
+          onChange={(event) => pickDate(event.target.value)}
+          aria-label="Pattern effective date (snaps to Monday)"
           className="w-[126px] rounded border border-border-secondary bg-bg-primary px-2 py-1 text-[10px] text-text-secondary"
         />
       </div>
@@ -177,6 +190,14 @@ const PatternEditor: React.FC<{
       >
         {saving ? 'Saving…' : 'Save standing pattern'}
       </button>
+      {status && (
+        <p
+          role={status.kind === 'error' ? 'alert' : 'status'}
+          className={`mt-2 rounded border px-2 py-1.5 text-[11px] font-semibold ${status.kind === 'error' ? 'border-tag-red-border bg-tag-red-bg text-tag-red-text' : 'border-tag-green-border bg-tag-green-bg text-tag-green-text'}`}
+        >
+          {status.text}
+        </p>
+      )}
     </section>
   );
 };
