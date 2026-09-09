@@ -617,6 +617,8 @@ window.__bootMyDay = function () {
   const checkDone = id => outcomes[id]?.today === 'picked_up';
   const savePicks = () => { try { localStorage.setItem(PICK_KEY, JSON.stringify(picks)); } catch (e) {} };
   let checks = [];
+  let selectedId = null;    // highlighted check (either list)
+  let selectedStop = null;  // highlighted appointment ('stop:<i>')
   // Outcomes: { jobId: { today: 'confirmed'|'declined'|'no_answer'|null, history: [{date_key, outcome, rep}] } }
   let outcomes = {};
   // The day as one ordered list the rep can drag around: 'stop:<i>' (appointment) and
@@ -700,7 +702,7 @@ window.__bootMyDay = function () {
       if (p.stop) {
         const s = p.stop, i = p.i, done = stopRan(i);
         stopsEl.insertAdjacentHTML('beforeend', `
-        <div class="card${done ? ' done' : ''}" data-key="${esc(k)}">
+        <div class="card${done ? ' done' : ''}${selectedStop === k ? ' sel' : ''}" data-key="${esc(k)}">
           ${grip}
           <div class="num stop">${n + 1}</div>
           <div class="body">
@@ -719,7 +721,7 @@ window.__bootMyDay = function () {
       }
       const c = p.check, done = checkDone(c.jobId);
       stopsEl.insertAdjacentHTML('beforeend', `
-        <div class="card${done ? ' done' : ''}" data-key="${esc(k)}">
+        <div class="card${done ? ' done' : ''}${selectedId === c.jobId ? ' sel' : ''}" data-key="${esc(k)}">
           ${grip}
           <div class="num check${c.scheduled ? ' sched' : c.isD2D ? ' d2d' : ''}">${n + 1}</div>
           <div class="body">
@@ -799,10 +801,19 @@ window.__bootMyDay = function () {
     if (ob) { onOutcomeClick(ob); return; }
     const un = e.target.closest('[data-unpick]');
     if (un) { delete picks[un.dataset.unpick]; savePicks(); setOutcome(un.dataset.unpick, null); refreshDrive(); return; }
-    const b = e.target.closest('[data-ran]'); if (!b) return;
-    const k = 'stop:' + b.dataset.ran;
-    if (ran[k]) delete ran[k]; else ran[k] = true;
-    saveRan(); render(); refreshDrive();
+    const b = e.target.closest('[data-ran]');
+    if (b) {
+      const k = 'stop:' + b.dataset.ran;
+      if (ran[k]) delete ran[k]; else ran[k] = true;
+      saveRan(); render(); refreshDrive();
+      return;
+    }
+    if (e.target.closest('a, button, [data-grip]')) return;
+    const card = e.target.closest('.card[data-key]'); if (!card) return;
+    const k = card.dataset.key;
+    if (k.startsWith('check:')) { const id = k.slice(6); selectedId = selectedId === id ? null : id; }
+    else selectedStop = selectedStop === k ? null : k;
+    render();
   });
   renderStops();
 
@@ -820,8 +831,9 @@ window.__bootMyDay = function () {
     stopLayer.clearLayers();
     const pos = routePos();
     coordStops.forEach(s => {
-      const i = stops.indexOf(s), done = stopRan(i);
-      L.marker([s.la, s.lo], { icon: pin(done ? '#9ca3af' : '#dc2626', pos['stop:' + i] || i + 1, 28), zIndexOffset: done ? 500 : 1000 })
+      const i = stops.indexOf(s), done = stopRan(i), sel = selectedStop === 'stop:' + i;
+      L.marker([s.la, s.lo], { icon: pin(done ? '#9ca3af' : '#dc2626', pos['stop:' + i] || i + 1, sel ? 38 : 28, sel), zIndexOffset: sel ? 1500 : done ? 500 : 1000 })
+        .on('click', () => { selectedStop = sel ? null : 'stop:' + i; render(); })
         .bindPopup(`<b>${esc(s.n)}</b>${done ? ' ✓ ran' : ''}<br>${esc(s.a)}`).addTo(stopLayer);
     });
   }
@@ -944,7 +956,6 @@ window.__bootMyDay = function () {
     if (mode === 'name') return str(a, 'customerName').localeCompare(str(b, 'customerName'));
     return 0;
   };
-  let selectedId = null;
   const checkMarkers = {};
   const OUT_LABEL = { confirmed: 'Pickup confirmed', declined: 'Declined', no_answer: 'No answer', picked_up: 'Picked up' };
   const todayKey = date || new Date().toISOString().slice(0, 10);
