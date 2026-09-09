@@ -601,6 +601,7 @@ interface BoardProps {
   onRep: (profile: Profile) => void;
   onCycle: (profile: Profile, day: string, slot: string) => void;
   onClearTimeOff: (profile: Profile, from: string, to: string) => void;
+  onReorder: (section: string, repIds: string[]) => void;
   onToggleNonSelling: () => void;
   sundayCollapsed: boolean;
   editing: boolean;
@@ -688,6 +689,7 @@ const Board: React.FC<BoardProps> = ({
   onRep,
   onCycle,
   onClearTimeOff,
+  onReorder,
   onToggleNonSelling,
   sundayCollapsed,
   editing,
@@ -698,6 +700,17 @@ const Board: React.FC<BoardProps> = ({
   onLayout,
 }) => {
   const groups = showNonSelling ? [...SELLING_SECTIONS, 'MANAGEMENT', 'D2D'] : SELLING_SECTIONS;
+  // Drag-and-drop rep order (edit mode only, within a section).
+  const [drag, setDrag] = useState<{ id: string; section: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
+  const canDrag = editable && editing;
+  const finishDrop = (section: string, reps: Profile[], targetId: string, after: boolean) => {
+    if (!drag || drag.section !== section || drag.id === targetId) return;
+    const ids = reps.map((profile) => profile.id).filter((id) => id !== drag.id);
+    const at = ids.indexOf(targetId) + (after ? 1 : 0);
+    ids.splice(at, 0, drag.id);
+    onReorder(section, ids);
+  };
   const eligibleProfiles = profiles.filter(
     (profile) => showNonSelling || SELLING_SECTIONS.includes(profile.section as Section),
   );
@@ -843,7 +856,7 @@ const Board: React.FC<BoardProps> = ({
             return (
               <React.Fragment key={group}>
                 <div
-                  className="border-y-[3px] border-text-primary px-4 py-2 text-[11px] font-black uppercase tracking-[.18em]"
+                  className="border-y-4 border-text-primary px-4 py-2 text-[11px] font-black uppercase tracking-[.18em]"
                   style={{ backgroundColor: getSectionTheme(group).band, color: getSectionTheme(group).bandText }}
                 >
                   {group === 'PHX'
@@ -857,8 +870,36 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className="relative grid border-b-[3px] border-text-primary"
+                    className={`relative grid border-b-4 border-text-primary ${drag?.id === profile.id ? 'opacity-40' : ''} ${dropTarget?.id === profile.id ? (dropTarget.after ? 'shadow-[inset_0_-4px_0_0_rgb(var(--brand-primary))]' : 'shadow-[inset_0_4px_0_0_rgb(var(--brand-primary))]') : ''}`}
                     style={gridStyle}
+                    draggable={canDrag}
+                    onDragStart={(event) => {
+                      if (!canDrag) return;
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('text/plain', profile.id);
+                      setDrag({ id: profile.id, section: group });
+                    }}
+                    onDragOver={(event) => {
+                      if (!drag || drag.section !== group) return;
+                      event.preventDefault();
+                      const box = event.currentTarget.getBoundingClientRect();
+                      const after = event.clientY > box.top + box.height / 2;
+                      if (dropTarget?.id !== profile.id || dropTarget.after !== after) {
+                        setDropTarget({ id: profile.id, after });
+                      }
+                    }}
+                    onDragLeave={() => setDropTarget((old) => (old?.id === profile.id ? null : old))}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const box = event.currentTarget.getBoundingClientRect();
+                      finishDrop(group, reps, profile.id, event.clientY > box.top + box.height / 2);
+                      setDrag(null);
+                      setDropTarget(null);
+                    }}
+                    onDragEnd={() => {
+                      setDrag(null);
+                      setDropTarget(null);
+                    }}
                   >
                     <button
                       type="button"
@@ -869,6 +910,15 @@ const Board: React.FC<BoardProps> = ({
                         backgroundImage: `linear-gradient(${getSectionTheme(group).wash}, ${getSectionTheme(group).wash})`,
                       }}
                     >
+                      {canDrag && (
+                        <span
+                          aria-hidden
+                          title="Drag to reorder"
+                          className="-ml-2 shrink-0 cursor-grab select-none text-[14px] leading-none text-text-quaternary active:cursor-grabbing"
+                        >
+                          ⋮⋮
+                        </span>
+                      )}
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-bg-light text-[9px] font-bold text-brand-text-light">
                         {initials(profile.display_name)}
                       </span>
@@ -1478,6 +1528,23 @@ const AvailabilityPage: React.FC = () => {
                 `${profile.display_name} time off cleared`,
               )
             }
+            onReorder={(section, repIds) => {
+              const rank = new Set(repIds);
+              // Swap the section's rows into the new order in place; other sections untouched.
+              setData((old) => {
+                if (!old) return old;
+                const byId = new Map(old.profiles.map((profile) => [profile.id, profile]));
+                const ordered = repIds.map((id) => byId.get(id)).filter(Boolean) as Profile[];
+                let cursor = 0;
+                return {
+                  ...old,
+                  profiles: old.profiles.map((profile) =>
+                    profile.section === section && rank.has(profile.id) ? ordered[cursor++] : profile,
+                  ),
+                };
+              });
+              void runWrite({ action: 'set_rep_order', section, rep_ids: repIds }, 'Rep order saved');
+            }}
             onToggleNonSelling={() => setShowNonSelling((value) => !value)}
             layout={layout}
             onLayout={setLayout}

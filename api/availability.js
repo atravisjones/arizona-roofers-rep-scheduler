@@ -10,6 +10,8 @@ const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
 
 function fail(res, status, error) { return res.status(status).json({ ok: false, error }); }
 
+const SECTION_ORDER = ['PHX', 'NORTH', 'SOUTH', 'COMMERCIAL', 'MANAGEMENT', 'INSURANCE', 'D2D'];
+
 async function sb(path, options = {}) {
   if (!SUPABASE_URL || !SERVICE_KEY) throw new Error('KPI Supabase is not configured');
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -77,7 +79,7 @@ function holdRuleFromRow(row) {
 async function getData({ from, to, session }) {
   const dates = dateRange(from, to);
   const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults, inactive] = await Promise.all([
-    sb('rep_profiles?select=*&active=eq.true'),
+    sb('rep_profiles?select=*&active=eq.true&order=sort_order.asc,display_name.asc'),
     rpc('resolve_availability', { p_from: from, p_to: to }, { Range: '0-9999' }),
     sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}`
       + '&order=exception_date,slot'),
@@ -244,6 +246,23 @@ async function write(action, body, email) {
       method: 'PATCH', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ active: body.active }),
     });
+  } else if (action === 'set_rep_order') {
+    // Drag-and-drop order within a section: rep_ids in display order.
+    if (!Array.isArray(body.rep_ids) || !body.rep_ids.length || body.rep_ids.some(id => typeof id !== 'string')) {
+      throw new Error('rep_ids must be a non-empty list of ids');
+    }
+    const section = body.section || null;
+    // Sections are ordered by banner, so only the order INSIDE the section matters; a fixed
+    // stride keeps this section's numbers away from everyone else's without a rewrite.
+    const stride = 1000;
+    const offset = section
+      ? (SECTION_ORDER.indexOf(section) === -1 ? SECTION_ORDER.length : SECTION_ORDER.indexOf(section)) * stride
+      : 0;
+    await Promise.all(body.rep_ids.map((id, index) => sb(`rep_profiles?id=eq.${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ sort_order: offset + index + 1 }),
+    })));
+    result = { count: body.rep_ids.length };
   } else if (action === 'set_hold_rule') {
     const { per, cap, min_reps, warn_below } = body;
     if (![per, cap, min_reps, warn_below].every(Number.isInteger)) throw new Error('hold rule values must be integers');

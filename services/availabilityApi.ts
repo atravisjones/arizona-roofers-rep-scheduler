@@ -13,6 +13,7 @@ export interface Profile {
   home_zip?: string | null;
   skills?: Record<string, number | boolean | string> | null;
   is_placeholder?: boolean;
+  sort_order?: number | null;
 }
 
 export interface Resolved {
