@@ -63,6 +63,9 @@ type ClosestRep = {
     homeZip?: string;
 };
 
+// "Flex …" rows are capacity placeholders from the availability sheet, never a real rep on the board.
+const isFlexRep = (rep: { name: string }) => /^flex/i.test((rep.name || '').trim());
+
 const REFRESH_MS = 120000;
 const NEW_FLASH_MS = 60000;
 const CANCELLED_VISIBLE_MS = 10 * 60000;
@@ -998,6 +1001,8 @@ const TodayBoard: React.FC = () => {
                 .filter(rep => {
                     const norm = normalizeRepName(rep.name);
                     if (present.has(norm) || present.has(normalizeName(rep.name))) return false;
+                    // Flex placeholders (Flex D2D / North / South) are planner scaffolding, not people.
+                    if (isFlexRep(rep)) return false;
                     const grp = getRepGroup(rep.name);
                     if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
                     if (rosterManagers.has(norm)) return false;
@@ -1062,6 +1067,7 @@ const TodayBoard: React.FC = () => {
         return appState.reps.filter(rep => {
             const norm = normalizeRepName(rep.name);
             if (booked.has(norm) || booked.has(normalizeName(rep.name))) return false;
+            if (isFlexRep(rep)) return false;
             const grp = getRepGroup(rep.name);
             if (grp === 'CSR' || grp === 'Management' || grp === 'D2D') return false;
             if (rosterManagers.has(norm)) return false;
