@@ -64,7 +64,7 @@ type ClosestRep = {
 };
 
 // "Flex …" rows are capacity placeholders from the availability sheet, never a real rep on the board.
-const isFlexRep = (rep: { name: string }) => /^flex/i.test((rep.name || '').trim());
+const isFlexRep = (rep: { name: string }) => /^flex(\s|$)/i.test((rep.name || '').trim());
 
 const REFRESH_MS = 120000;
 const NEW_FLASH_MS = 60000;
