@@ -1,6 +1,7 @@
 /**
  * Insurance checks endpoint - every job currently sitting in "INS: Collect ACV"
- * (the homeowner is holding an insurance check we need to pick up).
+ * (the homeowner is holding an insurance check we need to pick up) plus
+ * "Ins: ACV Meeting Sched." (a pickup is already on the calendar; flagged `scheduled`).
  *
  * Same source as the production map's Insurance tab
  * (https://az-production-map.vercel.app/?tab=insurance): roofr-search Supabase `jobs`.
@@ -46,8 +47,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const select = 'job_id,name,address,value,phone,job_owner,assignees,latitude,longitude,lead_source,stage_timeline,created_at,all_contacts';
-    const url = `${SUPABASE_URL}/rest/v1/jobs?select=${select}&deleted_at=is.null&stage=ilike.${encodeURIComponent('INS: Collect ACV')}&order=value.desc.nullslast&limit=500`;
+    const select = 'job_id,name,address,value,phone,job_owner,assignees,latitude,longitude,lead_source,stage,stage_timeline,created_at,all_contacts';
+    const url = `${SUPABASE_URL}/rest/v1/jobs?select=${select}&deleted_at=is.null&or=(stage.ilike.${encodeURIComponent('INS: Collect ACV')},stage.ilike.${encodeURIComponent('Ins: ACV Meeting Sched%')})&order=value.desc.nullslast&limit=500`;
 
     const resp = await fetch(url, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
@@ -60,11 +61,13 @@ export default async function handler(req, res) {
     const now = Date.now();
 
     const checks = rows.map(j => {
-      // Days sitting in Collect ACV: latest entry into the stage wins (re-entries happen).
+      const scheduled = /acv meeting/i.test(j.stage || '');
+      // Days sitting in the current stage: latest entry into it wins (re-entries happen).
+      const stageRe = scheduled ? /acv meeting/i : /collect acv/i;
       let enteredAt = null;
       if (Array.isArray(j.stage_timeline)) {
         for (const e of j.stage_timeline) {
-          if (/collect acv/i.test(e?.s || '') && e.in && (!enteredAt || e.in > enteredAt)) enteredAt = e.in;
+          if (stageRe.test(e?.s || '') && e.in && (!enteredAt || e.in > enteredAt)) enteredAt = e.in;
         }
       }
       const sinceIso = enteredAt || j.created_at || null;
@@ -87,6 +90,8 @@ export default async function handler(req, res) {
         assignees: j.assignees || '',
         leadSource: j.lead_source || '',
         isD2D: /door/i.test(j.lead_source || ''),
+        stage: j.stage || '',
+        scheduled,
         daysInStage,
         daysIsStageTime: !!enteredAt,
         lat: Number.isFinite(lat) ? lat : null,
