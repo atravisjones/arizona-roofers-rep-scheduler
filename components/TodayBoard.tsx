@@ -174,16 +174,19 @@ const countAssignedJobs = (appState: AppState | undefined): number =>
 // ── Region sectioning ────────────────────────────────────────────────────────
 // Reps are grouped left→right: Phoenix (main) | Tucson | Up North, by where their
 // appointments actually are that day (city match against the geography sets).
-type BoardRegion = 'PHX' | 'SOUTH' | 'NORTH';
-const REGION_ORDER: Record<BoardRegion, number> = { PHX: 0, SOUTH: 1, NORTH: 2 };
-const REGION_LABEL: Record<BoardRegion, string> = { PHX: '', SOUTH: 'Tucson', NORTH: 'Up North' };
-const REGION_TINT: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgba(245, 158, 11, 0.08)', NORTH: 'rgba(59, 130, 246, 0.09)' };
+// COMMERCIAL is a rep section, not a geography: London / Irving get their own rail at the far
+// right so commercial jobs never mix into the residential Phoenix / Tucson / Up North columns.
+type BoardRegion = 'PHX' | 'SOUTH' | 'NORTH' | 'COMMERCIAL';
+const REGION_ORDER: Record<BoardRegion, number> = { PHX: 0, SOUTH: 1, NORTH: 2, COMMERCIAL: 3 };
+const REGION_LABEL: Record<BoardRegion, string> = { PHX: '', SOUTH: 'Tucson', NORTH: 'Up North', COMMERCIAL: 'Commercial' };
+const REGION_TINT: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgba(245, 158, 11, 0.08)', NORTH: 'rgba(59, 130, 246, 0.09)', COMMERCIAL: 'rgba(139, 92, 246, 0.09)' };
 const REGION_BADGE: Record<BoardRegion, string> = {
     PHX: '',
     SOUTH: 'bg-amber-500/15 text-amber-600 border border-amber-500/40',
     NORTH: 'bg-blue-500/15 text-blue-500 border border-blue-500/40',
+    COMMERCIAL: 'bg-violet-500/15 text-violet-600 border border-violet-500/40',
 };
-const REGION_LABEL_COLOR: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgb(217, 119, 6)', NORTH: 'rgb(37, 99, 235)' };
+const REGION_LABEL_COLOR: Record<BoardRegion, string> = { PHX: '', SOUTH: 'rgb(217, 119, 6)', NORTH: 'rgb(37, 99, 235)', COMMERCIAL: 'rgb(124, 58, 237)' };
 
 // Left rail: CSR (unassigned bookings) and Management/owners aren't bookable sales
 // columns, so they pull to the far left, region-neutral, each with its own label bar.
@@ -969,14 +972,16 @@ const TodayBoard: React.FC = () => {
             .map(([repName, group]) => {
                 const appointments = group.appointments.sort((a, b) => getSortTime(a) - getSortTime(b));
                 const leftSection = leftSectionOf(group.departmentGroup);
+                const matched = repsByName.get(normalizeRepName(repName)) || repsByLooseName.get(normalizeName(repName));
+                const commercial = !!matched && (isCommercialOnlyRep(matched) || isLondon(matched));
                 return {
                     repName,
                     departmentGroup: group.departmentGroup,
                     leftSection,
                     // CSR + Management columns aren't region-bound sales routes — keep them
                     // region-neutral so the Tucson/Up North sections stay clean, and pull
-                    // them to the far left instead.
-                    region: (leftSection ? 'PHX' : getRepColumnRegion(appointments)) as BoardRegion,
+                    // them to the far left instead. Commercial reps get the far-right rail.
+                    region: (leftSection ? 'PHX' : commercial ? 'COMMERCIAL' : getRepColumnRegion(appointments)) as BoardRegion,
                     appointments,
                 };
             })
@@ -1024,7 +1029,22 @@ const TodayBoard: React.FC = () => {
                 }))
             : [];
 
-        return [...feedGroups, ...emptyRepGroups]
+        // Commercial reps always hold a column on the live board (London, Irving) so the
+        // Commercial rail is a fixed place to look, booked or not.
+        const commercialGroups = dataSource === 'live'
+            ? appState.reps
+                .filter(rep => (isCommercialOnlyRep(rep) || isLondon(rep)) && !isFlexRep(rep))
+                .filter(rep => !present.has(normalizeRepName(rep.name)) && !present.has(normalizeName(rep.name)))
+                .map(rep => ({
+                    repName: rep.name,
+                    departmentGroup: getRepGroup(rep.name),
+                    leftSection: null as LeftSection | null,
+                    region: 'COMMERCIAL' as BoardRegion,
+                    appointments: [] as BoardAppointment[],
+                }))
+            : [];
+
+        return [...feedGroups, ...emptyRepGroups, ...commercialGroups]
             // Belt and braces: no Flex placeholder ever gets a column, whichever path produced it.
             .filter(group => !isFlexRep({ name: group.repName }))
             // Left rail (CSR, then Management), then Phoenix (main), Tucson, Up North;
@@ -1036,7 +1056,7 @@ const TodayBoard: React.FC = () => {
                     || (REGION_ORDER[a.region] - REGION_ORDER[b.region])
                     || a.repName.localeCompare(b.repName);
             });
-    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers, fillWindows.length]);
+    }, [appointments, cancelledAppointments, getRepGroup, newEventIds, dataSource, appState.reps, dayName, rosterManagers, fillWindows.length, repsByName, repsByLooseName]);
 
     // The day's real bookings, one row each. Mirrors are deliberately excluded: they
     // point at a card that already appears on the rep's column, so counting them again
