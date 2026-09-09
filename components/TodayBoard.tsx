@@ -1025,6 +1025,8 @@ const TodayBoard: React.FC = () => {
             : [];
 
         return [...feedGroups, ...emptyRepGroups]
+            // Belt and braces: no Flex placeholder ever gets a column, whichever path produced it.
+            .filter(group => !isFlexRep({ name: group.repName }))
             // Left rail (CSR, then Management), then Phoenix (main), Tucson, Up North;
             // alphabetical within each section.
             .sort((a, b) => {
