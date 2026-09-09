@@ -1034,6 +1034,8 @@ const TodayBoard: React.FC = () => {
         const commercialGroups = dataSource === 'live'
             ? appState.reps
                 .filter(rep => (isCommercialOnlyRep(rep) || isLondon(rep)) && !isFlexRep(rep))
+                // Managers who also run commercial jobs (Irving) only get a column on days they have one.
+                .filter(rep => !rosterManagers.has(normalizeRepName(rep.name)))
                 .filter(rep => !present.has(normalizeRepName(rep.name)) && !present.has(normalizeName(rep.name)))
                 .map(rep => ({
                     repName: rep.name,
@@ -1701,8 +1703,9 @@ const TodayBoard: React.FC = () => {
                                                 </div>
                                             )}
                                         <div
-                                            className={`flex flex-col border-r border-border-primary min-w-0 ${!leftSection && group.region === 'PHX' ? 'bg-bg-primary' : ''} transition-opacity ${isFullyUnavailable ? 'opacity-60 grayscale' : ''} ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
-                                            style={{ flex: '1 1 0', backgroundColor: leftSection ? LEFT_SECTION_TINT[leftSection] : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
+                                            className={`flex flex-col border-r border-border-primary min-w-0 ${!leftSection && group.region === 'PHX' ? 'bg-bg-primary' : ''} transition-opacity ${activeSearch && !isClosestRep ? 'opacity-50' : ''}`}
+                                            // Off all day: grey column so it reads as closed, but the cards keep their colour.
+                                            style={{ flex: '1 1 0', backgroundColor: isFullyUnavailable ? 'rgb(var(--bg-quaternary) / 0.55)' : leftSection ? LEFT_SECTION_TINT[leftSection] : (group.region !== 'PHX' ? REGION_TINT[group.region] : undefined) }}
                                         >
                                             <div
                                                 className="sticky top-0 z-20 px-2 bg-bg-secondary border-b border-border-primary flex items-center"
