@@ -26,6 +26,7 @@ import {
   netBookable,
   weekDays,
 } from '../utils/availability';
+import { getSectionTheme } from '../utils/sectionThemes';
 import { getHolidayTheme, HOLIDAY_GLYPH } from '../utils/holidayThemes';
 import { useAppContext } from '../context/AppContext';
 
@@ -465,8 +466,8 @@ const Cell: React.FC<CellProps> = ({
         : exception?.available === true
           ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
           : available
-            ? 'border border-tag-green-text/60 bg-tag-green-text/30 text-tag-green-text'
-            : 'border-border-secondary bg-bg-tertiary text-text-quaternary';
+            ? 'border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]' // sheet green
+            : 'border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]'; // sheet grey
   const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
   // Every cell shows its start time; state is carried by fill, border and text style.
   const start = (layout === 'stacked' ? SLOT_START_FULL : SLOT_START)[slot] || '';
@@ -841,7 +842,10 @@ const Board: React.FC<BoardProps> = ({
             if (!reps.length) return null;
             return (
               <React.Fragment key={group}>
-                <div className="border-y border-border-secondary bg-bg-secondary px-4 py-1.5 text-[9px] font-bold uppercase tracking-[.18em] text-text-quaternary">
+                <div
+                  className="border-y-[3px] border-text-primary px-4 py-2 text-[11px] font-black uppercase tracking-[.18em]"
+                  style={{ backgroundColor: getSectionTheme(group).band, color: getSectionTheme(group).bandText }}
+                >
                   {group === 'PHX'
                     ? 'Phoenix'
                     : group === 'SOUTH'
@@ -853,13 +857,17 @@ const Board: React.FC<BoardProps> = ({
                 {reps.map((profile) => (
                   <div
                     key={profile.id}
-                    className="relative grid border-b-2 border-border-primary"
+                    className="relative grid border-b-[3px] border-text-primary"
                     style={gridStyle}
                   >
                     <button
                       type="button"
                       onClick={() => onRep(profile)}
-                      className={`${FOCUS} sticky left-0 z-10 flex min-h-[98px] min-w-0 items-center gap-2 bg-bg-primary px-4 py-2 text-left hover:bg-bg-tertiary`}
+                      className={`${FOCUS} sticky left-0 z-10 flex min-h-[98px] min-w-0 items-center gap-2 border-l-4 bg-bg-primary px-4 py-2 text-left hover:brightness-95`}
+                      style={{
+                        borderLeftColor: getSectionTheme(group).band,
+                        backgroundImage: `linear-gradient(${getSectionTheme(group).wash}, ${getSectionTheme(group).wash})`,
+                      }}
                     >
                       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-bg-light text-[9px] font-bold text-brand-text-light">
                         {initials(profile.display_name)}
@@ -1061,13 +1069,11 @@ const Legend: React.FC = () => {
         Legend
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-tag-green-text bg-tag-green-text/30 text-tag-green-text`}>
-          8a
-        </i>
-        <span className={`${label} text-tag-green-text`}>Available</span>
+        <i className={`${sample} border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]`}>8a</i>
+        <span className={`${label} text-[#38761d]`}>Available</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-text-quaternary bg-bg-tertiary text-text-quaternary`}>8a</i>
+        <i className={`${sample} border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]`}>8a</i>
         <span className={`${label} text-text-tertiary`}>Off (standing pattern)</span>
       </span>
       <span className="flex items-center gap-2">
@@ -1096,7 +1102,7 @@ const Legend: React.FC = () => {
       </span>
       <span className="flex items-center gap-2">
         <i
-          className={`${sample} border-tag-green-text bg-tag-green-text/30 ring-2 ring-tag-amber-text ring-offset-1 ring-offset-bg-primary`}
+          className={`${sample} border-[#6aa84f] bg-[#b6d7a8] ring-2 ring-tag-amber-text ring-offset-1 ring-offset-bg-primary`}
         />
         <span className={`${label} text-tag-amber-text`}>Pending request</span>
       </span>
