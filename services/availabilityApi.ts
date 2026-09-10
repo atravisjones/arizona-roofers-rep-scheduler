@@ -41,6 +41,8 @@ export interface Exception {
 export interface Request {
   id?: string;
   rep_id: string;
+  start_date?: string;
+  end_date?: string;
   request_date?: string;
   dates?: string[];
   days?: Array<{ date: string; slots: string[] }>;

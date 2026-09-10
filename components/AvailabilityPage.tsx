@@ -192,6 +192,38 @@ interface CapacityBreakdown {
   added: number;
   available: number;
 }
+const inSection = (profile: Profile, section: string) =>
+  section === 'All' ||
+  profile.section === section ||
+  (section === 'Commercial' && profile.section === 'COMMERCIAL') ||
+  (section === 'Insurance' && profile.section === 'INSURANCE');
+
+const capacityBreakdown = (
+  profiles: Profile[],
+  resolved: Map<string, Resolved>,
+  exceptions: Map<string, Exception>,
+  section: string,
+  day: string,
+  slot: string,
+): CapacityBreakdown =>
+  profiles.reduce(
+    (result, rep) => {
+      if (!inSection(rep, section)) return result;
+      const key = `${rep.id}:${day}:${slot}`;
+      const item = resolved.get(key);
+      const exception = exceptions.get(key);
+      const available = exception?.available ?? item?.available ?? false;
+      if (exception?.available === true) result.added += 1;
+      else if (exception?.available === false) result.exception += 1;
+      else if (item?.source === 'meeting') result.meeting += 1;
+      else if (item?.source === 'holiday') result.holiday += 1;
+      else if (available) result.standing += 1;
+      result.available += available ? 1 : 0;
+      return result;
+    },
+    { standing: 0, exception: 0, meeting: 0, holiday: 0, added: 0, available: 0 },
+  );
+
 const CapacityStrip: React.FC<CapacityStripProps> = ({
   days,
   section,
@@ -205,29 +237,8 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
   sundayCollapsed,
   holidays,
 }) => {
-  const inSection = (profile: Profile) =>
-    section === 'All' ||
-    profile.section === section ||
-    (section === 'Commercial' && profile.section === 'COMMERCIAL') ||
-    (section === 'Insurance' && profile.section === 'INSURANCE');
-  const breakdown = (day: string, slot: string): CapacityBreakdown =>
-    profiles.reduce(
-      (result, rep) => {
-        if (!inSection(rep)) return result;
-        const key = `${rep.id}:${day}:${slot}`;
-        const item = resolved.get(key);
-        const exception = exceptions.get(key);
-        const available = exception?.available ?? item?.available ?? false;
-        if (exception?.available === true) result.added += 1;
-        else if (exception?.available === false) result.exception += 1;
-        else if (item?.source === 'meeting') result.meeting += 1;
-        else if (item?.source === 'holiday') result.holiday += 1;
-        else if (available) result.standing += 1;
-        result.available += available ? 1 : 0;
-        return result;
-      },
-      { standing: 0, exception: 0, meeting: 0, holiday: 0, added: 0, available: 0 },
-    );
+  const breakdown = (day: string, slot: string) =>
+    capacityBreakdown(profiles, resolved, exceptions, section, day, slot);
   return (
     <section>
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -295,6 +306,68 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
 const isLowCoverage = (d: CapacityBreakdown, rule: AvailabilityData['hold_rule']) =>
   !(d.available === 0 && (d.meeting > 0 || d.holiday > 0)) &&
   netBookable(d.available, rule) < rule.warn_below;
+
+interface MonthCalendarProps {
+  month: string;
+  days: string[];
+  data: AvailabilityData;
+  section: string;
+  onDay: (day: string) => void;
+}
+const MonthCalendar: React.FC<MonthCalendarProps> = ({ month, days, data, section, onDay }) => {
+  const resolved = useMemo(() => new Map(data.resolved.map((item) =>
+    [`${item.rep_id}:${item.work_date}:${item.slot}`, item] as const)), [data.resolved]);
+  const exceptions = useMemo(() => new Map(data.exceptions.map((item) =>
+    [`${item.rep_id}:${item.exception_date}:${item.slot}`, item] as const)), [data.exceptions]);
+  const holidays = useMemo(() => new Map(data.holidays.map((item) => [item.date, item.name])), [data.holidays]);
+  const repIds = useMemo(() => new Set(data.profiles.filter((rep) => inSection(rep, section))
+    .map((rep) => rep.id)), [data.profiles, section]);
+  return (
+    <div className="grid min-w-0 grid-cols-7 gap-1 sm:gap-2" aria-label="Month availability">
+      {WEEKDAYS.map((day) => (
+        <div key={day} className="text-center text-[10px] font-semibold text-text-tertiary">{day}</div>
+      ))}
+      {days.map((day) => {
+        const week = dateKey(mondayOf(new Date(`${day}T12:00:00`)));
+        const slots = data.policy[week]?.template_kind === 'storm' ? SLOTS : SLOTS.slice(0, 4);
+        const counts = slots.map((slot) => ({ slot, breakdown: capacityBreakdown(
+          data.profiles, resolved, exceptions, section, day, slot,
+        ) }));
+        const low = counts.some((item) => isLowCoverage(item.breakdown, data.hold_rule));
+        const off = new Set(data.requests.filter((request) =>
+          repIds.has(request.rep_id) && ['pending', 'approved', 'auto_approved'].includes(request.status) &&
+          (request.start_date && request.end_date
+            ? request.start_date <= day && request.end_date >= day
+            : request.request_date === day || request.dates?.includes(day) ||
+              request.days?.some((item) => item.date === day)),
+        ).map((request) => request.rep_id)).size;
+        return (
+          <button
+            key={day}
+            type="button"
+            onClick={() => onDay(day)}
+            aria-label={`${displayDate(day, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}: open week`}
+            aria-current={day === today ? 'date' : undefined}
+            className={`${FOCUS} min-w-0 rounded-md border p-1 text-left sm:p-2 ${low ? 'bg-tag-red-bg' : 'bg-bg-primary'} ${day === today ? 'border-brand-primary ring-2 ring-brand-primary/20' : 'border-border-secondary'} ${day.slice(0, 7) !== month ? 'opacity-50' : ''}`}
+          >
+            <span className="block text-xs font-bold tabular-nums text-text-secondary">{Number(day.slice(8))}</span>
+            {holidays.has(day) && <span className="block break-words text-[9px] leading-tight text-brand-primary">{holidays.get(day)}</span>}
+            <span className="mt-1 grid gap-0.5">
+              {counts.map(({ slot, breakdown }) => (
+                <span key={slot} title={`${SLOT_LABELS[slot]}: ${breakdown.available} available reps`}
+                  className={`flex min-w-0 flex-col justify-between rounded px-0.5 text-[9px] leading-tight sm:flex-row sm:text-[10px] ${isLowCoverage(breakdown, data.hold_rule) ? 'text-tag-red-text' : 'text-text-secondary'}`}>
+                  <span>{slot === 's5' ? 'Storm' : SLOT_START[slot]}</span>
+                  <strong className="tabular-nums">{breakdown.available}</strong>
+                </span>
+              ))}
+            </span>
+            {off > 0 && <span title="Reps with pending or approved time off" className="mt-1 block break-words rounded bg-bg-tertiary px-0.5 text-[9px] text-text-secondary">{off} off</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
 
 interface DayCardProps {
   day: string;
@@ -1247,6 +1320,65 @@ const AddRepForm: React.FC<AddRepFormProps> = ({ onCancel, onSave, editable }) =
 const AvailabilityPage: React.FC = () => {
   const { showToast } = useAppContext();
   const [monday, setMonday] = useState(dateKey(mondayOf(new Date())));
+  const [view, setView] = useState<'week' | 'month'>(() => {
+    try { return window.localStorage.getItem('availability.view') === 'month' ? 'month' : 'week'; }
+    catch { return 'week'; }
+  });
+  // The first week's Monday can belong to the previous month. Keep the explicit
+  // navigation target until week navigation resumes; initial month comes from monday.
+  const [monthTarget, setMonthTarget] = useState<string | null>(null);
+  const month = monthTarget || monday.slice(0, 7);
+  const monthDays = useMemo(() => {
+    const first = new Date(`${month}-01T12:00:00`);
+    const last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12);
+    const end = weekDays(dateKey(mondayOf(last)))[6];
+    const result: string[] = [];
+    for (let week = dateKey(mondayOf(first)); week <= end; week = addWeeks(week, 1)) {
+      result.push(...weekDays(week));
+    }
+    return result;
+  }, [month]);
+  const [monthData, setMonthData] = useState<AvailabilityData | null>(null);
+  const [monthLoading, setMonthLoading] = useState(true);
+  const [monthError, setMonthError] = useState('');
+  const [loadedMonth, setLoadedMonth] = useState('');
+  const monthFetchSequence = useRef(0);
+  const selectedMonth = useRef(month);
+  selectedMonth.current = month;
+  const fetchMonth = useCallback(async () => {
+    const sequence = ++monthFetchSequence.current;
+    const current = () => sequence === monthFetchSequence.current && selectedMonth.current === month;
+    setMonthLoading(true);
+    setMonthError('');
+    try {
+      const nextData = await loadAvailability(monthDays[0], monthDays[monthDays.length - 1]);
+      if (!current()) return;
+      setMonthData(nextData);
+      setLoadedMonth(month);
+    } catch (err) {
+      if (current()) setMonthError(err instanceof Error ? err.message : 'Could not load month availability.');
+    } finally {
+      if (current()) setMonthLoading(false);
+    }
+  }, [month, monthDays]);
+  useEffect(() => {
+    if (view === 'month') void fetchMonth();
+    return () => { monthFetchSequence.current += 1; };
+  }, [view, fetchMonth]);
+  useEffect(() => {
+    try { window.localStorage.setItem('availability.view', view); }
+    catch { /* View persistence is optional when storage is unavailable. */ }
+  }, [view]);
+  const navigateMonth = (date: Date) => {
+    const first = new Date(date.getFullYear(), date.getMonth(), 1, 12);
+    setMonthTarget(dateKey(first).slice(0, 7));
+    setMonday(dateKey(mondayOf(first)));
+  };
+  const changeView = (next: 'week' | 'month') => {
+    if (next === view) return;
+    setMonthTarget(null);
+    setView(next);
+  };
   const [data, setData] = useState<AvailabilityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadedMonday, setLoadedMonday] = useState('');
@@ -1467,7 +1599,7 @@ const AvailabilityPage: React.FC = () => {
       pendingCells.current.delete(key);
     }
   };
-  if (loading && !data)
+  if (view === 'week' && loading && !data)
     return (
       <div className="flex h-full items-center justify-center">
         <div className="w-full max-w-xl rounded-lg border border-border-secondary bg-bg-primary p-8 text-center">
@@ -1476,7 +1608,7 @@ const AvailabilityPage: React.FC = () => {
         </div>
       </div>
     );
-  if (error && !data)
+  if (view === 'week' && error && !data)
     return (
       <div className="flex h-full items-center justify-center">
         <div className="max-w-md rounded-lg border border-tag-red-border bg-tag-red-bg p-6 text-center">
@@ -1495,7 +1627,7 @@ const AvailabilityPage: React.FC = () => {
   return (
     <main className="h-full min-h-0 overflow-y-auto bg-bg-secondary px-4 py-5 lg:px-6">
       <div className="mx-auto max-w-[1600px] space-y-5">
-        {error && <p role="alert" className="text-sm text-tag-red-text">Could not refresh availability: {error}</p>}
+        {view === 'week' && error && <p role="alert" className="text-sm text-tag-red-text">Could not refresh availability: {error}</p>}
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[.2em] text-brand-primary">
@@ -1505,10 +1637,32 @@ const AvailabilityPage: React.FC = () => {
               Availability
             </h1>
             <p className="mt-1 text-xs text-text-tertiary">
-              See the week's bookable coverage before the first appointment lands.
+              {view === 'month' ? 'Available reps by day and slot. Select a day to open its week.' : "See the week's bookable coverage before the first appointment lands."}
             </p>
           </div>
-          <WeekNav
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-border-secondary bg-bg-secondary p-0.5" aria-label="Availability view">
+              {(['week', 'month'] as const).map((option) => (
+                <button key={option} type="button" onClick={() => changeView(option)} aria-pressed={view === option}
+                  className={`${FOCUS} rounded px-2.5 py-1 text-[10px] font-semibold capitalize ${view === option ? 'bg-bg-primary text-text-primary shadow-sm' : 'text-text-tertiary'}`}>
+                  {option}
+                </button>
+              ))}
+            </div>
+            {view === 'month' ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {([-1, 1] as const).map((amount) => (
+                  <button key={amount} type="button" aria-label={amount < 0 ? 'Previous month' : 'Next month'}
+                    onClick={() => { const date = new Date(`${month}-01T12:00:00`); date.setMonth(date.getMonth() + amount); navigateMonth(date); }}
+                    className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-sm text-text-secondary`}>
+                    {amount < 0 ? '‹' : '›'}
+                  </button>
+                ))}
+                <span className="text-xs font-semibold text-text-secondary">{displayDate(`${month}-01`, { month: 'long', year: 'numeric' })}</span>
+                <button type="button" onClick={() => navigateMonth(new Date())}
+                  className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-[11px] font-semibold text-text-secondary`}>Today</button>
+              </div>
+            ) : <WeekNav
             monday={monday}
             days={days}
             onMove={(amount) => setMonday(addWeeks(monday, amount))}
@@ -1519,8 +1673,9 @@ const AvailabilityPage: React.FC = () => {
               if (Number.isNaN(parsed.getTime()) || dateKey(parsed) !== date) return;
               setMonday(dateKey(mondayOf(parsed)));
             }}
-          />
-          {isManager && (
+          />}
+          </div>
+          {view === 'week' && isManager && (
             <label className="flex items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-[11px] font-semibold text-text-secondary">
               <input
                 type="checkbox"
@@ -1532,6 +1687,23 @@ const AvailabilityPage: React.FC = () => {
             </label>
           )}
         </header>
+        {view === 'month' ? (
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11px] text-text-tertiary">Available reps · red indicates low net coverage after holds · read-only</p>
+              <select aria-label="Month coverage section" value={section} onChange={(event) => setSection(event.target.value)}
+                className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-2 py-1 text-xs text-text-secondary`}>
+                {['PHX', 'NORTH', 'SOUTH', 'Commercial', 'Insurance', 'All'].map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </div>
+            {monthError ? <div role="alert" className="text-sm text-tag-red-text">{monthError}
+              <button type="button" onClick={() => void fetchMonth()} className={`${FOCUS} ml-2 rounded px-2 py-1 font-semibold`}>Try again</button>
+            </div> : monthLoading || loadedMonth !== month || !monthData ? (
+              <p role="status" className="py-8 text-center text-sm text-text-tertiary">Loading month availability...</p>
+            ) : <MonthCalendar month={month} days={monthDays} data={monthData} section={section}
+              onDay={(day) => { setMonday(dateKey(mondayOf(new Date(`${day}T12:00:00`)))); changeView('week'); }} />}
+          </section>
+        ) : <>
         <PolicyChips
           policy={policy}
           holidays={(data?.holidays || []).filter((holiday) => days.includes(holiday.date))}
@@ -1687,6 +1859,7 @@ const AvailabilityPage: React.FC = () => {
             }}
           />
         )}
+        </>}
       </div>
     </main>
   );
