@@ -102,7 +102,13 @@ export interface AvailabilityData {
   requests: Request[];
   patterns: Pattern[];
   hold_rule: HoldRule;
-  me: { email?: string | null; name?: string; is_manager: boolean };
+  me: {
+    email?: string | null;
+    name?: string;
+    is_manager: boolean;
+    rep_id?: string | null; // the signed-in user's own rep profile, when their email is linked
+    view_as?: string | null; // manager previewing one rep's self-service view
+  };
 }
 
 interface ApiResponse {
@@ -125,8 +131,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export async function loadAvailability(from: string, to: string): Promise<AvailabilityData> {
+export async function loadAvailability(from: string, to: string, viewAs?: string | null): Promise<AvailabilityData> {
   const query = new URLSearchParams({ from, to });
+  if (viewAs) query.set('as', viewAs);
   return request<AvailabilityData>(`/api/availability?${query.toString()}`);
 }
 

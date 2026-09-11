@@ -1443,6 +1443,27 @@ const AvailabilityPage: React.FC = () => {
     }
   });
   const [undo, setUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
+  // Manager "view as rep" (testing / support): ?as=<rep_id> in the URL.
+  const [viewAs, setViewAs] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('as');
+    } catch {
+      return null;
+    }
+  });
+  const viewAsRef = useRef<string | null>(viewAs);
+  viewAsRef.current = viewAs;
+  const pickViewAs = (value: string | null) => {
+    setViewAs(value);
+    try {
+      const url = new URL(window.location.href);
+      if (value) url.searchParams.set('as', value);
+      else url.searchParams.delete('as');
+      window.history.replaceState(null, '', url.toString());
+    } catch {
+      // URL update is cosmetic
+    }
+  };
   const [editMode, setEditMode] = useState(() => {
     try {
       return window.localStorage.getItem('availability.editMode') === 'true';
@@ -1464,7 +1485,12 @@ const AvailabilityPage: React.FC = () => {
     company_meeting_fri: true,
   };
   const isManager = Boolean(data?.me.is_manager);
-  const editable = isManager && editMode && !loading && loadedMonday === monday;
+  // Self view: a rep looking at (and editing) only their own schedule, or a manager previewing it.
+  const selfId = data?.me.view_as || (!isManager ? data?.me.rep_id || null : null);
+  const selfView = Boolean(selfId);
+  const selfProfile = selfId ? data?.profiles.find((profile) => profile.id === selfId) : undefined;
+  const canEdit = isManager || Boolean(data?.me.rep_id);
+  const editable = canEdit && editMode && !loading && loadedMonday === monday;
   // silent = background refresh after a write: keep the board editable (no loading flip → no
   // unmount/remount of cell buttons and drag handles); data simply swaps in when it arrives.
   const fetchData = useCallback(async (silent = false) => {
@@ -1474,7 +1500,7 @@ const AvailabilityPage: React.FC = () => {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const nextData = await loadAvailability(requestedMonday, addWeeks(requestedMonday, 2));
+      const nextData = await loadAvailability(requestedMonday, addWeeks(requestedMonday, 2), viewAsRef.current);
       if (!current()) return;
       setData(nextData);
       setLoadedMonday(requestedMonday);
@@ -1486,18 +1512,18 @@ const AvailabilityPage: React.FC = () => {
     } finally {
       if (current() && !silent) setLoading(false);
     }
-  }, [monday]);
+  }, [monday, viewAs]);
   useEffect(() => {
     void fetchData();
   }, [fetchData]);
   useEffect(() => {
-    if (!isManager) setEditMode(false);
+    if (data && !canEdit) setEditMode(false);
     try {
-      window.localStorage.setItem('availability.editMode', String(isManager && editMode));
+      window.localStorage.setItem('availability.editMode', String(canEdit && editMode));
     } catch {
       // Storage can be unavailable in private browsing; editing still works for this session.
     }
-  }, [editMode, isManager]);
+  }, [editMode, canEdit, data]);
   useEffect(() => {
     try {
       window.localStorage.setItem('availability.filters', JSON.stringify(filters));
@@ -1541,11 +1567,12 @@ const AvailabilityPage: React.FC = () => {
     () =>
       (data?.profiles || [])
         // The board always shows every selling section; the section selector
-        // only drives the capacity strip.
+        // only drives the capacity strip. Self view shows just the one rep.
         .filter(
-          (profile) => showNonSelling || SELLING_SECTIONS.includes(profile.section as Section),
+          (profile) =>
+            selfId ? profile.id === selfId : showNonSelling || SELLING_SECTIONS.includes(profile.section as Section),
         ),
-    [data, showNonSelling],
+    [data, showNonSelling, selfId],
   );
   const runWrite = async (
     payload: Record<string, unknown>, success: string, after = true,
@@ -1685,14 +1712,23 @@ const AvailabilityPage: React.FC = () => {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[.2em] text-brand-primary">
-              Live capacity / manager view
+              {selfView ? (data?.me.view_as ? 'My schedule · manager preview' : 'My schedule') : 'Live capacity / manager view'}
             </p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-text-primary">
-              Availability
+              {selfView ? selfProfile?.display_name || 'My schedule' : 'Availability'}
             </h1>
             <p className="mt-1 text-xs text-text-tertiary">
-              {view === 'month' ? 'Available reps by day and slot. Select a day to open its week.' : "See the week's bookable coverage before the first appointment lands."}
+              {selfView
+                ? 'Your standing weekly pattern and the weeks ahead. Turn on Edit mode, then click a slot to cycle ON → FLEX → OFF (FLEX = the office calls you first). Select your name to change the standing pattern.'
+                : view === 'month'
+                  ? 'Available reps by day and slot. Select a day to open its week.'
+                  : "See the week's bookable coverage before the first appointment lands."}
             </p>
+            {data && !isManager && !data.me.rep_id && (
+              <p role="alert" className="mt-2 rounded-md border border-tag-amber-border bg-tag-amber-bg px-3 py-2 text-xs text-tag-amber-text">
+                No rep profile is linked to {data.me.email || 'your email'}. Ask a manager to add your email to your rep profile.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex overflow-hidden rounded-md border border-border-secondary bg-bg-secondary p-0.5" aria-label="Availability view">
@@ -1730,6 +1766,24 @@ const AvailabilityPage: React.FC = () => {
           />}
           </div>
           {view === 'week' && isManager && (
+            <select
+              aria-label="View as rep"
+              value={viewAs || ''}
+              onChange={(event) => pickViewAs(event.target.value || null)}
+              className={`${FOCUS} rounded-md border border-border-secondary bg-bg-primary px-2 py-2 text-[11px] text-text-secondary`}
+              title="Preview the self-service view a rep sees (and edit on their behalf)"
+            >
+              <option value="">Manager view</option>
+              {(data?.profiles || [])
+                .filter((profile) => !profile.is_placeholder)
+                .map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    View as {profile.display_name}
+                  </option>
+                ))}
+            </select>
+          )}
+          {view === 'week' && canEdit && (
             <label className="flex items-center gap-2 rounded-md border border-border-secondary bg-bg-primary px-3 py-2 text-[11px] font-semibold text-text-secondary">
               <input
                 type="checkbox"
@@ -1758,7 +1812,7 @@ const AvailabilityPage: React.FC = () => {
               onDay={(day) => { setMonday(dateKey(mondayOf(new Date(`${day}T12:00:00`)))); changeView('week'); }} />}
           </section>
         ) : <>
-        <PolicyChips
+        {!selfView && <PolicyChips
           policy={policy}
           holidays={(data?.holidays || []).filter((holiday) => days.includes(holiday.date))}
           editable={editable}
@@ -1768,8 +1822,8 @@ const AvailabilityPage: React.FC = () => {
               'Week policy updated',
             )
           }
-        />
-        {data && (
+        />}
+        {data && !selfView && (
           <CapacityStrip
             days={days}
             section={section}
@@ -1833,7 +1887,7 @@ const AvailabilityPage: React.FC = () => {
             holidays={holidays}
           />
         )}
-        {isManager && editMode &&
+        {isManager && !selfView && editMode &&
           (adding ? (
             <AddRepForm
               editable={editable}
@@ -1903,6 +1957,7 @@ const AvailabilityPage: React.FC = () => {
             exceptions={data.exceptions.filter((item) => item.rep_id === drawer.id)}
             pattern={data.patterns.find((item) => item.rep_id === drawer.id)}
             isManager={isManager}
+            selfEdit={selfView}
             editable={editable}
             onClose={() => setDrawer(null)}
             onSaved={(effectiveFrom) => {

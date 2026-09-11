@@ -76,7 +76,15 @@ function holdRuleFromRow(row) {
   ]));
 }
 
-async function getData({ from, to, session }) {
+// The rep profile whose email matches the signed-in session (case-insensitive), if any.
+function repForEmail(email, profiles = []) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+  return (profiles || []).find(profile => String(profile.email || '').toLowerCase() === normalized) || null;
+}
+
+// viewAs: a manager previewing one rep's self-service view (client filters; data stays complete).
+async function getData({ from, to, session, viewAs }) {
   const dates = dateRange(from, to);
   const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults, inactive] = await Promise.all([
     sb('rep_profiles?select=*&active=eq.true&order=sort_order.asc,display_name.asc'),
@@ -102,19 +110,29 @@ async function getData({ from, to, session }) {
       status: slot.available ? 'on' : slot.flex === true ? 'flex' : 'off',
     });
   }
+  const manager = isManager(session.email, profiles || []);
+  const self = repForEmail(session.email, profiles || []);
+  // Reps see only themselves: scope every collection to their own profile (a rep with no linked
+  // email gets an empty board plus me.rep_id = null so the UI can explain).
+  const scopeId = manager ? null : (self?.id || '__none__');
+  const own = rows => (rows || []).filter(row => !scopeId || row.rep_id === scopeId);
+  const scopedProfiles = scopeId ? (profiles || []).filter(profile => profile.id === scopeId) : (profiles || []);
   return {
-    profiles: profiles || [], inactive: inactive || [], resolved: resolved || [], exceptions: exceptions || [],
+    profiles: scopedProfiles, inactive: scopeId ? [] : (inactive || []),
+    resolved: own(resolved), exceptions: own(exceptions),
     policy: Object.fromEntries((policy || []).map(row => [row.effective_week, {
       template_kind: row.template_kind, sales_meeting_mon: row.sales_meeting_mon,
       company_meeting_fri: row.company_meeting_fri,
     }])),
     holidays: holidayResults.map(([date, result]) => holidayFromResult(date, result)).filter(Boolean),
-    requests: requests || [],
-    patterns: (patterns || []).map(pattern => ({ ...pattern, slots: slotByPattern.get(pattern.id) || [] })),
+    requests: own(requests),
+    patterns: own(patterns).map(pattern => ({ ...pattern, slots: slotByPattern.get(pattern.id) || [] })),
     hold_rule: holdRuleFromRow(settings?.[0]),
     me: {
       email: session.email, name: session.name || session.email,
-      is_manager: isManager(session.email, profiles || []),
+      is_manager: manager,
+      rep_id: self?.id || null,
+      view_as: manager && viewAs && (profiles || []).some(profile => profile.id === viewAs) ? viewAs : null,
     },
   };
 }
@@ -206,7 +224,8 @@ function slotState(row, allowDelete = false) {
   return { available: row.available, flex: !row.available && row.flex === true };
 }
 
-async function write(action, body, email) {
+async function write(action, body, email, options = {}) {
+  const source = options.self ? 'rep' : 'manager';
   let result = { ok: true };
   if (action === 'set_exception') {
     const { rep_id, date, slot, note } = body;
@@ -218,7 +237,7 @@ async function write(action, body, email) {
     } else {
       await sb('availability_exceptions?on_conflict=rep_id,exception_date,slot', {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify({ rep_id, exception_date: date, slot, ...state, source: 'manager',
+        body: JSON.stringify({ rep_id, exception_date: date, slot, ...state, source,
           created_by: email, note: note || null }),
       });
     }
@@ -349,12 +368,24 @@ export default async function handler(req, res) {
   const session = requireSession(req);
   if (!session) return fail(res, 401, 'Unauthorized');
   try {
-    if (req.method === 'GET') return res.status(200).json(await getData({ ...range(req), session }));
+    if (req.method === 'GET') {
+      const viewAs = String(queryValue(req.query?.as) || '').trim() || null;
+      return res.status(200).json(await getData({ ...range(req), session, viewAs }));
+    }
     if (req.method !== 'POST') return fail(res, 405, 'Method not allowed');
-    const profiles = await sb('rep_profiles?select=email,section&active=eq.true');
-    if (!isManager(session.email, profiles || [])) return fail(res, 403, 'Manager access required');
+    const profiles = await sb('rep_profiles?select=id,email,section&active=eq.true');
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-    return res.status(200).json(await write(body.action, body, session.email));
+    const manager = isManager(session.email, profiles || []);
+    if (!manager) {
+      // Rep self-service: a rep may edit ONLY their own dated slots, standing pattern and time off.
+      const self = repForEmail(session.email, profiles || []);
+      const selfActions = ['set_exception', 'set_pattern', 'clear_exceptions'];
+      if (!self) return fail(res, 403, 'No rep profile is linked to your email');
+      if (!selfActions.includes(body.action) || body.rep_id !== self.id) {
+        return fail(res, 403, 'You can only edit your own schedule');
+      }
+    }
+    return res.status(200).json(await write(body.action, body, session.email, { self: !manager }));
   } catch (error) {
     const message = error instanceof SyntaxError ? 'Invalid JSON' : error.message;
     return fail(res, message.includes('range') || message.includes('YYYY') ? 400 : 500, message || 'Request failed');

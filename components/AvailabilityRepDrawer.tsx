@@ -18,6 +18,7 @@ interface Props {
   exceptions: Exception[];
   pattern?: Pattern;
   isManager: boolean;
+  selfEdit?: boolean; // the rep editing their own schedule (or a manager previewing that view)
   editable: boolean;
   onClose: () => void;
   onSaved: (effectiveFrom?: string) => void;
@@ -321,6 +322,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
   exceptions,
   pattern,
   isManager,
+  selfEdit = false,
   editable,
   onClose,
   onSaved,
@@ -415,10 +417,10 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
               ))}
             </div>
           </div>
-          {editable && !profile.is_placeholder && (
+          {editable && isManager && !selfEdit && !profile.is_placeholder && (
             <RemoveRep profile={profile} onSaved={onSaved} onClose={onClose} onError={setError} />
           )}
-          {isManager && (
+          {(isManager || selfEdit) && (
             <PatternEditor
               pattern={pattern}
               repId={profile.id}
