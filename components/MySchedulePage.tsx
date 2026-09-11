@@ -65,7 +65,10 @@ const MySchedulePage: React.FC = () => {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'weeks' | 'default'>('weeks');
   const [toast, setToast] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
-  const [busy, setBusy] = useState(0);
+  // Taps are optimistic: the cell flips instantly, the write goes out, and one debounced background
+  // refresh reconciles after the last tap. No global disabling — that was the visible stutter.
+  const pending = useRef(new Set<string>());
+  const refreshTimer = useRef<number | undefined>(undefined);
   const start = useMemo(() => thisMonday(), []);
   const mondays = useMemo(() => Array.from({ length: WEEKS_AHEAD }, (_, i) => addWeeks(start, i)), [start]);
   const [weekIndex, setWeekIndex] = useState(0);
@@ -157,16 +160,20 @@ const MySchedulePage: React.FC = () => {
     success: string,
   ) => {
     if (!repId || changes.length === 0) return;
-    setBusy((n) => n + 1);
+    const keys = changes.map((c) => `${c.date}:${c.slot}`);
+    if (keys.some((k) => pending.current.has(k))) return; // that cell is still saving
+    keys.forEach((k) => pending.current.add(k));
     applyLocal(changes);
     try {
       await saveAvailability({ action: 'set_exceptions', rep_id: repId, changes });
       showToast(success);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not save', 'error');
+      void fetchData(); // roll back to the server's truth right away
     } finally {
-      setBusy((n) => n - 1);
-      void fetchData();
+      keys.forEach((k) => pending.current.delete(k));
+      window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = window.setTimeout(() => void fetchData(), 1500);
     }
   };
 
@@ -333,8 +340,8 @@ const MySchedulePage: React.FC = () => {
             {mondays.map((monday) => (
               <section key={monday} className="w-full shrink-0 snap-start px-3" aria-label={`Week of ${fmtWeek(monday)}`}>
                 <div className="mb-2 flex gap-2">
-                  <button type="button" disabled={busy > 0} onClick={() => void setWeek(monday, 'off')} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Whole week OFF</button>
-                  <button type="button" disabled={busy > 0} onClick={() => void setWeek(monday, null)} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Reset week to default</button>
+                  <button type="button" onClick={() => void setWeek(monday, 'off')} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Whole week OFF</button>
+                  <button type="button" onClick={() => void setWeek(monday, null)} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Reset week to default</button>
                 </div>
                 <div className="space-y-2">
                   {weekDays(monday).map((day) => {
@@ -349,7 +356,7 @@ const MySchedulePage: React.FC = () => {
                           </p>
                           <button
                             type="button"
-                            disabled={busy > 0}
+                           
                             onClick={() => void setDay(day, off ? null : 'off')}
                             className="rounded-md border border-border-secondary px-2 py-1 text-[11px] font-semibold text-text-secondary"
                           >
@@ -365,7 +372,6 @@ const MySchedulePage: React.FC = () => {
                               <button
                                 key={slot}
                                 type="button"
-                                disabled={busy > 0}
                                 onClick={() => tapSlot(day, slot)}
                                 className={`${btn} flex-col leading-none ${
                                   cell?.source === 'meeting' && state === 'off'
