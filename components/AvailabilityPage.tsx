@@ -566,18 +566,26 @@ const Cell: React.FC<CellProps> = ({
   const start = (layout === 'stacked' ? SLOT_START_FULL : SLOT_START)[slot] || '';
   const label = `${profile.display_name}, ${displayDate(day)} ${start}, ${SLOT_LABELS[slot] || slot}: ${availabilityLabel(state)} (${origin})${editable && !meeting ? `. Click → ${nextAvailabilityStatus(state).toUpperCase()}` : ''}`;
   // Every cell shows its state word; exceptions are underlined (on/flex) or struck (off).
+  // Time on the left, state word centred (exceptions underlined for on/flex, struck for off).
+  const word = (
+    <span
+      className={`flex-1 text-center ${exception ? (state === 'off' ? 'line-through decoration-2' : 'underline decoration-2 underline-offset-2') : ''}`}
+    >
+      {state.toUpperCase()}
+    </span>
+  );
   const contents = meeting ? (
     'M'
   ) : holiday ? (
     'H'
-  ) : exception ? (
-    <span className={state === 'off' ? 'line-through decoration-2' : 'underline decoration-2 underline-offset-2'}>
-      {state.toUpperCase()}
-    </span>
   ) : (
-    state.toUpperCase()
+    <>
+      <span className={`shrink-0 font-semibold opacity-70 ${layout === 'stacked' ? 'w-7 text-[9px]' : 'text-[8px]'}`}>{start}</span>
+      {word}
+      {layout === 'stacked' && <span className="w-7 shrink-0" aria-hidden="true" />}
+    </>
   );
-  const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] w-[calc(100%-4px)] justify-start px-2 text-left text-[10px]' : 'm-0.5 flex h-6 justify-center'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
+  const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] w-[calc(100%-4px)] justify-between px-1.5 text-[10px]' : 'm-0.5 flex h-6 justify-center gap-0.5 px-0.5'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
   const holidayStyle =
     holiday && holidayInfo
       ? (() => {
