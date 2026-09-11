@@ -55,6 +55,18 @@ export interface Request {
   slot?: string;
   status: string;
   note?: string | null;
+  reason?: string | null;
+  reviewer?: string | null;
+  reviewer_note?: string | null;
+  submitted_at?: string | null;
+  decided_at?: string | null;
+  conflict_snapshot?: {
+    booked?: Array<{ date: string; slot: string; job_name?: string; address?: string }>;
+    coverage?: Array<{ date: string; slot: string; remaining: number; buffer: number; low: boolean }>;
+    single_rep_section?: boolean;
+    lead_time_hours?: number;
+    error?: string;
+  } | null;
 }
 
 export interface PatternSlot {

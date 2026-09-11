@@ -101,7 +101,7 @@ async function getData({ from, to, session, viewAs }) {
       + '&order=exception_date,slot'),
     sb(`sra_template_policy?select=*&effective_week=gte.${from}&effective_week=lte.${to}&order=effective_week`),
     sb(`time_off_requests?select=*&start_date=lte.${to}&end_date=gte.${from}${repFilter}`
-      + '&status=in.(pending,approved,auto_approved)&order=start_date'),
+      + '&status=in.(pending,approved,auto_approved,denied)&order=start_date'),
     sb(`availability_patterns?select=*&effective_from=lte.${to}${repFilter}`
       + `&or=(effective_to.is.null,effective_to.gte.${from})&status=eq.active&order=effective_from.desc`),
     sb('availability_pattern_slots?select=*'),
@@ -273,6 +273,40 @@ async function write(action, body, email, options = {}) {
         + `&slot=eq.${change.slot}`, { method: 'DELETE' });
     }
     result = { ok: true, upserted: upserts.length, deleted: deletes.length };
+  } else if (action === 'request_time_off') {
+    // A whole day off (or more) is a REQUEST with a documented reason; nothing changes until a manager decides.
+    const { rep_id, days, reason, note } = body;
+    if (!rep_id || !Array.isArray(days) || days.length === 0 || days.length > 60) throw new Error('invalid time-off request');
+    const clean = days.map(day => {
+      if (!day || !validDate(day.date) || !Array.isArray(day.slots) || day.slots.length === 0
+        || !day.slots.every(slot => /^s[1-5]$/.test(slot))) throw new Error('invalid time-off day');
+      return { date: day.date, slots: [...new Set(day.slots)].sort() };
+    }).sort((a, b) => a.date.localeCompare(b.date));
+    const text = String(reason || '').trim();
+    if (text.length < 2 || text.length > 500) throw new Error('a reason is required');
+    let snapshot = {};
+    try { snapshot = (await rpc('check_time_off', { p_rep_id: rep_id, p_days: clean })) || {}; }
+    catch (error) { snapshot = { error: error.message }; }
+    const rows = await sb('time_off_requests', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ rep_id, start_date: clean[0].date, end_date: clean[clean.length - 1].date,
+        days: clean, reason: text, note: note || null, status: 'pending', conflict_snapshot: snapshot }),
+    });
+    result = { ok: true, request: rows?.[0] || null };
+  } else if (action === 'cancel_time_off_request') {
+    if (!body.request_id || !body.rep_id) throw new Error('request_id and rep_id are required');
+    const rows = await sb(`time_off_requests?id=eq.${encodeURIComponent(body.request_id)}`
+      + `&rep_id=eq.${encodeURIComponent(body.rep_id)}&status=eq.pending`, {
+      method: 'PATCH', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ status: 'cancelled', updated_at: new Date().toISOString() }),
+    });
+    if (!rows?.length) throw new Error('no pending request to cancel');
+  } else if (action === 'decide_time_off') {
+    if (!body.request_id || !['approved', 'denied'].includes(body.status)) throw new Error('invalid decision');
+    const row = await rpc('apply_time_off_decision', {
+      p_request_id: body.request_id, p_status: body.status, p_reviewer: email, p_note: body.note || null,
+    });
+    result = { ok: true, request: row };
   } else if (action === 'set_week_policy') {
     const { monday } = body;
     const weekDate = new Date(`${monday}T00:00:00Z`);
@@ -411,7 +445,8 @@ export default async function handler(req, res) {
     if (!manager) {
       // Rep self-service: a rep may edit ONLY their own dated slots, standing pattern and time off.
       const self = repForEmail(session.email, profiles || []);
-      const selfActions = ['set_exception', 'set_exceptions', 'set_pattern', 'clear_exceptions'];
+      const selfActions = ['set_exception', 'set_exceptions', 'set_pattern', 'clear_exceptions',
+        'request_time_off', 'cancel_time_off_request'];
       if (!self) return fail(res, 403, 'No rep profile is linked to your email');
       if (!selfActions.includes(body.action) || body.rep_id !== self.id) {
         return fail(res, 403, 'You can only edit your own schedule');

@@ -1221,6 +1221,75 @@ const Board: React.FC<BoardProps> = ({
   );
 };
 
+// Pending time-off requests from the phone page: reason, dates, capacity impact, approve / deny.
+const TimeOffRequests: React.FC<{
+  requests: AvailabilityData['requests'];
+  profiles: Profile[];
+  onDecide: (id: string, status: 'approved' | 'denied', note: string) => Promise<boolean>;
+}> = ({ requests, profiles, onDecide }) => {
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [working, setWorking] = useState<string | null>(null);
+  const pending = requests.filter((r) => r.status === 'pending' && r.id);
+  if (!pending.length) return null;
+  const nameOf = (id: string) => profiles.find((p) => p.id === id)?.display_name || 'Unknown rep';
+  const decide = async (id: string, status: 'approved' | 'denied') => {
+    setWorking(id);
+    try {
+      if (await onDecide(id, status, notes[id] || '')) setNotes((n) => ({ ...n, [id]: '' }));
+    } finally {
+      setWorking(null);
+    }
+  };
+  return (
+    <section className="rounded-lg border border-tag-amber-border bg-bg-primary">
+      <div className="flex items-center justify-between border-b border-border-secondary px-4 py-2.5">
+        <h2 className="text-sm font-semibold text-text-primary">
+          Time-off requests <span className="ml-1 rounded-full bg-tag-amber-bg px-2 py-0.5 text-[11px] font-bold text-tag-amber-text">{pending.length}</span>
+        </h2>
+        <p className="text-[11px] text-text-tertiary">Approve writes the days off; deny leaves the schedule as is. Either way the reason stays on record.</p>
+      </div>
+      <ul className="divide-y divide-border-secondary">
+        {pending.map((r) => {
+          const snap = r.conflict_snapshot || {};
+          const low = (snap.coverage || []).filter((c) => c.low).length;
+          const booked = (snap.booked || []).length;
+          const slotCount = (r.days || []).reduce((n, d) => n + d.slots.length, 0);
+          return (
+            <li key={r.id} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary">
+                  {nameOf(r.rep_id)}
+                  <span className="ml-2 text-xs font-normal text-text-secondary">
+                    {r.start_date === r.end_date ? displayDate(r.start_date || '') : `${displayDate(r.start_date || '')} – ${displayDate(r.end_date || '')}`}
+                    {' · '}{(r.days || []).length} day{(r.days || []).length === 1 ? '' : 's'} · {slotCount} slot{slotCount === 1 ? '' : 's'}
+                  </span>
+                </p>
+                <p className="mt-0.5 text-xs text-text-secondary"><b>Reason:</b> {r.reason}</p>
+                <p className="mt-0.5 flex flex-wrap gap-2 text-[11px]">
+                  {booked > 0 && <span className="rounded bg-tag-red-bg px-1.5 py-0.5 font-semibold text-tag-red-text">{booked} appointment{booked === 1 ? '' : 's'} already booked</span>}
+                  {low > 0 && <span className="rounded bg-tag-amber-bg px-1.5 py-0.5 font-semibold text-tag-amber-text">Low coverage on {low} slot{low === 1 ? '' : 's'}</span>}
+                  {booked === 0 && low === 0 && !snap.error && <span className="text-text-tertiary">No booked appointments, coverage OK</span>}
+                  {r.submitted_at && <span className="text-text-quaternary">Sent {new Date(r.submitted_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  value={notes[r.id!] || ''}
+                  onChange={(e) => setNotes((n) => ({ ...n, [r.id!]: e.target.value }))}
+                  placeholder="Note to rep (optional)"
+                  className={`${FOCUS} w-44 rounded-md border border-border-secondary bg-bg-secondary px-2 py-1.5 text-xs`}
+                />
+                <button type="button" disabled={working === r.id} onClick={() => void decide(r.id!, 'denied')} className="rounded-md border border-border-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary disabled:opacity-50">Deny</button>
+                <button type="button" disabled={working === r.id} onClick={() => void decide(r.id!, 'approved')} className="rounded-md bg-brand-primary px-3 py-1.5 text-xs font-bold text-brand-text-on-primary disabled:opacity-50">Approve</button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+};
+
 const Legend: React.FC = () => {
   const sample = 'flex h-6 min-w-8 items-center justify-center rounded border-2 px-1 text-[10px] font-bold';
   const label = 'text-[11px] font-semibold';
@@ -1838,6 +1907,15 @@ const AvailabilityPage: React.FC = () => {
             onSaveRule={async (rule) => {
               return runWrite({ action: 'set_hold_rule', ...rule }, 'Hold rule updated');
             }}
+          />
+        )}
+        {data && isManager && !selfView && (
+          <TimeOffRequests
+            requests={data.requests}
+            profiles={data.profiles}
+            onDecide={(id, status, note) =>
+              runWrite({ action: 'decide_time_off', request_id: id, status, note }, status === 'approved' ? 'Time off approved' : 'Request denied')
+            }
           />
         )}
         {data && (

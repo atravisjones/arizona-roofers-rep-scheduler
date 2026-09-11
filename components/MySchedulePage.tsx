@@ -52,6 +52,8 @@ const fmtWeek = (monday: string) => {
 const thisMonday = () => dateKey(mondayOf(new Date()));
 
 type Cell = { state: AvailabilityStatus; source: string; exception?: Exception };
+type AskOff = { days: Array<{ date: string; slots: string[] }>; label: string };
+const REASONS = ['Personal', 'Sick', 'Vacation', 'Appointment', 'Family', 'Training', 'Other'];
 
 const MySchedulePage: React.FC = () => {
   const viewAs = useMemo(() => {
@@ -68,6 +70,11 @@ const MySchedulePage: React.FC = () => {
   // Taps are optimistic: the cell flips instantly, the write goes out, and one debounced background
   // refresh reconciles after the last tap. No global disabling — that was the visible stutter.
   const pending = useRef(new Set<string>());
+  // Whole-day-or-more OFF goes through a documented request; a manager approves before it applies.
+  const [ask, setAsk] = useState<AskOff | null>(null);
+  const [reasonPreset, setReasonPreset] = useState('');
+  const [reasonText, setReasonText] = useState('');
+  const [sending, setSending] = useState(false);
   const refreshTimer = useRef<number | undefined>(undefined);
   const start = useMemo(() => thisMonday(), []);
   const mondays = useMemo(() => Array.from({ length: WEEKS_AHEAD }, (_, i) => addWeeks(start, i)), [start]);
@@ -179,7 +186,59 @@ const MySchedulePage: React.FC = () => {
 
   const tapSlot = (day: string, slot: string) => {
     const status = nextFor(day, slot);
+    // Turning the last open slot of a day OFF = a whole day off → request it instead.
+    if (status === 'off' || (status === null && patternIsOff(day, slot))) {
+      const othersOff = DAY_SLOTS.filter((s) => s !== slot).every((s) => (cells.get(`${day}:${s}`)?.state ?? 'off') === 'off');
+      if (othersOff) {
+        setAsk({ days: [{ date: day, slots: DAY_SLOTS.filter((s) => (cells.get(`${day}:${s}`)?.state ?? 'off') !== 'off' || s === slot) }], label: fmtDay(day) });
+        return;
+      }
+    }
     void writeChanges([{ date: day, slot, status }], status ? `${fmtDay(day)} ${SLOT_TIME[slot]} → ${STATE_LABEL[status]}` : `${fmtDay(day)} ${SLOT_TIME[slot]} back to default`);
+  };
+  const patternIsOff = (day: string, slot: string) =>
+    data && repId ? patternStatus(data.patterns, repId, day, slot) === 'off' : true;
+  const requestFor = (day: string) =>
+    (data?.requests || []).find(
+      (r) => r.rep_id === repId && (r.status === 'pending' || r.status === 'denied') && r.days?.some((d) => d.date === day),
+    );
+  const openSlots = (day: string) => DAY_SLOTS.filter((slot) => (cells.get(`${day}:${slot}`)?.state ?? 'off') !== 'off');
+  const askDayOff = (day: string) => setAsk({ days: [{ date: day, slots: openSlots(day) }], label: fmtDay(day) });
+  const askWeekOff = (monday: string) => {
+    const days = weekDays(monday).map((day) => ({ date: day, slots: openSlots(day) })).filter((d) => d.slots.length);
+    if (!days.length) return showToast('That week is already off');
+    setAsk({ days, label: `Week of ${fmtWeek(monday)}` });
+  };
+  const submitAsk = async () => {
+    if (!ask || !repId || !reasonPreset) return;
+    setSending(true);
+    try {
+      await saveAvailability({
+        action: 'request_time_off',
+        rep_id: repId,
+        days: ask.days,
+        reason: reasonText.trim() ? `${reasonPreset}: ${reasonText.trim()}` : reasonPreset,
+      });
+      showToast('Time-off request sent to management');
+      setAsk(null);
+      setReasonPreset('');
+      setReasonText('');
+      await fetchData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not send request', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+  const cancelRequest = async (id: string) => {
+    if (!repId) return;
+    try {
+      await saveAvailability({ action: 'cancel_time_off_request', request_id: id, rep_id: repId });
+      showToast('Request cancelled');
+      await fetchData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not cancel', 'error');
+    }
   };
   const dayAllOff = (day: string) => DAY_SLOTS.every((slot) => (cells.get(`${day}:${slot}`)?.state ?? 'off') === 'off');
   const setDay = (day: string, status: AvailabilityStatus | null) =>
@@ -340,13 +399,14 @@ const MySchedulePage: React.FC = () => {
             {mondays.map((monday) => (
               <section key={monday} className="w-full shrink-0 snap-start px-3" aria-label={`Week of ${fmtWeek(monday)}`}>
                 <div className="mb-2 flex gap-2">
-                  <button type="button" onClick={() => void setWeek(monday, 'off')} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Whole week OFF</button>
+                  <button type="button" onClick={() => askWeekOff(monday)} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Request week OFF</button>
                   <button type="button" onClick={() => void setWeek(monday, null)} className="flex-1 rounded-md border border-border-secondary bg-bg-primary py-2 text-xs font-semibold text-text-secondary">Reset week to default</button>
                 </div>
                 <div className="space-y-2">
                   {weekDays(monday).map((day) => {
                     const holiday = holidays.get(day);
                     const off = dayAllOff(day);
+                    const request = requestFor(day);
                     return (
                       <div key={day} className="rounded-xl border border-border-secondary bg-bg-primary p-2">
                         <div className="mb-1.5 flex items-center justify-between">
@@ -356,13 +416,29 @@ const MySchedulePage: React.FC = () => {
                           </p>
                           <button
                             type="button"
-                           
-                            onClick={() => void setDay(day, off ? null : 'off')}
+                            onClick={() => (off ? void setDay(day, null) : askDayOff(day))}
                             className="rounded-md border border-border-secondary px-2 py-1 text-[11px] font-semibold text-text-secondary"
                           >
-                            {off ? 'Reset day' : 'Day OFF'}
+                            {off ? 'Reset day' : 'Request day OFF'}
                           </button>
                         </div>
+                        {request && (
+                          <div
+                            className={`mb-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] ${
+                              request.status === 'pending' ? 'bg-tag-amber-bg text-tag-amber-text' : 'bg-tag-red-bg text-tag-red-text'
+                            }`}
+                          >
+                            <span>
+                              {request.status === 'pending' ? 'Time off requested' : 'Time off denied'} · {request.reason}
+                              {request.status === 'pending' ? ' · waiting on a manager' : request.reviewer_note ? ` · ${request.reviewer_note}` : ''}
+                            </span>
+                            {request.status === 'pending' && request.id && (
+                              <button type="button" onClick={() => void cancelRequest(request.id!)} className="shrink-0 rounded border border-current px-1.5 py-0.5 font-semibold">
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        )}
                         <div className="flex gap-1.5">
                           {DAY_SLOTS.map((slot) => {
                             const cell = cells.get(`${day}:${slot}`);
@@ -395,7 +471,7 @@ const MySchedulePage: React.FC = () => {
               </section>
             ))}
           </div>
-          <p className="px-4 pt-3 text-[11px] text-text-tertiary">Swipe left or right for other weeks. Underlined or struck slots are one-off changes; everything else follows your default week.</p>
+          <p className="px-4 pt-3 text-[11px] text-text-tertiary">Swipe left or right for other weeks. Underlined or struck slots are one-off changes; everything else follows your default week. A whole day off or more is sent to management as a request with your reason.</p>
         </>
       ) : (
         <div className="px-3 pt-2">
@@ -439,6 +515,45 @@ const MySchedulePage: React.FC = () => {
         </div>
       )}
 
+      {ask && (
+        <div className="fixed inset-0 z-40 flex items-end bg-black/40" onClick={() => !sending && setAsk(null)}>
+          <div className="mx-auto w-full max-w-md rounded-t-2xl bg-bg-primary p-4 pb-6" onClick={(e) => e.stopPropagation()}>
+            <p className="text-sm font-bold text-text-primary">Request time off · {ask.label}</p>
+            <p className="mt-1 text-xs text-text-tertiary">
+              A whole day or more needs a reason. Management approves it before your schedule changes.
+            </p>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Reason</p>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {REASONS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setReasonPreset(r)}
+                  aria-pressed={reasonPreset === r}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${reasonPreset === r ? 'border-brand-primary bg-brand-primary text-brand-text-on-primary' : 'border-border-secondary text-text-secondary'}`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              placeholder="Details (optional, e.g. doctor's appointment, out of town)"
+              rows={2}
+              className="mt-2 w-full rounded-md border border-border-secondary bg-bg-secondary p-2 text-sm text-text-primary"
+            />
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={sending} onClick={() => setAsk(null)} className="flex-1 rounded-lg border border-border-secondary py-3 text-sm font-semibold text-text-secondary">
+                Never mind
+              </button>
+              <button type="button" disabled={!reasonPreset || sending} onClick={() => void submitAsk()} className="flex-[2] rounded-lg bg-brand-primary py-3 text-sm font-bold text-brand-text-on-primary disabled:opacity-40">
+                {sending ? 'Sending…' : 'Send request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div role="status" className={`fixed bottom-20 left-1/2 z-30 -translate-x-1/2 rounded-full px-4 py-2 text-sm font-semibold shadow-lg ${toast.kind === 'ok' ? 'bg-text-primary text-bg-primary' : 'bg-tag-red-text text-white'}`}>
           {toast.text}
