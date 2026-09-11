@@ -86,15 +86,23 @@ function repForEmail(email, profiles = []) {
 // viewAs: a manager previewing one rep's self-service view (client filters; data stays complete).
 async function getData({ from, to, session, viewAs }) {
   const dates = dateRange(from, to);
-  const [profiles, resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults, inactive] = await Promise.all([
-    sb('rep_profiles?select=*&active=eq.true&order=sort_order.asc,display_name.asc'),
-    rpc('resolve_availability', { p_from: from, p_to: to }, { Range: '0-9999' }),
-    sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}`
+  const profiles = await sb('rep_profiles?select=*&active=eq.true&order=sort_order.asc,display_name.asc');
+  const manager = isManager(session.email, profiles || []);
+  const self = repForEmail(session.email, profiles || []);
+  // Scope: reps see only themselves; a manager may preview one rep (?as=). Scoped requests filter
+  // server-side so an 8-week range never hits the resolver row cap (all reps × 5 slots × 56 days > 10k).
+  const scopeId = manager
+    ? ((viewAs && (profiles || []).some(profile => profile.id === viewAs)) ? viewAs : null)
+    : (self?.id || '__none__');
+  const repFilter = scopeId ? `&rep_id=eq.${encodeURIComponent(scopeId)}` : '';
+  const [resolved, exceptions, policy, requests, patterns, slots, settings, holidayResults, inactive] = await Promise.all([
+    rpc(`resolve_availability?select=*${repFilter}`, { p_from: from, p_to: to }, { Range: '0-49999' }),
+    sb(`availability_exceptions?select=*&exception_date=gte.${from}&exception_date=lte.${to}${repFilter}`
       + '&order=exception_date,slot'),
     sb(`sra_template_policy?select=*&effective_week=gte.${from}&effective_week=lte.${to}&order=effective_week`),
-    sb(`time_off_requests?select=*&start_date=lte.${to}&end_date=gte.${from}`
+    sb(`time_off_requests?select=*&start_date=lte.${to}&end_date=gte.${from}${repFilter}`
       + '&status=in.(pending,approved,auto_approved)&order=start_date'),
-    sb(`availability_patterns?select=*&effective_from=lte.${to}`
+    sb(`availability_patterns?select=*&effective_from=lte.${to}${repFilter}`
       + `&or=(effective_to.is.null,effective_to.gte.${from})&status=eq.active&order=effective_from.desc`),
     sb('availability_pattern_slots?select=*'),
     sb('scheduler_settings?select=date_key,config&date_key=eq.availability_hold_rule&limit=1'),
@@ -110,15 +118,12 @@ async function getData({ from, to, session, viewAs }) {
       status: slot.available ? 'on' : slot.flex === true ? 'flex' : 'off',
     });
   }
-  const manager = isManager(session.email, profiles || []);
-  const self = repForEmail(session.email, profiles || []);
-  // Reps see only themselves: scope every collection to their own profile (a rep with no linked
-  // email gets an empty board plus me.rep_id = null so the UI can explain).
-  const scopeId = manager ? null : (self?.id || '__none__');
+  // Non-managers get only their own profile (a rep with no linked email gets an empty board plus
+  // me.rep_id = null so the UI can explain). A manager preview keeps the full profile list for the picker.
   const own = rows => (rows || []).filter(row => !scopeId || row.rep_id === scopeId);
-  const scopedProfiles = scopeId ? (profiles || []).filter(profile => profile.id === scopeId) : (profiles || []);
+  const scopedProfiles = manager ? (profiles || []) : (profiles || []).filter(profile => profile.id === scopeId);
   return {
-    profiles: scopedProfiles, inactive: scopeId ? [] : (inactive || []),
+    profiles: scopedProfiles, inactive: manager ? (inactive || []) : [],
     resolved: own(resolved), exceptions: own(exceptions),
     policy: Object.fromEntries((policy || []).map(row => [row.effective_week, {
       template_kind: row.template_kind, sales_meeting_mon: row.sales_meeting_mon,
@@ -132,7 +137,7 @@ async function getData({ from, to, session, viewAs }) {
       email: session.email, name: session.name || session.email,
       is_manager: manager,
       rep_id: self?.id || null,
-      view_as: manager && viewAs && (profiles || []).some(profile => profile.id === viewAs) ? viewAs : null,
+      view_as: manager ? scopeId : null,
     },
   };
 }
