@@ -25,6 +25,10 @@ import {
   mondayOf,
   netBookable,
   weekDays,
+  availabilityLabel,
+  availabilityStatus,
+  nextAvailabilityStatus,
+  patternStatus,
 } from '../utils/availability';
 import { getSectionTheme } from '../utils/sectionThemes';
 import { getHolidayTheme, HOLIDAY_GLYPH } from '../utils/holidayThemes';
@@ -190,8 +194,11 @@ interface CapacityBreakdown {
   meeting: number;
   holiday: number;
   added: number;
-  available: number;
+  available: number; // ON reps only — the number every hold / bookable calculation uses
+  flex: number; // FLEX reps (call to confirm) — never enter capacity math
 }
+// Effective three-state for a cell: the resolver row is authoritative (it already applies exceptions + policy).
+const effectiveStatus = (item?: Resolved, exception?: Exception) => availabilityStatus(item ?? exception);
 const inSection = (profile: Profile, section: string) =>
   section === 'All' ||
   profile.section === section ||
@@ -212,16 +219,18 @@ const capacityBreakdown = (
       const key = `${rep.id}:${day}:${slot}`;
       const item = resolved.get(key);
       const exception = exceptions.get(key);
-      const available = exception?.available ?? item?.available ?? false;
-      if (exception?.available === true) result.added += 1;
-      else if (exception?.available === false) result.exception += 1;
-      else if (item?.source === 'meeting') result.meeting += 1;
+      const state = effectiveStatus(item, exception);
+      if (state === 'flex') result.flex += 1;
+      else if (state === 'on') {
+        result.available += 1;
+        if (exception) result.added += 1;
+        else result.standing += 1;
+      } else if (item?.source === 'meeting') result.meeting += 1;
       else if (item?.source === 'holiday') result.holiday += 1;
-      else if (available) result.standing += 1;
-      result.available += available ? 1 : 0;
+      else if (exception) result.exception += 1;
       return result;
     },
-    { standing: 0, exception: 0, meeting: 0, holiday: 0, added: 0, available: 0 },
+    { standing: 0, exception: 0, meeting: 0, holiday: 0, added: 0, available: 0, flex: 0 },
   );
 
 const CapacityStrip: React.FC<CapacityStripProps> = ({
@@ -304,7 +313,7 @@ const CapacityStrip: React.FC<CapacityStripProps> = ({
 
 // A slot blocked for everyone by a meeting or holiday is not "low coverage"; it is closed.
 const isLowCoverage = (d: CapacityBreakdown, rule: AvailabilityData['hold_rule']) =>
-  !(d.available === 0 && (d.meeting > 0 || d.holiday > 0)) &&
+  !(d.available === 0 && d.flex === 0 && (d.meeting > 0 || d.holiday > 0)) &&
   netBookable(d.available, rule) < rule.warn_below;
 
 interface MonthCalendarProps {
@@ -354,13 +363,18 @@ const MonthCalendar: React.FC<MonthCalendarProps> = ({ month, days, data, sectio
             {holidays.has(day) && <span className="block break-words text-[9px] leading-tight text-brand-primary">{holidays.get(day)}</span>}
             <span className="mt-1 grid gap-0.5">
               {counts.map(({ slot, breakdown }) => (
-                <span key={slot} title={`${SLOT_LABELS[slot]}: ${breakdown.available} available reps`}
+                <span key={slot} title={`${SLOT_LABELS[slot]}: ${breakdown.available} on reps${breakdown.flex ? ` · +${breakdown.flex} flex (call to confirm, not counted)` : ''}`}
                   className={`flex min-w-0 flex-col justify-between rounded px-0.5 text-[9px] leading-tight sm:flex-row sm:text-[10px] ${isLowCoverage(breakdown, data.hold_rule) ? 'text-tag-red-text' : 'text-text-secondary'}`}>
                   <span>{slot === 's5' ? 'Storm' : SLOT_START[slot]}</span>
                   <strong className="tabular-nums">{breakdown.available}</strong>
                 </span>
               ))}
             </span>
+            {counts.some(({ breakdown }) => breakdown.flex > 0) && (
+              <span className="block text-[9px] text-tag-blue-text">
+                +{counts.reduce((sum, { breakdown }) => sum + breakdown.flex, 0)} flex
+              </span>
+            )}
             {off > 0 && <span title="Reps with pending or approved time off" className="mt-1 block break-words rounded bg-bg-tertiary px-0.5 text-[9px] text-text-secondary">{off} off</span>}
           </button>
         );
@@ -429,7 +443,11 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, h
           const width = `${Math.min(100, available * 12.5)}%`;
           const heldWidth = available ? `${(held / available) * 100}%` : '0%';
           return (
-            <div key={slot} className="flex items-center gap-2">
+            <div
+              key={slot}
+              className="flex items-center gap-2"
+              title={`${available} on, ${held} held, ${net} bookable${details.flex ? `; +${details.flex} flex (call to confirm, not counted)` : ''}`}
+            >
               <span className="w-7 text-[11px] text-text-quaternary">{slot.toUpperCase()}</span>
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-bg-tertiary">
                 <div
@@ -447,6 +465,9 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, h
               >
                 {net}
               </span>
+              {details.flex > 0 && (
+                <span className="text-[9px] font-semibold text-tag-blue-text">+{details.flex} flex</span>
+              )}
             </div>
           );
         })}
@@ -457,13 +478,14 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, h
           <thead>
             <tr className="text-left text-text-quaternary">
               <th>Slot</th>
-              <th>Standing</th>
-              <th>− Off</th>
-              <th>− Meeting</th>
-              <th>− Holiday</th>
-              <th>+ Added</th>
+              <th>Standing on</th>
+              <th>Off</th>
+              <th>Meeting</th>
+              <th>Holiday</th>
+              <th>Exception on</th>
               <th>− Hold</th>
               <th>= Bookable</th>
+              <th>Flex (call)</th>
             </tr>
           </thead>
           <tbody>
@@ -480,6 +502,7 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, h
                   <td>{d.added}</td>
                   <td>{hold}</td>
                   <td className="font-semibold">{d.available - hold}</td>
+                  <td className="text-tag-blue-text">+{d.flex}</td>
                 </tr>
               );
             })}
@@ -489,9 +512,11 @@ const DayCard: React.FC<DayCardProps> = ({ day, index, total, rule, breakdown, h
               <td className="pt-1">Total</td>
               <td colSpan={6} />
               <td>{total}</td>
+              <td />
             </tr>
           </tfoot>
         </table>
+        <p className="mt-1 text-text-quaternary">Only ON reps enter hold and bookable totals. FLEX needs a confirming call.</p>
       </div>
     </article>
   );
@@ -523,37 +548,34 @@ const Cell: React.FC<CellProps> = ({
   holidayInfo,
   layout = 'wide',
 }) => {
-  // Meeting and holiday overlays win visually unless a manager added the rep back.
-  const meeting = item?.source === 'meeting' && exception?.available !== true;
-  const holiday =
-    item?.source === 'holiday' && exception?.source !== undefined && exception?.available === true
-      ? false
-      : item?.source === 'holiday' && exception?.available !== true;
-  const available = exception?.available ?? item?.available ?? false;
+  // Three states: on (green) / flex (light blue, dashed — call to confirm) / off (grey).
+  // Meeting and holiday overlays win visually unless a manager added the rep back (resolver reports on/flex).
+  const state = effectiveStatus(item, exception);
+  const meeting = item?.source === 'meeting' && state === 'off';
+  const holiday = item?.source === 'holiday' && state === 'off';
   const stateClass = meeting
     ? 'border-text-primary bg-text-primary text-bg-primary' // solid ink block, like the sheet
     : holiday
       ? `${HATCHED} border-border-secondary text-text-tertiary`
-      : exception?.available === false
-        ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text'
-        : exception?.available === true
-          ? 'border-tag-blue-border bg-tag-blue-bg text-tag-blue-text'
-          : available
-            ? 'border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]' // sheet green
-            : 'border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]'; // sheet grey
-  const label = `${profile.display_name}, ${displayDate(day)}, ${SLOT_LABELS[slot] || slot}, ${available ? 'available' : 'off'}, ${sourceLabel(item)}`;
-  // Every cell shows its start time; state is carried by fill, border and text style.
+      : state === 'flex'
+        ? 'border-dashed border-tag-blue-text bg-tag-blue-bg text-tag-blue-text'
+        : state === 'on'
+          ? 'border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]' // sheet green
+          : 'border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]'; // sheet grey
+  const origin = meeting || holiday ? sourceLabel(item) : exception ? 'dated exception' : 'standing pattern';
   const start = (layout === 'stacked' ? SLOT_START_FULL : SLOT_START)[slot] || '';
+  const label = `${profile.display_name}, ${displayDate(day)} ${start}, ${SLOT_LABELS[slot] || slot}: ${availabilityLabel(state)} (${origin})${editable && !meeting ? `. Click → ${nextAvailabilityStatus(state).toUpperCase()}` : ''}`;
+  // Every cell shows its state word; exceptions are underlined (on/flex) or struck (off).
   const contents = meeting ? (
     'M'
   ) : holiday ? (
     'H'
-  ) : exception?.available === false ? (
-    <span className="line-through decoration-2">{start}</span>
-  ) : exception?.available === true ? (
-    <span className="underline decoration-2 underline-offset-2">{start}</span>
+  ) : exception ? (
+    <span className={state === 'off' ? 'line-through decoration-2' : 'underline decoration-2 underline-offset-2'}>
+      {state.toUpperCase()}
+    </span>
   ) : (
-    start
+    state.toUpperCase()
   );
   const cellClass = `${layout === 'stacked' ? 'mx-0.5 my-px flex h-[22px] w-[calc(100%-4px)] justify-start px-2 text-left text-[10px]' : 'm-0.5 flex h-6 justify-center'} items-center rounded border font-bold tabular-nums ${stateClass} ${pending ? 'ring-2 ring-tag-amber-border ring-offset-1 ring-offset-bg-primary' : ''} ${editable ? 'hover:brightness-110' : ''} ${rowClassName}`;
   const holidayStyle =
@@ -615,13 +637,14 @@ const offRuns = (
   days.forEach((day, index) => {
     const cells = SLOTS.slice(0, 4).map((slot) => exceptions.get(`${profile.id}:${day}:${slot}`));
     // Fully off = nothing resolves available that day AND at least one slot is a time-off exception.
-    const nothingAvailable = SLOTS.slice(0, 4).every(
-      (slot) => !resolved.get(`${profile.id}:${day}:${slot}`)?.available,
-    );
+    const nothingAvailable = SLOTS.slice(0, 4).every((slot) => {
+      const key = `${profile.id}:${day}:${slot}`;
+      return effectiveStatus(resolved.get(key), exceptions.get(key)) === 'off';
+    });
     const allOff =
       !holidays.get(day) &&
       nothingAvailable &&
-      cells.some((cell) => cell && cell.available === false);
+      cells.some((cell) => cell && availabilityStatus(cell) === 'off');
     if (allOff) {
       const note = cells
         .map((cell) => (cell?.note || '').trim())
@@ -651,7 +674,7 @@ const isZeroAvailability = (
   !days.some((day) =>
     SLOTS.slice(0, 4).some((slot) => {
       const key = `${profile.id}:${day}:${slot}`;
-      return exceptions.get(key)?.available ?? resolved.get(key)?.available ?? false;
+      return effectiveStatus(resolved.get(key), exceptions.get(key)) !== 'off';
     }),
   );
 const exceptionsForProfile = (
@@ -821,8 +844,9 @@ const Board: React.FC<BoardProps> = ({
         <div>
           <h2 className="text-sm font-semibold text-text-primary">Rep coverage board</h2>
           <p className="text-[11px] text-text-tertiary">
-            Cells show the slot's start time. Struck = time off, underlined = added coverage. Select
-            a rep for pattern details.
+            Click a cell in edit mode to cycle ON → FLEX → OFF. FLEX = call the rep to confirm before
+            booking; it adds no capacity. Underlined = dated exception, struck = dated off. Select a rep
+            for pattern details.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -914,14 +938,19 @@ const Board: React.FC<BoardProps> = ({
                         -
                       </div>,
                     ]
-                  : SLOTS.slice(0, 4).map((slot) => (
-                      <div
-                        key={`${day}-${slot}`}
-                        className="border-l border-border-secondary/60 py-1 text-[9px] font-bold text-text-quaternary"
-                      >
-                        {SLOT_START[slot]}
-                      </div>
-                    )),
+                  : SLOTS.slice(0, 4).map((slot) => {
+                      const d = capacityBreakdown(filteredProfiles, resolved, exceptions, 'All', day, slot);
+                      return (
+                        <div
+                          key={`${day}-${slot}`}
+                          title={`${d.available} on${d.flex ? `; +${d.flex} flex (call to confirm, not counted)` : ''}`}
+                          className="border-l border-border-secondary/60 py-1 text-[9px] font-bold text-text-quaternary"
+                        >
+                          {SLOT_START[slot]}
+                          {d.flex > 0 && <span className="block text-tag-blue-text">+{d.flex} flex</span>}
+                        </div>
+                      );
+                    }),
               )}
             </div>
           )}
@@ -1185,7 +1214,7 @@ const Board: React.FC<BoardProps> = ({
 };
 
 const Legend: React.FC = () => {
-  const sample = 'flex h-6 w-8 items-center justify-center rounded border-2 text-[11px] font-bold';
+  const sample = 'flex h-6 min-w-8 items-center justify-center rounded border-2 px-1 text-[10px] font-bold';
   const label = 'text-[11px] font-semibold';
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border-secondary bg-bg-secondary/40 px-4 py-2.5">
@@ -1193,12 +1222,16 @@ const Legend: React.FC = () => {
         Legend
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]`}>8a</i>
-        <span className={`${label} text-[#38761d]`}>Available</span>
+        <i className={`${sample} border-[#6aa84f] bg-[#b6d7a8] text-[#274e13]`}>ON</i>
+        <span className={`${label} text-[#38761d]`}>On — counts toward capacity</span>
       </span>
       <span className="flex items-center gap-2">
-        <i className={`${sample} border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]`}>8a</i>
-        <span className={`${label} text-text-tertiary`}>Off (standing pattern)</span>
+        <i className={`${sample} border-dashed border-tag-blue-text bg-tag-blue-bg text-tag-blue-text`}>FLEX</i>
+        <span className={`${label} text-tag-blue-text`}>Flex — call to confirm; no capacity</span>
+      </span>
+      <span className="flex items-center gap-2">
+        <i className={`${sample} border-[#b7b7b7] bg-[#d9d9d9] text-[#595959]`}>OFF</i>
+        <span className={`${label} text-text-tertiary`}>Off</span>
       </span>
       <span className="flex items-center gap-2">
         <i className={`${sample} border-text-primary bg-text-primary text-bg-primary`}>M</i>
@@ -1210,19 +1243,19 @@ const Legend: React.FC = () => {
       </span>
       <span className="flex items-center gap-2">
         <i
-          className={`${sample} border-tag-amber-text bg-tag-amber-bg text-tag-amber-text line-through decoration-2`}
+          className={`${sample} border-[#b7b7b7] bg-[#d9d9d9] text-[#595959] line-through decoration-2`}
         >
-          8a
+          OFF
         </i>
-        <span className={`${label} text-tag-amber-text`}>Time off</span>
+        <span className={`${label} text-text-tertiary`}>Dated off (time off)</span>
       </span>
       <span className="flex items-center gap-2">
         <i
-          className={`${sample} border-tag-blue-text bg-tag-blue-bg text-tag-blue-text underline decoration-2 underline-offset-2`}
+          className={`${sample} border-[#6aa84f] bg-[#b6d7a8] text-[#274e13] underline decoration-2 underline-offset-2`}
         >
-          8a
+          ON
         </i>
-        <span className={`${label} text-tag-blue-text`}>Added coverage</span>
+        <span className={`${label} text-[#38761d]`}>Dated on / flex (underlined)</span>
       </span>
       <span className="flex items-center gap-2">
         <i
@@ -1489,13 +1522,10 @@ const AvailabilityPage: React.FC = () => {
       !(data?.profiles || []).some((profile) =>
         SLOTS.slice(0, 4).some((slot) => {
           const key = `${profile.id}:${days[6]}:${slot}`;
-          return (
-            Boolean(maps.resolved.get(key)?.available) ||
-            maps.exceptions.get(key)?.available === true
-          );
+          return effectiveStatus(maps.resolved.get(key), maps.exceptions.get(key)) !== 'off';
         }),
       ),
-    [data, days, maps.resolved],
+    [data, days, maps.resolved, maps.exceptions],
   );
   const visibleProfiles = useMemo(
     () =>
@@ -1533,13 +1563,21 @@ const AvailabilityPage: React.FC = () => {
     if (pendingCells.current.has(key)) return;
     pendingCells.current.add(key);
     const current = maps.exceptions.get(key);
-    const baseAvailable = maps.resolved.get(key)?.available ?? false;
-    const next = current ? null : !baseAvailable;
-    const previous = current?.available ?? null;
+    // ON → FLEX → OFF → ON. Landing on the standing-pattern state deletes the exception (cell reverts).
+    const chosen = nextAvailabilityStatus(effectiveStatus(maps.resolved.get(key), current));
+    const base = data ? patternStatus(data.patterns, profile.id, day, slot) : 'off';
+    const next = chosen === base ? null : chosen;
+    const previous = current ? availabilityStatus(current) : null;
+    const previousNote = current?.note ?? null;
     setData((old) =>
       old
         ? {
             ...old,
+            resolved: old.resolved.map((row) =>
+              row.rep_id === profile.id && row.work_date === day && row.slot === slot
+                ? { ...row, available: chosen === 'on', flex: chosen === 'flex', status: chosen }
+                : row,
+            ),
             exceptions:
               next === null
                 ? old.exceptions.filter(
@@ -1560,7 +1598,9 @@ const AvailabilityPage: React.FC = () => {
                       rep_id: profile.id,
                       exception_date: day,
                       slot,
-                      available: next,
+                      available: next === 'on',
+                      flex: next === 'flex',
+                      status: next,
                       note: null,
                     },
                   ],
@@ -1574,9 +1614,9 @@ const AvailabilityPage: React.FC = () => {
           rep_id: profile.id,
           date: day,
           slot,
-          available: next,
+          status: next,
         },
-        `${profile.display_name} ${next === null ? 'reverted to pattern' : next ? 'given added coverage' : 'marked off'}`,
+        `${profile.display_name} ${next === null ? 'reverted to pattern' : `set to ${next.toUpperCase()}`}`,
         true,
       );
       if (!saved) return;
@@ -1587,7 +1627,7 @@ const AvailabilityPage: React.FC = () => {
           pendingCells.current.add(key);
           try {
             if (await runWrite(
-              { action: 'set_exception', rep_id: profile.id, date: day, slot, available: previous },
+              { action: 'set_exception', rep_id: profile.id, date: day, slot, status: previous, note: previousNote },
               'Change undone',
             )) setUndo(null);
           } finally {

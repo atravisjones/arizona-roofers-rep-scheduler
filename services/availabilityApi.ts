@@ -2,6 +2,8 @@ import { getAuthUser } from '../components/AuthGate';
 
 export type Section = 'PHX' | 'NORTH' | 'SOUTH' | 'COMMERCIAL' | 'INSURANCE' | 'MANAGEMENT' | 'D2D';
 export type Slot = 's1' | 's2' | 's3' | 's4' | 's5';
+// on = permanent on (counts toward capacity); flex = bookable only after a confirming call (no capacity); off.
+export type AvailabilityStatus = 'on' | 'flex' | 'off';
 
 export interface Profile {
   id: string;
@@ -22,6 +24,8 @@ export interface Resolved {
   weekday: number;
   slot: Slot | string;
   available: boolean;
+  flex?: boolean;
+  status?: AvailabilityStatus;
   source?: string;
   note?: string | null;
 }
@@ -32,6 +36,8 @@ export interface Exception {
   exception_date: string;
   slot: Slot | string;
   available: boolean | null;
+  flex?: boolean;
+  status?: AvailabilityStatus;
   source?: string;
   note?: string | null;
   created_by?: string | null;
@@ -55,6 +61,8 @@ export interface PatternSlot {
   weekday: number;
   slot: Slot | string;
   available: boolean;
+  flex?: boolean;
+  status?: AvailabilityStatus;
 }
 
 export interface Pattern {

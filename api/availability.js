@@ -96,7 +96,11 @@ async function getData({ from, to, session }) {
   const slotByPattern = new Map();
   for (const slot of slots || []) {
     if (!slotByPattern.has(slot.pattern_id)) slotByPattern.set(slot.pattern_id, []);
-    slotByPattern.get(slot.pattern_id).push({ weekday: slot.weekday, slot: slot.slot, available: slot.available });
+    slotByPattern.get(slot.pattern_id).push({
+      weekday: slot.weekday, slot: slot.slot, available: slot.available,
+      flex: !slot.available && slot.flex === true,
+      status: slot.available ? 'on' : slot.flex === true ? 'flex' : 'off',
+    });
   }
   return {
     profiles: profiles || [], inactive: inactive || [], resolved: resolved || [], exceptions: exceptions || [],
@@ -186,19 +190,35 @@ async function logAction(action, body, email, result) {
   });
 }
 
+// Normalise a slot write to { available, flex }. `status` ('on'|'flex'|'off') wins; the legacy
+// `available` boolean (optionally with `flex`) still works. Returns null for "delete the exception".
+function slotState(row, allowDelete = false) {
+  if (Object.prototype.hasOwnProperty.call(row, 'status')) {
+    if (allowDelete && row.status === null) return null;
+    if (!['on', 'flex', 'off'].includes(row.status)) throw new Error('invalid availability status');
+    return { available: row.status === 'on', flex: row.status === 'flex' };
+  }
+  if (allowDelete && row.available === null) return null;
+  if (typeof row.available !== 'boolean'
+    || (row.flex !== undefined && typeof row.flex !== 'boolean')) {
+    throw new Error('invalid availability state');
+  }
+  return { available: row.available, flex: !row.available && row.flex === true };
+}
+
 async function write(action, body, email) {
   let result = { ok: true };
   if (action === 'set_exception') {
-    const { rep_id, date, slot, available, note } = body;
-    if (!rep_id || !validDate(date) || !/^s[1-5]$/.test(slot)
-      || ![true, false, null].includes(available)) throw new Error('invalid exception');
-    if (available === null) {
+    const { rep_id, date, slot, note } = body;
+    if (!rep_id || !validDate(date) || !/^s[1-5]$/.test(slot)) throw new Error('invalid exception');
+    const state = slotState(body, true);
+    if (state === null) {
       await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(rep_id)}&exception_date=eq.${date}`
         + `&slot=eq.${slot}`, { method: 'DELETE' });
     } else {
       await sb('availability_exceptions?on_conflict=rep_id,exception_date,slot', {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-        body: JSON.stringify({ rep_id, exception_date: date, slot, available, source: 'manager',
+        body: JSON.stringify({ rep_id, exception_date: date, slot, ...state, source: 'manager',
           created_by: email, note: note || null }),
       });
     }
@@ -231,16 +251,18 @@ async function write(action, body, email) {
     if (!rep_id || !validDate(effective_from) || !Array.isArray(slots)
       || slots.length === 0 || slots.length > 35) throw new Error('invalid pattern');
     const pairs = new Set();
+    const normalizedSlots = [];
     for (const row of slots) {
       if (!row || !Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6
-        || typeof row.slot !== 'string' || !/^s[1-5]$/.test(row.slot)
-        || typeof row.available !== 'boolean') throw new Error('invalid pattern slot');
+        || typeof row.slot !== 'string' || !/^s[1-5]$/.test(row.slot)) throw new Error('invalid pattern slot');
+      const state = slotState(row);
       const pair = `${row.weekday}:${row.slot}`;
       if (pairs.has(pair)) throw new Error('duplicate pattern weekday:slot');
       pairs.add(pair);
+      normalizedSlots.push({ weekday: row.weekday, slot: row.slot, ...state });
     }
     await rpc('set_rep_pattern', {
-      p_rep_id: rep_id, p_effective_from: effective_from, p_slots: slots, p_created_by: email,
+      p_rep_id: rep_id, p_effective_from: effective_from, p_slots: normalizedSlots, p_created_by: email,
     });
   } else if (action === 'upsert_rep') {
     const allowed = ['id', 'display_name', 'section', 'active', 'email', 'roofr_user_id', 'home_zip',
@@ -273,7 +295,7 @@ async function write(action, body, email) {
     if (!body.rep_id || !body.from || !body.to) throw new Error('rep_id, from and to are required');
     await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(body.rep_id)}`
       + `&exception_date=gte.${encodeURIComponent(body.from)}&exception_date=lte.${encodeURIComponent(body.to)}`
-      + '&available=eq.false', { method: 'DELETE', headers: { Prefer: 'return=representation' } });
+      + '&available=eq.false&flex=eq.false', { method: 'DELETE', headers: { Prefer: 'return=representation' } });
   } else if (action === 'set_rep_active') {
     if (!body.rep_id || typeof body.active !== 'boolean') throw new Error('rep_id and active are required');
     await sb(`rep_profiles?id=eq.${encodeURIComponent(body.rep_id)}`, {

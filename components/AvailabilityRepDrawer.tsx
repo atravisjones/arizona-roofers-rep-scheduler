@@ -1,6 +1,17 @@
 import React, { useMemo, useState } from 'react';
-import { Exception, Pattern, Profile, saveAvailability } from '../services/availabilityApi';
-import { SLOT_LABELS, SLOTS, WEEKDAYS, dateKey, mondayOf, nextMonday } from '../utils/availability';
+import { AvailabilityStatus, Exception, Pattern, Profile, saveAvailability } from '../services/availabilityApi';
+import {
+  SLOT_LABELS,
+  SLOTS,
+  WEEKDAYS,
+  availabilityFlags,
+  availabilityLabel,
+  availabilityStatus,
+  dateKey,
+  mondayOf,
+  nextAvailabilityStatus,
+  nextMonday,
+} from '../utils/availability';
 
 interface Props {
   profile: Profile;
@@ -11,7 +22,7 @@ interface Props {
   onClose: () => void;
   onSaved: (effectiveFrom?: string) => void;
 }
-type PatternState = Record<number, Record<string, boolean>>;
+type PatternState = Record<number, Record<string, AvailabilityStatus>>;
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -46,8 +57,7 @@ const patternDefaults = (pattern?: Pattern): PatternState =>
       Object.fromEntries(
         SLOTS.map((slot) => [
           slot,
-          pattern?.slots.find((item) => item.weekday === weekday && item.slot === slot)
-            ?.available ?? false,
+          availabilityStatus(pattern?.slots.find((item) => item.weekday === weekday && item.slot === slot)),
         ]),
       ),
     ]),
@@ -82,11 +92,17 @@ const PatternEditor: React.FC<{
   const toggle = (weekday: number, slot: string) =>
     setSlots((current) => ({
       ...current,
-      [weekday]: { ...current[weekday], [slot]: !current[weekday][slot] },
+      [weekday]: { ...current[weekday], [slot]: nextAvailabilityStatus(current[weekday][slot]) },
     }));
   const slotLabel = (slot: string) => (slot === 's5' ? 'Storm' : SLOT_LABELS[slot].split(' ')[0]);
-  const cellClass = (available: boolean) =>
-    `h-7 w-full rounded border text-[9px] font-bold disabled:cursor-default disabled:opacity-60 ${available ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text' : 'border-border-secondary bg-bg-tertiary text-text-quaternary'}`;
+  const cellClass = (state: AvailabilityStatus) =>
+    `h-7 w-full rounded border text-[9px] font-bold disabled:cursor-default disabled:opacity-60 ${
+      state === 'on'
+        ? 'border-tag-green-border bg-tag-green-bg text-tag-green-text'
+        : state === 'flex'
+          ? 'border-dashed border-tag-blue-text bg-tag-blue-bg text-tag-blue-text'
+          : 'border-border-secondary bg-bg-tertiary text-text-quaternary'
+    }`;
   // Patterns start on a Monday; any picked date snaps to the Monday of its week.
   const pickDate = (value: string) => {
     if (!value) return;
@@ -101,10 +117,11 @@ const PatternEditor: React.FC<{
         rep_id: repId,
         effective_from: effectiveFrom,
         slots: Object.entries(slots).flatMap(([weekday, daySlots]) =>
-          Object.entries(daySlots).map(([slot, available]) => ({
+          Object.entries(daySlots).map(([slot, state]) => ({
             weekday: Number(weekday),
             slot,
-            available,
+            status: state,
+            ...availabilityFlags(state),
           })),
         ),
       });
@@ -140,7 +157,7 @@ const PatternEditor: React.FC<{
       <div className="mb-3 flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">Standing pattern</h3>
-          <p className="text-[10px] text-text-tertiary">Set the weekly default from a Monday.</p>
+          <p className="text-[10px] text-text-tertiary">Set the weekly default from a Monday. Click a slot to cycle ON → FLEX → OFF. FLEX = call to confirm first; adds no capacity.</p>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="flex rounded border border-border-secondary bg-bg-primary p-0.5" role="group" aria-label="Pattern grid layout">
@@ -183,18 +200,19 @@ const PatternEditor: React.FC<{
             <div key={slot} className="grid grid-cols-[40px_repeat(7,minmax(0,1fr))] items-center gap-1">
               <span className="text-[10px] font-bold text-text-tertiary">{slotLabel(slot)}</span>
               {WEEKDAYS.map((day, weekday) => {
-                const available = slots[weekday][slot];
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggle(weekday, slot)}
-                    disabled={!editable}
-                    className={cellClass(available)}
-                    aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
-                  >
-                    {available ? 'ON' : 'OFF'}
-                  </button>
+                const state = slots[weekday][slot];
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggle(weekday, slot)}
+                  disabled={!editable || saving}
+                  className={cellClass(state)}
+                  aria-label={`${day} ${SLOT_LABELS[slot]}: ${availabilityLabel(state)}. Next: ${nextAvailabilityStatus(state).toUpperCase()}`}
+                  title={availabilityLabel(state)}
+                >
+                  {state.toUpperCase()}
+                </button>
                 );
               })}
             </div>
@@ -230,17 +248,18 @@ const PatternEditor: React.FC<{
           <div key={day} className="grid grid-cols-[28px_repeat(5,minmax(0,1fr))_28px] items-center gap-1">
             <span className="w-7 text-[10px] font-bold text-text-tertiary">{day}</span>
             {SLOTS.map((slot) => {
-              const available = slots[weekday][slot];
+              const state = slots[weekday][slot];
               return (
                 <button
                   key={slot}
                   type="button"
                   onClick={() => toggle(weekday, slot)}
-                  disabled={!editable}
-                  className={cellClass(available)}
-                  aria-label={`${day} ${SLOT_LABELS[slot]} ${available ? 'available' : 'off'}`}
+                  disabled={!editable || saving}
+                  className={cellClass(state)}
+                  aria-label={`${day} ${SLOT_LABELS[slot]}: ${availabilityLabel(state)}. Next: ${nextAvailabilityStatus(state).toUpperCase()}`}
+                  title={availabilityLabel(state)}
                 >
-                  {available ? 'ON' : 'OFF'}
+                  {state.toUpperCase()}
                 </button>
               );
             })}
@@ -322,7 +341,7 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
         rep_id: profile.id,
         date: item.exception_date,
         slot: item.slot,
-        available: null,
+        status: null,
       });
       onSaved();
     } catch (error) {
@@ -430,7 +449,10 @@ const AvailabilityRepDrawer: React.FC<Props> = ({
                         {item.exception_date} · {SLOT_LABELS[item.slot] || item.slot}
                       </p>
                       <p className="text-[10px] text-text-tertiary">
-                        {item.available ? '+' : '×'} {item.note || 'No note'} ·{' '}
+                        <span className={availabilityStatus(item) === 'flex' ? 'font-bold text-tag-blue-text' : undefined}>
+                          {availabilityStatus(item) === 'flex' ? 'FLEX' : availabilityStatus(item) === 'on' ? '+ ON' : '× OFF'}
+                        </span>{' '}
+                        {item.note || 'No note'} ·{' '}
                         {item.created_by || 'manager'}
                       </p>
                     </div>
