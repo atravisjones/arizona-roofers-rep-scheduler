@@ -360,7 +360,7 @@ const MySchedulePage: React.FC = () => {
                           {DAY_SLOTS.map((slot) => {
                             const cell = cells.get(`${day}:${slot}`);
                             const state = cell?.state ?? 'off';
-                            const glyph = cell?.source === 'meeting' ? 'M' : cell?.source === 'holiday' ? 'H' : STATE_LABEL[state];
+                            const glyph = cell?.source === 'meeting' ? 'M' : STATE_LABEL[state];
                             return (
                               <button
                                 key={slot}
@@ -370,7 +370,9 @@ const MySchedulePage: React.FC = () => {
                                 className={`${btn} flex-col leading-none ${
                                   cell?.source === 'meeting' && state === 'off'
                                     ? 'border-text-primary bg-text-primary text-bg-primary' // solid ink, like the board
-                                    : stateClass(state, Boolean(cell?.exception))
+                                    : cell?.source === 'holiday' && state === 'off'
+                                      ? 'border-tag-amber-border bg-tag-amber-bg text-tag-amber-text' // holiday: amber OFF
+                                      : stateClass(state, Boolean(cell?.exception))
                                 }`}
                                 aria-label={`${fmtDay(day)} ${SLOT_TIME[slot]}: ${STATE_LABEL[state]}`}
                               >
