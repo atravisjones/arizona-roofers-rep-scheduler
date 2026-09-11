@@ -241,6 +241,33 @@ async function write(action, body, email, options = {}) {
           created_by: email, note: note || null }),
       });
     }
+  } else if (action === 'set_exceptions') {
+    // Bulk dated changes for ONE rep (day off / week off from the phone page): each change is
+    // { date, slot, status } where status null = delete the exception (back to the standing pattern).
+    const { rep_id, changes } = body;
+    if (!rep_id || !Array.isArray(changes) || changes.length === 0 || changes.length > 70) {
+      throw new Error('invalid exceptions batch');
+    }
+    const upserts = [];
+    const deletes = [];
+    for (const change of changes) {
+      if (!change || !validDate(change.date) || !/^s[1-5]$/.test(change.slot)) throw new Error('invalid exception');
+      const state = slotState(change, true);
+      if (state === null) deletes.push(change);
+      else upserts.push({ rep_id, exception_date: change.date, slot: change.slot, ...state, source,
+        created_by: email, note: change.note || null });
+    }
+    if (upserts.length) {
+      await sb('availability_exceptions?on_conflict=rep_id,exception_date,slot', {
+        method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(upserts),
+      });
+    }
+    for (const change of deletes) {
+      await sb(`availability_exceptions?rep_id=eq.${encodeURIComponent(rep_id)}&exception_date=eq.${change.date}`
+        + `&slot=eq.${change.slot}`, { method: 'DELETE' });
+    }
+    result = { ok: true, upserted: upserts.length, deleted: deletes.length };
   } else if (action === 'set_week_policy') {
     const { monday } = body;
     const weekDate = new Date(`${monday}T00:00:00Z`);
@@ -379,7 +406,7 @@ export default async function handler(req, res) {
     if (!manager) {
       // Rep self-service: a rep may edit ONLY their own dated slots, standing pattern and time off.
       const self = repForEmail(session.email, profiles || []);
-      const selfActions = ['set_exception', 'set_pattern', 'clear_exceptions'];
+      const selfActions = ['set_exception', 'set_exceptions', 'set_pattern', 'clear_exceptions'];
       if (!self) return fail(res, 403, 'No rep profile is linked to your email');
       if (!selfActions.includes(body.action) || body.rep_id !== self.id) {
         return fail(res, 403, 'You can only edit your own schedule');
