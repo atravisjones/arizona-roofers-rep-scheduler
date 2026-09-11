@@ -367,7 +367,11 @@ const MySchedulePage: React.FC = () => {
                                 type="button"
                                 disabled={busy > 0}
                                 onClick={() => tapSlot(day, slot)}
-                                className={`${btn} flex-col leading-none ${stateClass(state, Boolean(cell?.exception))}`}
+                                className={`${btn} flex-col leading-none ${
+                                  cell?.source === 'meeting' && state === 'off'
+                                    ? 'border-text-primary bg-text-primary text-bg-primary' // solid ink, like the board
+                                    : stateClass(state, Boolean(cell?.exception))
+                                }`}
                                 aria-label={`${fmtDay(day)} ${SLOT_TIME[slot]}: ${STATE_LABEL[state]}`}
                               >
                                 <span className="text-[10px] font-semibold opacity-70">{SLOT_TIME[slot]}</span>
