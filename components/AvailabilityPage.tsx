@@ -1574,8 +1574,12 @@ const AvailabilityPage: React.FC = () => {
     pendingCells.current.add(key);
     const current = maps.exceptions.get(key);
     // ON → FLEX → OFF → ON. Landing on the standing-pattern state deletes the exception (cell reverts).
-    const chosen = nextAvailabilityStatus(effectiveStatus(maps.resolved.get(key), current));
-    const base = data ? patternStatus(data.patterns, profile.id, day, slot) : 'off';
+    const resolvedRow = maps.resolved.get(key);
+    const chosen = nextAvailabilityStatus(effectiveStatus(resolvedRow, current));
+    // Holiday / meeting overlays force OFF regardless of the standing pattern, so on those days the
+    // baseline is OFF: OFF → ON → FLEX → OFF, and only an explicit exception opens the rep up.
+    const overlay = resolvedRow?.source === 'holiday' || resolvedRow?.source === 'meeting';
+    const base = overlay ? 'off' : data ? patternStatus(data.patterns, profile.id, day, slot) : 'off';
     const next = chosen === base ? null : chosen;
     const previous = current ? availabilityStatus(current) : null;
     const previousNote = current?.note ?? null;
