@@ -281,7 +281,9 @@ const MySchedulePage: React.FC = () => {
   const btn = 'flex h-12 flex-1 items-center justify-center rounded-lg border-2 text-base font-bold tabular-nums active:brightness-90 disabled:opacity-60';
 
   return (
-    <div className="mx-auto min-h-screen max-w-md bg-bg-secondary pb-24">
+    // The app shell pins html/body/#root to 100vh with overflow hidden (planner layout), so this
+    // page must be its own scroll container or a phone can't scroll it at all.
+    <div className="mx-auto h-screen max-w-md overflow-y-auto overscroll-y-contain bg-bg-secondary pb-24" style={{ height: '100dvh', WebkitOverflowScrolling: 'touch' }}>
       <header className="sticky top-0 z-20 border-b border-border-secondary bg-bg-primary px-4 pb-2 pt-3">
         <div className="flex items-center justify-between">
           <div>
