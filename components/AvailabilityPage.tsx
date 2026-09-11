@@ -1465,11 +1465,13 @@ const AvailabilityPage: React.FC = () => {
   };
   const isManager = Boolean(data?.me.is_manager);
   const editable = isManager && editMode && !loading && loadedMonday === monday;
-  const fetchData = useCallback(async () => {
+  // silent = background refresh after a write: keep the board editable (no loading flip → no
+  // unmount/remount of cell buttons and drag handles); data simply swaps in when it arrives.
+  const fetchData = useCallback(async (silent = false) => {
     const requestedMonday = selectedMonday.current;
     const sequence = ++fetchSequence.current;
     const current = () => sequence === fetchSequence.current && selectedMonday.current === requestedMonday;
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError('');
     try {
       const nextData = await loadAvailability(requestedMonday, addWeeks(requestedMonday, 2));
@@ -1482,7 +1484,7 @@ const AvailabilityPage: React.FC = () => {
         setLoadedMonday('');
       }
     } finally {
-      if (current()) setLoading(false);
+      if (current() && !silent) setLoading(false);
     }
   }, [monday]);
   useEffect(() => {
@@ -1550,7 +1552,7 @@ const AvailabilityPage: React.FC = () => {
   ): Promise<boolean> => {
     try {
       const result = await saveAvailability(payload);
-      if (after) await fetchData();
+      if (after) await fetchData(true);
       if (result.sheet_synced === false) {
         showToast(`Saved to database; sheet sync failed: ${result.error || 'Unknown error'}`, 'error');
       }
@@ -1561,7 +1563,7 @@ const AvailabilityPage: React.FC = () => {
       return true;
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not save change', 'error');
-      await fetchData();
+      await fetchData(true);
       return false;
     }
   };
